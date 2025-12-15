@@ -11,7 +11,7 @@ import {
   getNeighborsOut,
   getNodeProp,
   nodeExists,
-} from "../ray/__graph-db.ts";
+} from "../ray/graph-db/index.ts";
 import { getNodeKey } from "../ray/key-index.ts";
 import type {
   ETypeID,
@@ -719,3 +719,4 @@ export function createPathFindingBuilder<N extends NodeDef>(
 
   return builder;
 }
+

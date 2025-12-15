@@ -38,13 +38,13 @@ export { PropValueTag } from "./types.ts";
 // Database lifecycle
 // ============================================================================
 
-export { openGraphDB, closeGraphDB } from "./ray/__graph-db.ts";
+export { openGraphDB, closeGraphDB } from "./ray/graph-db/index.ts";
 
 // ============================================================================
 // Transactions
 // ============================================================================
 
-export { beginTx, commit, rollback } from "./ray/__graph-db.ts";
+export { beginTx, commit, rollback } from "./ray/graph-db/index.ts";
 
 // ============================================================================
 // Node operations
@@ -55,7 +55,7 @@ export {
   deleteNode,
   getNodeByKey,
   nodeExists,
-} from "./ray/__graph-db.ts";
+} from "./ray/graph-db/index.ts";
 
 // ============================================================================
 // Edge operations
@@ -67,7 +67,7 @@ export {
   getNeighborsOut,
   getNeighborsIn,
   edgeExists,
-} from "./ray/__graph-db.ts";
+} from "./ray/graph-db/index.ts";
 
 // ============================================================================
 // Property operations
@@ -82,19 +82,19 @@ export {
   getNodeProps,
   getEdgeProp,
   getEdgeProps,
-} from "./ray/__graph-db.ts";
+} from "./ray/graph-db/index.ts";
 
 // ============================================================================
 // Schema definitions
 // ============================================================================
 
-export { defineLabel, defineEtype, definePropkey } from "./ray/__graph-db.ts";
+export { defineLabel, defineEtype, definePropkey } from "./ray/graph-db/index.ts";
 
 // ============================================================================
 // Maintenance
 // ============================================================================
 
-export { stats, check } from "./ray/__graph-db.ts";
+export { stats, check } from "./ray/graph-db/index.ts";
 
 // ============================================================================
 // Cache API
@@ -105,7 +105,7 @@ export {
   invalidateEdgeCache,
   clearCache,
   getCacheStats,
-} from "./ray/__graph-db.ts";
+} from "./ray/graph-db/index.ts";
 
 export { optimize, type OptimizeOptions } from "./core/compactor.ts";
 

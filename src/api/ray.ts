@@ -19,7 +19,7 @@ import {
   check as rawCheck,
   stats as rawStats,
   rollback,
-} from "../ray/__graph-db.ts";
+} from "../ray/graph-db/index.ts";
 import type {
   CheckResult,
   DbStats,
@@ -62,7 +62,6 @@ import {
   type PathFindingBuilder,
   type WeightSpec,
 } from "./pathfinding.ts";
-import type { EdgeDef } from "./schema.ts";
 
 // ============================================================================
 // Ray Options

@@ -11,7 +11,7 @@ import {
   getNeighborsOut,
   getNodeProp,
   nodeExists,
-} from "../ray/__graph-db.ts";
+} from "../ray/graph-db/index.ts";
 import type {
   ETypeID,
   GraphDB,
