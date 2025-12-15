@@ -30,7 +30,7 @@ describe("Snapshot", () => {
 	let testDir: string;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "nero-test-"));
+		testDir = await mkdtemp(join(tmpdir(), "ray-test-"));
 	});
 
 	afterEach(async () => {

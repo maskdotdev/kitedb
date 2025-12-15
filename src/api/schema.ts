@@ -519,10 +519,10 @@ export function defineEdge<Name extends string, P extends EdgePropsSchema>(
 // ============================================================================
 
 /**
- * Complete schema configuration for a nero database
+ * Complete schema configuration for a ray database
  * Defines all nodes and edges that can exist in the database
  */
-export interface NeroSchema {
+export interface RaySchema {
 	/** All node type definitions */
 	nodes: NodeDef[];
 	/** All edge type definitions */

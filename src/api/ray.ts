@@ -1,5 +1,5 @@
 /**
- * Nero Database
+ * Ray Database
  *
  * High-level Drizzle-style API for the graph database.
  */
@@ -19,7 +19,7 @@ import {
 	check as rawCheck,
 	stats as rawStats,
 	rollback,
-} from "../nero/graph-db.ts";
+} from "../ray/graph-db.ts";
 import type {
 	CheckResult,
 	DbStats,
@@ -53,16 +53,16 @@ import type {
 	InferEdgeProps,
 	InferNode,
 	InferNodeInsert,
-	NeroSchema,
+	RaySchema,
 	NodeDef,
 } from "./schema.ts";
 import { type TraversalBuilder, createTraversalBuilder } from "./traversal.ts";
 
 // ============================================================================
-// Nero Options
+// Ray Options
 // ============================================================================
 
-export interface NeroOptions extends OpenOptions {
+export interface RayOptions extends OpenOptions {
 	nodes: NodeDef[];
 	edges: EdgeDef[];
 }
@@ -97,10 +97,10 @@ export interface TransactionContext {
 }
 
 // ============================================================================
-// Nero Class
+// Ray Class
 // ============================================================================
 
-export class Nero {
+export class Ray {
 	private readonly _db: GraphDB;
 	private readonly _nodes: Map<string, NodeDef>;
 	private readonly _edges: Map<string, EdgeDef>;
@@ -121,8 +121,8 @@ export class Nero {
 		this._propKeyIds = propKeyIds;
 	}
 
-	/** Open or create a nero database */
-	static async open(path: string, options: NeroOptions): Promise<Nero> {
+	/** Open or create a ray database */
+	static async open(path: string, options: RayOptions): Promise<Ray> {
 		const { nodes, edges, ...dbOptions } = options;
 
 		const db = await openGraphDB(path, dbOptions);
@@ -167,7 +167,7 @@ export class Nero {
 
 		await commit(tx);
 
-		return new Nero(db, nodes, edges, etypeIds, propKeyIds);
+		return new Ray(db, nodes, edges, etypeIds, propKeyIds);
 	}
 
 	// ==========================================================================
@@ -407,11 +407,13 @@ export class Nero {
 					node,
 					this.resolvePropKeyId.bind(this),
 				);
-				// Wrap to use transaction
+				// Wrap to use transaction - need to handle overloads properly
 				return {
-					values: (data: InferNodeInsert<N> | InferNodeInsert<N>[]) => {
+					values: ((data: InferNodeInsert<N> | InferNodeInsert<N>[]) => {
 						const isSingle = !Array.isArray(data);
-						const executor = builder.values(data);
+						const executor = isSingle
+							? builder.values(data as InferNodeInsert<N>)
+							: builder.values(data as InferNodeInsert<N>[]);
 						return {
 							...executor,
 							async returning() {
@@ -427,7 +429,7 @@ export class Nero {
 							},
 							_toBatchOp: executor._toBatchOp,
 						};
-					},
+					}) as InsertBuilder<N>["values"],
 				};
 			},
 
@@ -585,16 +587,16 @@ export class Nero {
 // ============================================================================
 
 /**
- * Open or create a nero database
+ * Open or create a ray database
  *
  * @example
  * ```ts
- * const db = await nero('./my-graph', {
+ * const db = await ray('./my-graph', {
  *   nodes: [user, company],
  *   edges: [knows, worksAt],
  * });
  * ```
  */
-export async function nero(path: string, options: NeroOptions): Promise<Nero> {
-	return Nero.open(path, options);
+export async function ray(path: string, options: RayOptions): Promise<Ray> {
+	return Ray.open(path, options);
 }

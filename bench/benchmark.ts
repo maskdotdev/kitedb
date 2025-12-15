@@ -1,5 +1,5 @@
 /**
- * Nero Database Benchmark
+ * Ray Database Benchmark
  *
  * Realistic benchmarks for code graph / knowledge graph workloads.
  *
@@ -721,7 +721,7 @@ async function benchmarkDeltaImpact(config: BenchConfig): Promise<void> {
 
 	for (const deltaPercent of deltaPercents) {
 		const testDir = await mkdtemp(
-			join(tmpdir(), `nero-delta-${deltaPercent}-`),
+			join(tmpdir(), `ray-delta-${deltaPercent}-`),
 		);
 
 		try {
@@ -883,7 +883,7 @@ async function runBenchmarks(config: BenchConfig) {
 
 	const now = new Date();
 	logger.log("=".repeat(120));
-	logger.log("Nero Database Benchmark - Realistic Code Graph Workload");
+	logger.log("Ray Database Benchmark - Realistic Code Graph Workload");
 	logger.log("=".repeat(120));
 	logger.log(`Date: ${now.toISOString()}`);
 	logger.log(`Nodes: ${formatNumber(config.nodes)}`);
@@ -893,7 +893,7 @@ async function runBenchmarks(config: BenchConfig) {
 	logger.log(`Keep database: ${config.keepDb}`);
 	logger.log("=".repeat(120));
 
-	const testDir = await mkdtemp(join(tmpdir(), "nero-bench-"));
+	const testDir = await mkdtemp(join(tmpdir(), "ray-bench-"));
 
 	try {
 		logger.log("\n[1/9] Building graph...");

@@ -141,7 +141,7 @@ describe("Compressed Snapshots", () => {
 	let testDir: string;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "nero-compression-test-"));
+		testDir = await mkdtemp(join(tmpdir(), "ray-compression-test-"));
 	});
 
 	afterEach(async () => {

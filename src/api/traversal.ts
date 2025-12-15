@@ -11,7 +11,7 @@ import {
 	getNeighborsOut,
 	getNodeProp,
 	nodeExists,
-} from "../nero/graph-db.ts";
+} from "../ray/graph-db.ts";
 import type {
 	ETypeID,
 	GraphDB,

@@ -23,7 +23,7 @@ describe("WAL Truncation", () => {
 	let testDir: string;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "nero-crash-test-"));
+		testDir = await mkdtemp(join(tmpdir(), "ray-crash-test-"));
 	});
 
 	afterEach(async () => {
@@ -94,7 +94,7 @@ describe("Manifest Corruption", () => {
 	let testDir: string;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "nero-manifest-test-"));
+		testDir = await mkdtemp(join(tmpdir(), "ray-manifest-test-"));
 	});
 
 	afterEach(async () => {
@@ -120,7 +120,7 @@ describe("Snapshot Corruption", () => {
 	let testDir: string;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "nero-snap-corrupt-test-"));
+		testDir = await mkdtemp(join(tmpdir(), "ray-snap-corrupt-test-"));
 	});
 
 	afterEach(async () => {
@@ -162,7 +162,7 @@ describe("Recovery Scenarios", () => {
 	let testDir: string;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "nero-recovery-scenario-"));
+		testDir = await mkdtemp(join(tmpdir(), "ray-recovery-scenario-"));
 	});
 
 	afterEach(async () => {

@@ -212,7 +212,7 @@ describe("WAL File Operations", () => {
 	let testDir: string;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "nero-wal-test-"));
+		testDir = await mkdtemp(join(tmpdir(), "ray-wal-test-"));
 	});
 
 	afterEach(async () => {

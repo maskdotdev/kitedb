@@ -1,7 +1,7 @@
 /**
- * Nero High-Level API
+ * Ray High-Level API
  *
- * Drizzle-style, type-safe API for the Nero graph database.
+ * Drizzle-style, type-safe API for the Ray graph database.
  * Provides schema definition, query building, and graph traversal with
  * full TypeScript type inference.
  *
@@ -9,7 +9,7 @@
  *
  * @example
  * ```ts
- * import { nero, defineNode, defineEdge, prop } from './src/api';
+ * import { ray, defineNode, defineEdge, prop } from './src/api';
  *
  * const user = defineNode('user', {
  *   key: (id: string) => `user:${id}`,
@@ -18,7 +18,7 @@
  *
  * const knows = defineEdge('knows');
  *
- * const db = await nero('./my-db', {
+ * const db = await ray('./my-db', {
  *   nodes: [user],
  *   edges: [knows],
  * });
@@ -27,15 +27,15 @@
 
 /**
  * Main database context
- * @see {@link nero}
- * @see {@link Nero}
+ * @see {@link ray}
+ * @see {@link Ray}
  */
 export {
-	nero,
-	Nero,
-	type NeroOptions,
+	ray,
+	Ray,
+	type RayOptions,
 	type TransactionContext,
-} from "./nero.ts";
+} from "./ray.ts";
 
 /**
  * Schema definition builders
@@ -60,7 +60,7 @@ export {
 	type InferNodeInsert,
 	type InferEdge,
 	type InferEdgeProps,
-	type NeroSchema,
+	type RaySchema,
 } from "./schema.ts";
 
 /**

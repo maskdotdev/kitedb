@@ -1,5 +1,5 @@
 {
-	"name": "@nerodb/nero",
+	"name": "@ray-db/ray",
 	"version": "0.1.0",
 	"description": "High-performance embedded graph database for Bun/TypeScript",
 	"module": "src/index.ts",
@@ -9,8 +9,20 @@
 	"files": ["src"],
 	"keywords": ["graph", "database", "embedded", "bun", "typescript"],
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/ray-db/ray.git"
+	},
+	"homepage": "https://github.com/ray-db/ray#readme",
+	"bugs": {
+		"url": "https://github.com/ray-db/ray/issues"
+	},
 	"publishConfig": {
 		"access": "public"
+	},
+	"scripts": {
+		"test": "bun test",
+		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
 		"@types/bun": "latest",

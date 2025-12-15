@@ -36,7 +36,7 @@ export { PropValueTag } from "./types.ts";
 export {
 	openGraphDB,
 	closeGraphDB,
-} from "./nero/graph-db.ts";
+} from "./ray/graph-db.ts";
 
 // ============================================================================
 // Transactions
@@ -46,7 +46,7 @@ export {
 	beginTx,
 	commit,
 	rollback,
-} from "./nero/graph-db.ts";
+} from "./ray/graph-db.ts";
 
 // ============================================================================
 // Node operations
@@ -57,7 +57,7 @@ export {
 	deleteNode,
 	getNodeByKey,
 	nodeExists,
-} from "./nero/graph-db.ts";
+} from "./ray/graph-db.ts";
 
 // ============================================================================
 // Edge operations
@@ -69,7 +69,7 @@ export {
 	getNeighborsOut,
 	getNeighborsIn,
 	edgeExists,
-} from "./nero/graph-db.ts";
+} from "./ray/graph-db.ts";
 
 // ============================================================================
 // Property operations
@@ -84,7 +84,7 @@ export {
 	getNodeProps,
 	getEdgeProp,
 	getEdgeProps,
-} from "./nero/graph-db.ts";
+} from "./ray/graph-db.ts";
 
 // ============================================================================
 // Schema definitions
@@ -94,7 +94,7 @@ export {
 	defineLabel,
 	defineEtype,
 	definePropkey,
-} from "./nero/graph-db.ts";
+} from "./ray/graph-db.ts";
 
 // ============================================================================
 // Maintenance
@@ -103,7 +103,7 @@ export {
 export {
 	stats,
 	check,
-} from "./nero/graph-db.ts";
+} from "./ray/graph-db.ts";
 
 export { optimize, type OptimizeOptions } from "./core/compactor.ts";
 
@@ -129,9 +129,9 @@ export {
 
 export {
 	// Main entry
-	nero,
-	Nero,
-	type NeroOptions,
+	ray,
+	Ray,
+	type RayOptions,
 	type TransactionContext,
 	// Schema builders
 	defineNode,
@@ -149,7 +149,7 @@ export {
 	type InferNodeInsert,
 	type InferEdge,
 	type InferEdgeProps,
-	type NeroSchema,
+	type RaySchema,
 	// Query builders
 	type InsertBuilder,
 	type InsertExecutor,

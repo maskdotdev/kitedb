@@ -41,7 +41,7 @@ describe("Database Lifecycle", () => {
 	let testDir: string;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "nero-int-test-"));
+		testDir = await mkdtemp(join(tmpdir(), "ray-int-test-"));
 	});
 
 	afterEach(async () => {
@@ -99,7 +99,7 @@ describe("Node Operations", () => {
 	let testDir: string;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "nero-node-test-"));
+		testDir = await mkdtemp(join(tmpdir(), "ray-node-test-"));
 	});
 
 	afterEach(async () => {
@@ -163,7 +163,7 @@ describe("Edge Operations", () => {
 	let testDir: string;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "nero-edge-test-"));
+		testDir = await mkdtemp(join(tmpdir(), "ray-edge-test-"));
 	});
 
 	afterEach(async () => {
@@ -257,7 +257,7 @@ describe("Properties", () => {
 	let testDir: string;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "nero-prop-test-"));
+		testDir = await mkdtemp(join(tmpdir(), "ray-prop-test-"));
 	});
 
 	afterEach(async () => {
@@ -415,7 +415,7 @@ describe("Compaction", () => {
 	let testDir: string;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "nero-compact-test-"));
+		testDir = await mkdtemp(join(tmpdir(), "ray-compact-test-"));
 	});
 
 	afterEach(async () => {
@@ -535,7 +535,7 @@ describe("Recovery", () => {
 	let testDir: string;
 
 	beforeEach(async () => {
-		testDir = await mkdtemp(join(tmpdir(), "nero-recovery-test-"));
+		testDir = await mkdtemp(join(tmpdir(), "ray-recovery-test-"));
 	});
 
 	afterEach(async () => {
