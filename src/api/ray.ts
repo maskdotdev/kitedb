@@ -20,6 +20,7 @@ import {
   stats as rawStats,
   rollback,
 } from "../ray/graph-db/index.ts";
+import { getNodeKey } from "../ray/key-index.ts";
 import type {
   CheckResult,
   DbStats,
@@ -198,9 +199,29 @@ export class Ray {
     return id;
   }
 
-  private getNodeDef(_nodeId: NodeID): NodeDef | null {
-    // For now, return the first node def. In a real implementation,
-    // we'd track which def created which node, or use labels.
+  private getNodeDef(nodeId: NodeID): NodeDef | null {
+    // Try to match by node key
+    const key = getNodeKey(this._db._snapshot, this._db._delta, nodeId);
+    if (key) {
+      // Try each node definition to see if its key function matches
+      for (const nodeDef of this._nodes.values()) {
+        // Extract the prefix from the key (e.g., "file:" from "file:/path")
+        const keyPrefix = key.split(":")[0] + ":";
+        // Check if this node definition's key function would produce keys with this prefix
+        // We test by calling the key function with a dummy value and checking the prefix
+        try {
+          const testKey = nodeDef.keyFn("test" as never);
+          if (testKey.startsWith(keyPrefix)) {
+            return nodeDef;
+          }
+        } catch {
+          // If keyFn fails, skip this def
+          continue;
+        }
+      }
+    }
+    
+    // Fall back to first node def if no match found
     const first = this._nodes.values().next();
     return first.done ? null : first.value;
   }
