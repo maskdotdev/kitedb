@@ -527,10 +527,10 @@ db/
 
 ## Getting Started
 
-See `src/api/README.md` for detailed API documentation and examples.
+See `docs/api/README.md` for detailed API documentation and examples.
 
 ## References
 
-- [Ray Main README](./README.md)
-- [High-Level API Docs](./src/api/README.md)
-- [TypeScript Docs](./tsconfig.json)
+- [Ray Main README](../README.md)
+- [High-Level API Docs](./api/README.md)
+- [TypeScript Docs](../tsconfig.json)

@@ -373,27 +373,17 @@ try {
 
 ## Future Considerations
 
-Potential extensions:
+Several items from the original roadmap (MVCC, pathfinding, and the caching layer) are now implemented and documented elsewhere — see [Ray README](../../README.md) for the MVCC, pathfinding, and caching sections, and [API architecture](../API.md) for MVCC layer details. This section tracks only features that remain future work.
 
 1. **Advanced Traversal**
-   - Path finding (Dijkstra, A*)
    - Subgraph matching
    - GQL query language
 
-2. **Caching Layer**
-   - Property cache
-   - Traversal cache
-   - Query result caching
-
-3. **Advanced Schema**
+2. **Advanced Schema**
    - Constraints (unique, foreign keys)
    - Validation functions
    - Schema versioning
 
-4. **Multi-Version Concurrency Control**
-   - MVCC for read concurrency
-   - Snapshot isolation
-
-5. **Distributed**
+3. **Distributed**
    - Multi-node replication
    - Sharding support

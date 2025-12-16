@@ -59,7 +59,7 @@ For understanding how the API is built and why.
 - Error handling strategy
 - Performance characteristics
 - Comparison with other databases
-- Future extensions
+- Future work and roadmap
 
 **Best for:** Maintainers, framework builders, deep understanding
 
@@ -244,7 +244,7 @@ Examples for:
 - `index.ts` - Public exports
 
 **Project Level:**
-- `../README.md` - Main project documentation
+- `../../README.md` - Main project documentation
 - `../API.md` - Full architecture overview
 
 **Lower-Level APIs:**
