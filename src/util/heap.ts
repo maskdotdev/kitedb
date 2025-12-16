@@ -169,3 +169,4 @@ export class MinHeap<T> {
     this.itemToIndex.set(this.heap[j]!.item, j);
   }
 }
+
