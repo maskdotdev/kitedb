@@ -52,6 +52,10 @@ import {
   defineEtype,
   getNodeByKey,
   optimize,
+  listNodes,
+  listEdges,
+  countNodes,
+  countEdges,
 } from './src/index.ts';
 
 // Open or create a database
@@ -140,6 +144,14 @@ nodeExists(db, nodeId);
 
 // Look up by key
 getNodeByKey(db, 'user:alice');
+
+// List all nodes (lazy generator)
+for (const nodeId of listNodes(db)) {
+  console.log(nodeId);
+}
+
+// Count total nodes (O(1) optimized)
+const totalNodes = countNodes(db);
 ```
 
 ### Edge Operations
@@ -168,6 +180,20 @@ for (const edge of getNeighborsIn(db, nodeId)) {
 for (const edge of getNeighborsOut(db, nodeId, knowsEtype)) {
   // Only edges of type 'knows'
 }
+
+// List all edges (lazy generator)
+for (const edge of listEdges(db)) {
+  console.log(`${edge.src} -> ${edge.dst}`);
+}
+
+// List edges of specific type
+for (const edge of listEdges(db, { etype: knowsEtype })) {
+  console.log(`${edge.src} knows ${edge.dst}`);
+}
+
+// Count total edges (O(1) optimized when unfiltered)
+const totalEdges = countEdges(db);
+const knowsCount = countEdges(db, { etype: knowsEtype });
 ```
 
 ### Schema Definitions
@@ -318,9 +344,53 @@ console.log('Cache hits:', cacheStats.hits);
 console.log('Cache misses:', cacheStats.misses);
 ```
 
-## File Format
+## File Formats
 
-The database stores files in the following structure:
+Ray supports two storage formats:
+
+### Single-File Format (`.raydb`) - Recommended
+
+A SQLite-style single-file database for simpler deployment and backup:
+
+```typescript
+import {
+  openSingleFileDB,
+  closeSingleFileDB,
+  optimizeSingleFile,
+  vacuumSingleFile,
+} from '@ray-db/ray';
+
+// Open or create a single-file database
+const db = await openSingleFileDB('./my-graph.raydb', {
+  readOnly?: boolean,        // Open in read-only mode
+  createIfMissing?: boolean, // Create if doesn't exist (default: true)
+  lockFile?: boolean,        // Use file locking (default: true)
+  pageSize?: number,         // Page size (default: 4096, must be power of 2)
+  walSize?: number,          // WAL buffer size in bytes (default: 64MB)
+  mvcc?: boolean,            // Enable MVCC
+  cache?: CacheOptions,      // Enable caching
+});
+
+// All the same operations work (beginTx, createNode, etc.)
+
+// Compact to merge delta into snapshot
+await optimizeSingleFile(db);
+
+// Vacuum to reclaim space
+await vacuumSingleFile(db);
+
+// Close the database
+await closeSingleFileDB(db);
+```
+
+The single-file format contains:
+- **Header (page 0)**: Magic, version, page size, snapshot/WAL locations
+- **WAL Area**: Circular buffer for write-ahead log records
+- **Snapshot Area**: CSR snapshot data (mmap-friendly)
+
+### Multi-File Format (directory)
+
+The original directory-based format:
 
 ```
 db/

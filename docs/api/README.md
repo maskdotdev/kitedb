@@ -103,6 +103,8 @@ The main database context with methods for CRUD operations, transactions, and ma
 - `delete<N>(nodeRef: NodeRef<N>): Promise<boolean>` - Delete a specific node
 - `get<N>(node: N, key: any): Promise<NodeRef<N> & InferNode<N> | null>` - Look up node by key
 - `exists(nodeRef: NodeRef): Promise<boolean>` - Check if node exists
+- `all<N>(nodeDef: N): AsyncGenerator<NodeRef<N> & InferNode<N>>` - List all nodes of type
+- `count<N>(nodeDef?: N): Promise<number>` - Count nodes (optionally filtered by type)
 
 **Edge Operations:**
 
@@ -110,6 +112,8 @@ The main database context with methods for CRUD operations, transactions, and ma
 - `unlink<E>(src: NodeRef, edge: E, dst: NodeRef): Promise<void>` - Delete edge
 - `hasEdge<E>(src: NodeRef, edge: E, dst: NodeRef): Promise<boolean>` - Check edge exists
 - `updateEdge<E>(src, edge, dst): UpdateEdgeBuilder<E>` - Update edge properties
+- `allEdges<E>(edgeDef?: E): AsyncGenerator<EdgeData>` - List all edges (optionally filtered by type)
+- `countEdges<E>(edgeDef?: E): Promise<number>` - Count edges (optionally filtered by type)
 
 **Traversal:**
 
@@ -362,6 +366,39 @@ const edges = await db
 for (const edge of edges) {
   console.log(`${edge.$src} --${edge.$etype}--> ${edge.$dst}`);
 }
+```
+
+### Listing and Counting
+
+List and count all nodes or edges with optional type filtering:
+
+```typescript
+// List all users (async generator - memory efficient)
+for await (const user of db.all(user)) {
+  console.log(user.name, user.$key);
+}
+
+// Count all nodes in database (fast - O(1) when no filter)
+const totalNodes = await db.count();
+
+// Count users only (requires iteration - O(n))
+const userCount = await db.count(user);
+
+// List all edges
+for await (const edge of db.allEdges()) {
+  console.log(`${edge.src.$id} -> ${edge.dst.$id}`);
+}
+
+// List only "knows" edges
+for await (const edge of db.allEdges(knows)) {
+  console.log(`${edge.src.$key} knows ${edge.dst.$key}`, edge.props);
+}
+
+// Count all edges (fast - O(1) when no filter)
+const totalEdges = await db.countEdges();
+
+// Count edges of specific type
+const knowsCount = await db.countEdges(knows);
 ```
 
 ## Advanced Patterns

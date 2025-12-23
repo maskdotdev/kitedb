@@ -100,6 +100,7 @@ Provides:
 - Transaction primitives (`beginTx`, `commit`, `rollback`)
 - Property access (get/set)
 - Edge queries and traversal
+- **Node/edge listing and counting**
 - Database maintenance
 - **MVCC transaction support**
 
@@ -121,6 +122,18 @@ const knows = defineEtype(tx, 'knows');
 addEdge(tx, alice, knows, bob);
 
 await commit(tx);
+
+// List and count nodes/edges
+for (const nodeId of listNodes(db)) {
+  console.log('Node:', nodeId);
+}
+
+for (const edge of listEdges(db, { etype: knows })) {
+  console.log(`${edge.src} knows ${edge.dst}`);
+}
+
+console.log('Total nodes:', countNodes(db));
+console.log('Total edges:', countEdges(db));
 ```
 
 ### 3. MVCC Layer (`src/mvcc/`)
@@ -384,6 +397,10 @@ Optional properties can be omitted or set to `undefined`.
 - **Snapshot read**: Zero-copy mmap
 - **MVCC overhead**: ~0% for single transactions, minimal for concurrent
 - **Pathfinding**: O((V + E) log V) for Dijkstra/A*
+- **Node count**: O(1) using snapshot metadata + delta adjustments
+- **Edge count**: O(1) when unfiltered, O(n+m) when filtered by type
+- **Node listing**: O(n) lazy generator, memory efficient
+- **Edge listing**: O(n+m) lazy generator, memory efficient
 
 ## MVCC Details
 
