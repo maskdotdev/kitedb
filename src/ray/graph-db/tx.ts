@@ -49,6 +49,17 @@ import { WalRecordType } from "../../types.ts";
 import { WAL_DIR, walFilename } from "../../constants.ts";
 import { getCache } from "./cache-helper.ts";
 import { getMvccManager, isMvccEnabled } from "../../mvcc/index.ts";
+import { createWalBuffer } from "../../core/wal-buffer.ts";
+import { WalBufferFullError } from "../../types.ts";
+import { writeHeader, updateHeaderForCommit } from "../../core/header.ts";
+import type { FilePager } from "../../core/pager.ts";
+import { 
+  checkpoint, 
+  shouldCheckpoint, 
+  triggerBackgroundCheckpoint,
+  isCheckpointRunning,
+  getCheckpointPromise,
+} from "./checkpoint.ts";
 
 function createTxState(txid: bigint): TxState {
   return {
@@ -425,12 +436,27 @@ export async function commit(handle: TxHandle): Promise<void> {
   });
 
   // Append to WAL
-  const walPath = join(
-    db.path,
-    WAL_DIR,
-    walFilename(db._manifest.activeWalSeg),
-  );
-  db._walOffset = await appendToWal(walPath, records);
+  if (db._isSingleFile) {
+    // Clear current transaction before WAL commit so auto-checkpoint can run
+    // (checkpoint calls optimizeSingleFile which checks for active transactions)
+    // Once we start writing to WAL, the transaction is effectively committed
+    if (!isMvccEnabled(db)) {
+      db._currentTx = null;
+    }
+    // Single-file commit path
+    await commitSingleFile(db, records);
+  } else {
+    // Multi-file commit path
+    if (!db._manifest) {
+      throw new Error("Multi-file database has no manifest");
+    }
+    const walPath = join(
+      db.path,
+      WAL_DIR,
+      walFilename(db._manifest.activeWalSeg),
+    );
+    db._walOffset = await appendToWal(walPath, records);
+  }
 
   // Apply to delta
   for (const [labelId, name] of tx.pendingNewLabels) {
@@ -622,5 +648,137 @@ function getOldEdgePropValue(
   // in version chains. This is an acceptable trade-off since most active
   // edge property modifications will go through delta first.
   return undefined;
+}
+
+/**
+ * Commit records to single-file WAL buffer
+ * 
+ * Uses background checkpointing with backpressure:
+ * 1. If checkpoint threshold reached, trigger non-blocking background checkpoint
+ * 2. If checkpoint running and secondary WAL > 90% full, block until checkpoint completes
+ * 3. Write to active WAL region (primary normally, secondary during checkpoint)
+ * 4. If WAL buffer full, wait for checkpoint and retry
+ */
+async function commitSingleFile(db: GraphDB, records: WalRecord[]): Promise<void> {
+  if (!db._pager || !db._header) {
+    throw new Error("Single-file database missing pager or header");
+  }
+  
+  const pager = db._pager as FilePager;
+  let walBuffer = createWalBuffer(pager, db._header);
+  
+  // Check for backpressure: if checkpoint is running and secondary region is nearly full
+  const BACKPRESSURE_THRESHOLD = 0.9;
+  if (isCheckpointRunning(db)) {
+    const secondaryUsage = walBuffer.getSecondaryRegionUsage();
+    if (secondaryUsage >= BACKPRESSURE_THRESHOLD) {
+      // Wait for checkpoint to complete before continuing
+      await waitForCheckpoint(db);
+      // Always refresh header and walBuffer after checkpoint
+      if (!db._header) {
+        throw new Error("Header lost after checkpoint");
+      }
+      walBuffer = createWalBuffer(pager, db._header);
+    }
+  }
+  
+  // Check if auto-checkpoint should be triggered (non-blocking)
+  if (db._autoCheckpoint && !isCheckpointRunning(db) && shouldCheckpoint(db, records)) {
+    // Trigger background checkpoint (non-blocking, returns immediately)
+    triggerBackgroundCheckpoint(db);
+    
+    // Refresh walBuffer with updated header (region switched to secondary)
+    if (!db._header) {
+      throw new Error("Header lost after checkpoint trigger");
+    }
+    walBuffer = createWalBuffer(pager, db._header);
+  }
+  
+  // Write records to active WAL region
+  // If WAL buffer full and checkpoint is running, wait and retry
+  try {
+    for (const record of records) {
+      walBuffer.writeRecord(record);
+    }
+  } catch (error) {
+    if (error instanceof WalBufferFullError && isCheckpointRunning(db)) {
+      // Secondary region filled up during checkpoint - wait for checkpoint to complete
+      await waitForCheckpoint(db);
+      
+      // Checkpoint completed - refresh and retry
+      if (!db._header) {
+        throw new Error("Header lost after checkpoint");
+      }
+      walBuffer = createWalBuffer(pager, db._header);
+      
+      // Retry writing all records (walBuffer was refreshed, records weren't committed yet)
+      for (const record of records) {
+        walBuffer.writeRecord(record);
+      }
+    } else {
+      throw error;
+    }
+  }
+  
+  // Flush WAL buffer pending writes to disk before updating header
+  walBuffer.flushPendingWrites();
+  
+  // Update header with new WAL head and V2 fields
+  // writeHeader() internally calls pager.sync() to ensure durability
+  const baseHeader = updateHeaderForCommit(
+    db._header,
+    walBuffer.getHead(),
+    BigInt(db._nextNodeId - 1),
+    db._nextTxId,
+  );
+  
+  // Also update V2 fields for dual-region WAL
+  // IMPORTANT: Re-read from db._header to handle race with checkpoint completion.
+  // We must preserve checkpoint's walPrimaryHead if it just completed.
+  // 
+  // There are two cases:
+  // 1. We wrote to PRIMARY (no checkpoint running) - use walBuffer's heads
+  // 2. We wrote to SECONDARY (checkpoint running) - preserve primaryHead, update secondaryHead
+  //
+  // We detect case 2 by checking if walBuffer's activeRegion was 1 when we wrote.
+  const wroteToSecondary = walBuffer.getActiveRegion() === 1;
+  const currentActiveRegion = db._header.activeWalRegion;
+  
+  const newHeader = {
+    ...baseHeader,
+    // If we wrote to secondary, keep whatever primaryHead is current (checkpoint may have reset it)
+    // If we wrote to primary, use our walBuffer's primaryHead
+    walPrimaryHead: wroteToSecondary ? db._header.walPrimaryHead : walBuffer.getPrimaryHead(),
+    walSecondaryHead: walBuffer.getSecondaryHead(),
+    activeWalRegion: currentActiveRegion,
+  };
+  
+  await writeHeader(pager, newHeader);
+  
+  // Update in-memory state
+  // IMPORTANT: Re-read activeWalRegion from current db._header in case checkpoint
+  // completed while we were writing. Preserve checkpoint's activeWalRegion=0 if set.
+  const finalHeader = {
+    ...newHeader,
+    activeWalRegion: db._header.activeWalRegion,
+  };
+  (db as { _header: typeof finalHeader })._header = finalHeader;
+  db._walWritePos = Number(walBuffer.getHead());
+}
+
+/**
+ * Wait for a running checkpoint to complete
+ */
+async function waitForCheckpoint(db: GraphDB): Promise<void> {
+  const checkpointPromise = getCheckpointPromise(db);
+  if (checkpointPromise) {
+    await checkpointPromise;
+  } else {
+    // Checkpoint is in 'completing' state - spin until it finishes
+    // The completing phase is quick (just merging and header update)
+    while (isCheckpointRunning(db)) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+  }
 }
 

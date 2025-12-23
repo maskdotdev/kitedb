@@ -275,6 +275,15 @@ export interface OpenOptions {
   mvccGcInterval?: number; // GC interval in ms (default: 5000)
   mvccRetentionMs?: number; // Minimum version retention time in ms (default: 60000)
   mvccMaxChainDepth?: number; // Maximum version chain depth before truncation (default: 10)
+  
+  // Single-file options
+  autoCheckpoint?: boolean;      // Default: true - auto-checkpoint when WAL fills
+  checkpointThreshold?: number;  // Default: 0.8 - trigger checkpoint at 80% WAL usage
+  cacheSnapshot?: boolean;       // Default: true - cache parsed snapshot in memory
+  
+  // Single-file creation options
+  pageSize?: number;             // Default: 4096 - page size for new databases
+  walSize?: number;              // Default: 64MB - WAL area size
 }
 
 // ============================================================================
@@ -469,13 +478,23 @@ export interface SnapshotData {
 export interface GraphDB {
   readonly path: string;
   readonly readOnly: boolean;
+  readonly _isSingleFile: boolean;
 
-  // Internal state (opaque to users)
-  _manifest: ManifestV1;
+  // Multi-file specific (null for single-file)
+  _manifest: ManifestV1 | null;
   _snapshot: SnapshotData | null;
-  _delta: DeltaState;
   _walFd: number | null;
   _walOffset: number;
+
+  // Single-file specific (null for multi-file)
+  _header: DbHeaderV1 | null;
+  _pager: Pager | null;
+  _snapshotMmap: Uint8Array | null;
+  _snapshotCache: SnapshotData | null;  // Cached parsed snapshot for single-file
+  _walWritePos: number;
+
+  // Shared fields
+  _delta: DeltaState;
   _nextNodeId: number;
   _nextLabelId: number;
   _nextEtypeId: number;
@@ -486,6 +505,14 @@ export interface GraphDB {
   _cache?: unknown; // CacheManager instance (opaque to users)
   _mvcc?: unknown; // MVCC manager instance (opaque to users)
   _mvccEnabled?: boolean; // Cached MVCC enabled flag for fast checks
+
+  // Single-file options
+  _autoCheckpoint?: boolean;
+  _checkpointThreshold?: number;
+  _cacheSnapshot?: boolean;
+  
+  // Background checkpoint state
+  _checkpointState?: CheckpointState;
 }
 
 export interface TxHandle {
@@ -502,3 +529,173 @@ export interface NodeOpts {
   labels?: LabelID[];
   props?: Map<PropKeyID, PropValue>;
 }
+
+// ============================================================================
+// Single-File Database Format Types
+// ============================================================================
+
+/**
+ * Database header for single-file format (4KB page)
+ * Based on spec from docs/SINGLE_FILE_MIGRATION.md
+ * 
+ * Layout (V2 with dual-buffer WAL support):
+ * Offset  Size    Description
+ * ──────────────────────────────────────────────────
+ * 0       16      Magic: "RayDB format 1\0"
+ * 16      4       Page size (power of 2, 4KB-64KB)
+ * 20      4       Format version (1 or 2)
+ * 24      4       Min reader version (1)
+ * 28      4       Flags (WAL mode, compression, etc.)
+ * 32      8       Change counter (incremented on commit)
+ * 40      8       Database size in pages
+ * 48      8       Snapshot start page
+ * 56      8       Snapshot page count
+ * 64      8       WAL start page
+ * 72      8       WAL page count  
+ * 80      8       WAL head offset (circular buffer head)
+ * 88      8       WAL tail offset (circular buffer tail)
+ * 96      8       Active snapshot generation
+ * 104     8       Previous snapshot generation
+ * 112     8       Max node ID
+ * 120     8       Next TX ID
+ * 128     8       Last commit timestamp
+ * 136     8       Schema cookie (for cache invalidation)
+ * --- V2 fields for dual-buffer WAL ---
+ * 144     8       WAL primary head (primary region write position)
+ * 152     8       WAL secondary head (secondary region write position)
+ * 160     1       Active WAL region (0=primary, 1=secondary)
+ * 161     1       Checkpoint in progress flag (for crash recovery)
+ * 162     14      Reserved for expansion
+ * 176     4       Header checksum (CRC32C)
+ * 180     ...     Padding to page boundary
+ * 4092    4       Footer checksum of first 4088 bytes
+ */
+export interface DbHeaderV1 {
+  /** Magic bytes (16 bytes) - "RayDB format 1\0" */
+  magic: Uint8Array;
+  /** Page size (power of 2, 4KB-64KB) */
+  pageSize: number;
+  /** Format version */
+  version: number;
+  /** Minimum reader version required */
+  minReaderVersion: number;
+  /** Flags (WAL mode, compression, etc.) */
+  flags: number;
+  /** Change counter (incremented on each commit) */
+  changeCounter: bigint;
+  /** Total database size in pages */
+  dbSizePages: bigint;
+  /** Snapshot area start page */
+  snapshotStartPage: bigint;
+  /** Snapshot area page count */
+  snapshotPageCount: bigint;
+  /** WAL area start page */
+  walStartPage: bigint;
+  /** WAL area page count */
+  walPageCount: bigint;
+  /** WAL circular buffer head offset (bytes from WAL start) */
+  walHead: bigint;
+  /** WAL circular buffer tail offset (bytes from WAL start) */
+  walTail: bigint;
+  /** Active snapshot generation */
+  activeSnapshotGen: bigint;
+  /** Previous snapshot generation (for rollback) */
+  prevSnapshotGen: bigint;
+  /** Maximum node ID allocated */
+  maxNodeId: bigint;
+  /** Next transaction ID */
+  nextTxId: bigint;
+  /** Last commit timestamp (unix ms) */
+  lastCommitTs: bigint;
+  /** Schema cookie for cache invalidation */
+  schemaCookie: bigint;
+  /** WAL primary region head (bytes from WAL start) - V2 */
+  walPrimaryHead: bigint;
+  /** WAL secondary region head (bytes from WAL start) - V2 */
+  walSecondaryHead: bigint;
+  /** Active WAL region (0=primary, 1=secondary) - V2 */
+  activeWalRegion: 0 | 1;
+  /** Checkpoint in progress flag (for crash recovery) - V2 */
+  checkpointInProgress: 0 | 1;
+  /** Reserved for future expansion */
+  reserved: Uint8Array;
+  /** Header checksum (CRC32C of bytes 0-175) */
+  headerChecksum: number;
+  /** Footer checksum (CRC32C of bytes 0-4087) */
+  footerChecksum: number;
+}
+
+/** Size of fixed header fields before reserved area (in bytes) */
+export const DB_HEADER_FIXED_SIZE = 176;
+
+/** Size of reserved area in header (in bytes) - reduced for V2 fields */
+export const DB_HEADER_RESERVED_SIZE = 14;
+
+/** Size of V2 fields (walPrimaryHead + walSecondaryHead + activeWalRegion + checkpointInProgress) */
+export const DB_HEADER_V2_FIELDS_SIZE = 8 + 8 + 1 + 1; // 18 bytes
+
+/**
+ * Checkpoint state for background checkpointing
+ */
+export type CheckpointState = 
+  | { status: 'idle' }
+  | { status: 'running'; promise: Promise<void> }
+  | { status: 'completing' };
+
+/**
+ * WAL buffer full error - thrown when circular buffer is exhausted
+ */
+export class WalBufferFullError extends Error {
+  constructor() {
+    super('WAL buffer full: checkpoint required before continuing writes');
+    this.name = 'WalBufferFullError';
+  }
+}
+
+/**
+ * Options for opening a single-file database
+ * @deprecated Use OpenOptions directly - single-file options are now included
+ */
+export type SingleFileOpenOptions = OpenOptions;
+
+/**
+ * Pager interface for page-based I/O operations
+ */
+export interface Pager {
+  /** File descriptor */
+  readonly fd: number;
+  /** Page size in bytes */
+  readonly pageSize: number;
+  /** Total file size in bytes */
+  readonly fileSize: number;
+
+  /** Read a single page by page number */
+  readPage(pageNum: number): Uint8Array;
+  
+  /** Write a single page by page number */
+  writePage(pageNum: number, data: Uint8Array): void;
+  
+  /** Memory-map a range of pages (for snapshot access) */
+  mmapRange(startPage: number, pageCount: number): Uint8Array;
+  
+  /** Allocate new pages at end of file */
+  allocatePages(count: number): number;
+  
+  /** Mark pages as free (for vacuum) */
+  freePages(startPage: number, count: number): void;
+  
+  /** Sync file to disk */
+  sync(): Promise<void>;
+  
+  /** Relocate an area to a new location (for growth) */
+  relocateArea(srcPage: number, pageCount: number, dstPage: number): Promise<void>;
+  
+  /** Close the pager */
+  close(): void;
+}
+
+/**
+ * SingleFileDB is now an alias for GraphDB with _isSingleFile: true
+ * @deprecated Use GraphDB directly
+ */
+export type SingleFileDB = GraphDB;

@@ -67,9 +67,20 @@ export async function loadSnapshot(
 }
 
 /**
+ * Options for parsing a snapshot
+ */
+export interface ParseSnapshotOptions {
+  /** Skip CRC validation (for performance when reading cached/trusted data) */
+  skipCrcValidation?: boolean;
+}
+
+/**
  * Parse a snapshot from a buffer (mmap'd or regular)
  */
-export function parseSnapshot(buffer: Uint8Array): SnapshotData {
+export function parseSnapshot(
+  buffer: Uint8Array,
+  options?: ParseSnapshotOptions,
+): SnapshotData {
   if (buffer.length < SNAPSHOT_HEADER_SIZE) {
     throw new Error(`Snapshot too small: ${buffer.length} bytes`);
   }
@@ -105,7 +116,7 @@ export function parseSnapshot(buffer: Uint8Array): SnapshotData {
   offset += 8;
   const numEdges = readU64(view, offset);
   offset += 8;
-  const maxNodeId = Number(readU64(view, offset));
+  const maxNodeId = readU64(view, offset);
   offset += 8;
   const numLabels = readU64(view, offset);
   offset += 8;
@@ -154,13 +165,34 @@ export function parseSnapshot(buffer: Uint8Array): SnapshotData {
     });
   }
 
-  // Verify footer CRC
-  const footerCrc = readU32(view, buffer.length - 4);
-  const computedCrc = crc32c(buffer.subarray(0, buffer.length - 4));
-  if (footerCrc !== computedCrc) {
-    throw new Error(
-      `Snapshot CRC mismatch: stored=0x${footerCrc.toString(16)}, computed=0x${computedCrc.toString(16)}`,
-    );
+  // Calculate actual snapshot size from section table
+  // The actual size is: max(section.offset + section.length) + 4 (for CRC)
+  // This handles page-aligned buffers where buffer.length may be larger than actual data
+  let maxSectionEnd = SNAPSHOT_HEADER_SIZE + SectionId._COUNT * SECTION_ENTRY_SIZE;
+  for (const section of sections) {
+    if (section.length > 0n) {
+      const sectionEnd = Number(section.offset) + Number(section.length);
+      if (sectionEnd > maxSectionEnd) {
+        maxSectionEnd = sectionEnd;
+      }
+    }
+  }
+  // Round up to next 64-byte alignment (sections are aligned)
+  const SECTION_ALIGNMENT = 64;
+  const alignedEnd = Math.ceil(maxSectionEnd / SECTION_ALIGNMENT) * SECTION_ALIGNMENT;
+  const actualSnapshotSize = alignedEnd + 4; // +4 for CRC
+
+  // Verify footer CRC (optional - can be skipped for performance on trusted/cached data)
+  if (!options?.skipCrcValidation) {
+    // Use actualSnapshotSize if buffer is page-aligned (larger than actual data)
+    const crcOffset = actualSnapshotSize <= buffer.length ? actualSnapshotSize - 4 : buffer.length - 4;
+    const footerCrc = readU32(view, crcOffset);
+    const computedCrc = crc32c(buffer.subarray(0, crcOffset));
+    if (footerCrc !== computedCrc) {
+      throw new Error(
+        `Snapshot CRC mismatch: stored=0x${footerCrc.toString(16)}, computed=0x${computedCrc.toString(16)}`,
+      );
+    }
   }
 
   // Cache for decompressed section data
@@ -349,6 +381,27 @@ export function getOutEdges(
 }
 
 /**
+ * Iterate out-edges for a physical node (generator version)
+ * 
+ * Optimization: Avoids array allocation for large degree nodes.
+ * Use this when you don't need to materialize all edges at once.
+ */
+export function* iterateOutEdges(
+  snapshot: SnapshotData,
+  phys: PhysNode,
+): Generator<{ dst: PhysNode; etype: ETypeID }> {
+  const start = readU32At(snapshot.outOffsets, phys);
+  const end = readU32At(snapshot.outOffsets, phys + 1);
+
+  for (let i = start; i < end; i++) {
+    yield {
+      dst: readU32At(snapshot.outDst, i),
+      etype: readU32At(snapshot.outEtype, i),
+    };
+  }
+}
+
+/**
  * Get in-edges for a physical node
  */
 export function getInEdges(
@@ -371,6 +424,32 @@ export function getInEdges(
     });
   }
   return edges;
+}
+
+/**
+ * Iterate in-edges for a physical node (generator version)
+ * 
+ * Optimization: Avoids array allocation for large degree nodes.
+ * Use this when you don't need to materialize all edges at once.
+ */
+export function* iterateInEdges(
+  snapshot: SnapshotData,
+  phys: PhysNode,
+): Generator<{ src: PhysNode; etype: ETypeID; outIndex: number }> {
+  if (!snapshot.inOffsets || !snapshot.inSrc || !snapshot.inEtype) {
+    return;
+  }
+
+  const start = readU32At(snapshot.inOffsets, phys);
+  const end = readU32At(snapshot.inOffsets, phys + 1);
+
+  for (let i = start; i < end; i++) {
+    yield {
+      src: readU32At(snapshot.inSrc, i),
+      etype: readU32At(snapshot.inEtype, i),
+      outIndex: snapshot.inOutIndex ? readU32At(snapshot.inOutIndex, i) : 0,
+    };
+  }
 }
 
 /**

@@ -34,6 +34,58 @@ export const SNAPSHOTS_DIR = "snapshots";
 export const WAL_DIR = "wal";
 export const TRASH_DIR = "trash";
 
+// ============================================================================
+// Single-file format constants
+// ============================================================================
+
+/** Magic bytes for single-file format: "RayDB format 1\0" (16 bytes) */
+export const MAGIC_RAYDB = new Uint8Array([
+  0x52, 0x61, 0x79, 0x44, 0x42, 0x20, 0x66, 0x6f, // "RayDB fo"
+  0x72, 0x6d, 0x61, 0x74, 0x20, 0x31, 0x00, 0x00, // "rmat 1\0\0"
+]);
+
+/** Single-file format version */
+export const VERSION_SINGLE_FILE = 1;
+export const MIN_READER_SINGLE_FILE = 1;
+
+/** Single-file extension */
+export const EXT_RAYDB = ".raydb";
+
+/** Default page size (4KB - matches OS page size and SSD blocks) */
+export const DEFAULT_PAGE_SIZE = 4096;
+
+/** Minimum page size (4KB) */
+export const MIN_PAGE_SIZE = 4096;
+
+/** Maximum page size (64KB) */
+export const MAX_PAGE_SIZE = 65536;
+
+/** OS page size for mmap alignment validation */
+export const OS_PAGE_SIZE = 4096;
+
+/** Database header size (first page) */
+export const DB_HEADER_SIZE = 4096;
+
+/** Database header reserved area size - reduced for V2 fields */
+export const DB_HEADER_RESERVED_SIZE = 14;
+
+/** Default WAL buffer size (1MB - grows dynamically as needed) */
+export const WAL_DEFAULT_SIZE = 1 * 1024 * 1024;
+
+/** Minimum WAL to snapshot ratio (10%) */
+export const WAL_MIN_SNAPSHOT_RATIO = 0.1;
+
+/** SQLite-style lock byte offset (2^30 = 1GB) */
+export const LOCK_BYTE_OFFSET = 0x40000000;
+
+/** Lock byte range size */
+export const LOCK_BYTE_RANGE = 512;
+
+// Database header flags
+export const DB_FLAG_WAL_MODE = 1 << 0;
+export const DB_FLAG_COMPRESSION = 1 << 1;
+export const DB_FLAG_ENCRYPTED = 1 << 2;
+
 // Thresholds for compact recommendation
 export const COMPACT_EDGE_RATIO = 0.1; // 10% of snapshot edges
 export const COMPACT_NODE_RATIO = 0.1; // 10% of snapshot nodes
