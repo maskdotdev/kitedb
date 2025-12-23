@@ -44,6 +44,10 @@ import {
   openGraphDB,
   optimize,
   stats,
+  listNodes,
+  listEdges,
+  countNodes,
+  countEdges,
 } from "../src/index.ts";
 
 // =============================================================================
@@ -706,6 +710,118 @@ function benchmarkMultiHop(
 }
 
 // =============================================================================
+// Listing Benchmarks
+// =============================================================================
+
+function benchmarkListing(
+  db: GraphDB,
+  graph: GraphData,
+  iterations: number,
+): void {
+  logger.log("\n--- Node and Edge Listing ---");
+
+  // Benchmark countNodes() - should be O(1)
+  const countNodesTracker = new LatencyTracker();
+  for (let i = 0; i < iterations; i++) {
+    const start = Bun.nanoseconds();
+    countNodes(db);
+    countNodesTracker.record(Bun.nanoseconds() - start);
+  }
+  printLatencyTable("countNodes() - O(1) optimized", countNodesTracker.getStats());
+
+  // Benchmark countEdges() - should be O(1) when unfiltered
+  const countEdgesTracker = new LatencyTracker();
+  for (let i = 0; i < iterations; i++) {
+    const start = Bun.nanoseconds();
+    countEdges(db);
+    countEdgesTracker.record(Bun.nanoseconds() - start);
+  }
+  printLatencyTable("countEdges() - O(1) optimized", countEdgesTracker.getStats());
+
+  // Benchmark countEdges() with edge type filter - O(n+m)
+  const countEdgesFilteredTracker = new LatencyTracker();
+  const itersFiltered = Math.min(iterations, 100); // Fewer iterations since this is slower
+  for (let i = 0; i < itersFiltered; i++) {
+    const start = Bun.nanoseconds();
+    countEdges(db, { etype: graph.etypes.calls });
+    countEdgesFilteredTracker.record(Bun.nanoseconds() - start);
+  }
+  printLatencyTable(
+    "countEdges(etype=CALLS) - O(n+m) filtered",
+    countEdgesFilteredTracker.getStats(),
+  );
+
+  // Benchmark listNodes() full iteration
+  const listNodesTracker = new LatencyTracker();
+  const itersListNodes = Math.min(iterations, 100);
+  for (let i = 0; i < itersListNodes; i++) {
+    const start = Bun.nanoseconds();
+    let count = 0;
+    for (const _ of listNodes(db)) {
+      count++;
+    }
+    listNodesTracker.record(Bun.nanoseconds() - start);
+  }
+  const listNodesStats = listNodesTracker.getStats();
+  const nodesPerSec = listNodesStats.sum > 0 
+    ? (graph.nodeIds.length * listNodesStats.count) / (listNodesStats.sum / 1_000_000_000) 
+    : 0;
+  logger.log(
+    `${"listNodes() - full iteration".padEnd(45)} p50=${formatLatency(listNodesStats.p50).padStart(10)} p95=${formatLatency(listNodesStats.p95).padStart(10)} (${formatNumber(Math.round(nodesPerSec))} nodes/sec)`,
+  );
+
+  // Benchmark listEdges() full iteration
+  const listEdgesTracker = new LatencyTracker();
+  const itersListEdges = Math.min(iterations, 50);
+  for (let i = 0; i < itersListEdges; i++) {
+    const start = Bun.nanoseconds();
+    let count = 0;
+    for (const _ of listEdges(db)) {
+      count++;
+    }
+    listEdgesTracker.record(Bun.nanoseconds() - start);
+  }
+  const listEdgesStats = listEdgesTracker.getStats();
+  const edgesPerSec = listEdgesStats.sum > 0 
+    ? (graph.outDegree.size * 5 * listEdgesStats.count) / (listEdgesStats.sum / 1_000_000_000) // approximate edge count
+    : 0;
+  logger.log(
+    `${"listEdges() - full iteration".padEnd(45)} p50=${formatLatency(listEdgesStats.p50).padStart(10)} p95=${formatLatency(listEdgesStats.p95).padStart(10)} (${formatNumber(Math.round(edgesPerSec))} edges/sec est.)`,
+  );
+
+  // Benchmark listEdges() with edge type filter
+  const listEdgesFilteredTracker = new LatencyTracker();
+  for (let i = 0; i < itersListEdges; i++) {
+    const start = Bun.nanoseconds();
+    let count = 0;
+    for (const _ of listEdges(db, { etype: graph.etypes.calls })) {
+      count++;
+    }
+    listEdgesFilteredTracker.record(Bun.nanoseconds() - start);
+  }
+  printLatencyTable(
+    "listEdges(etype=CALLS) - filtered iteration",
+    listEdgesFilteredTracker.getStats(),
+  );
+
+  // Verify counts match
+  const nodeCount = countNodes(db);
+  const edgeCount = countEdges(db);
+  let iteratedNodes = 0;
+  let iteratedEdges = 0;
+  for (const _ of listNodes(db)) iteratedNodes++;
+  for (const _ of listEdges(db)) iteratedEdges++;
+  
+  logger.log(`\n  Verification:`);
+  logger.log(`    countNodes() = ${formatNumber(nodeCount)}, iterated = ${formatNumber(iteratedNodes)} ${nodeCount === iteratedNodes ? '✓' : '✗ MISMATCH'}`);
+  logger.log(`    countEdges() = ${formatNumber(edgeCount)}, iterated = ${formatNumber(iteratedEdges)} ${edgeCount === iteratedEdges ? '✓' : '✗ MISMATCH'}`);
+  
+  if (nodeCount !== iteratedNodes || edgeCount !== iteratedEdges) {
+    logger.log(`    Note: Mismatches may indicate a bug in listing/counting implementation`);
+  }
+}
+
+// =============================================================================
 // Delta Impact Benchmark
 // =============================================================================
 
@@ -894,7 +1010,7 @@ async function runBenchmarks(config: BenchConfig) {
   const testDir = await mkdtemp(join(tmpdir(), "ray-bench-"));
 
   try {
-    logger.log("\n[1/9] Building graph...");
+    logger.log("\n[1/10] Building graph...");
     const db = await openGraphDB(testDir);
     const startBuild = performance.now();
     const graph = await buildRealisticGraph(db, config);
@@ -907,7 +1023,7 @@ async function runBenchmarks(config: BenchConfig) {
       `  Avg out-degree: ${avgDegree.toFixed(1)}, Top 5: ${degrees.slice(0, 5).join(", ")}`,
     );
 
-    logger.log("\n[2/9] Compacting...");
+    logger.log("\n[2/10] Compacting...");
     const startCompact = performance.now();
     await optimize(db);
     logger.log(
@@ -919,22 +1035,25 @@ async function runBenchmarks(config: BenchConfig) {
       `  Snapshot: ${formatNumber(Number(dbStats.snapshotNodes))} nodes, ${formatNumber(Number(dbStats.snapshotEdges))} edges`,
     );
 
-    logger.log("\n[3/9] Key lookup benchmarks...");
+    logger.log("\n[3/10] Key lookup benchmarks...");
     benchmarkKeyLookups(db, graph, config.iterations);
 
-    logger.log("\n[4/9] Traversal benchmarks...");
+    logger.log("\n[4/10] Traversal benchmarks...");
     benchmarkTraversals(db, graph, config.iterations);
 
-    logger.log("\n[5/9] Filtered traversal benchmarks...");
+    logger.log("\n[5/10] Filtered traversal benchmarks...");
     benchmarkFilteredTraversals(db, graph, config.iterations);
 
-    logger.log("\n[6/9] Edge existence benchmarks...");
+    logger.log("\n[6/10] Edge existence benchmarks...");
     benchmarkEdgeExists(db, graph, config.iterations);
 
-    logger.log("\n[7/9] Multi-hop benchmarks...");
+    logger.log("\n[7/10] Multi-hop benchmarks...");
     benchmarkMultiHop(db, graph, config.iterations);
 
-    logger.log("\n[8/9] Write benchmarks...");
+    logger.log("\n[8/10] Listing benchmarks...");
+    benchmarkListing(db, graph, config.iterations);
+
+    logger.log("\n[9/10] Write benchmarks...");
     await benchmarkWrites(db, graph, config.iterations);
 
     // Compact again after writes to get accurate size
@@ -943,7 +1062,7 @@ async function runBenchmarks(config: BenchConfig) {
     await closeGraphDB(db);
 
     // Database size report
-    logger.log("\n[9/9] Database size report...");
+    logger.log("\n[10/10] Database size report...");
     await reportDatabaseSize(testDir, config);
 
     // Delta impact (separate instances)
