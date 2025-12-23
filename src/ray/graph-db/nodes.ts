@@ -3,7 +3,7 @@ import {
   isNodeCreated,
   isNodeDeleted,
 } from "../../core/delta.ts";
-import { getPhysNode, getNodeProp as snapshotGetNodeProp, getNodeProps as snapshotGetNodeProps } from "../../core/snapshot-reader.ts";
+import { getPhysNode, getNodeId, getNodeProp as snapshotGetNodeProp, getNodeProps as snapshotGetNodeProps } from "../../core/snapshot-reader.ts";
 import type {
   GraphDB,
   NodeID,
@@ -17,6 +17,7 @@ import { lookupByKey } from "../key-index.ts";
 import { getCache } from "./cache-helper.ts";
 import { getMvccManager, isMvccEnabled } from "../../mvcc/index.ts";
 import { getVisibleVersion, nodeExists as mvccNodeExists } from "../../mvcc/visibility.ts";
+import { getSnapshot } from "./snapshot-helper.ts";
 
 /**
  * Helper to detect if argument is a TxHandle (duck-typing)
@@ -96,8 +97,9 @@ export function deleteNode(handle: TxHandle, nodeId: NodeID): boolean {
   }
 
   // Check if node exists
+  const snapshot = getSnapshot(db);
   const existsInSnapshot =
-    db._snapshot && getPhysNode(db._snapshot, nodeId) >= 0;
+    snapshot && getPhysNode(snapshot, nodeId) >= 0;
   const existsInDelta = isNodeCreated(db._delta, nodeId);
 
   if (!existsInSnapshot && !existsInDelta) {
@@ -148,7 +150,7 @@ export function getNodeByKey(handle: GraphDB | TxHandle, key: string): NodeID | 
     }
   }
 
-  return lookupByKey(db._snapshot, db._delta, key);
+  return lookupByKey(getSnapshot(db), db._delta, key);
 }
 
 /**
@@ -199,8 +201,9 @@ export function nodeExists(handle: GraphDB | TxHandle, nodeId: NodeID): boolean 
       if (isNodeCreated(db._delta, nodeId)) {
         return true;
       }
-      if (db._snapshot) {
-        return getPhysNode(db._snapshot, nodeId) >= 0;
+      const snapshot = getSnapshot(db);
+      if (snapshot) {
+        return getPhysNode(snapshot, nodeId) >= 0;
       }
       
       return false;
@@ -214,8 +217,9 @@ export function nodeExists(handle: GraphDB | TxHandle, nodeId: NodeID): boolean 
   if (isNodeCreated(db._delta, nodeId)) return true;
 
   // Check snapshot
-  if (db._snapshot) {
-    return getPhysNode(db._snapshot, nodeId) >= 0;
+  const snapshot = getSnapshot(db);
+  if (snapshot) {
+    return getPhysNode(snapshot, nodeId) >= 0;
   }
 
   return false;
@@ -357,6 +361,7 @@ export function getNodeProp(
       const nodeVersion = mvcc.versionChain.getNodeVersion(nodeId);
       let nodeKnownToExist = false;
       
+      const snapshot = getSnapshot(db);
       if (nodeVersion) {
         // Version chain exists - use MVCC visibility
         nodeKnownToExist = mvccNodeExists(nodeVersion, txSnapshotTs, txid);
@@ -367,8 +372,8 @@ export function getNodeProp(
           nodeKnownToExist = false;
         } else if (isNodeCreated(db._delta, nodeId)) {
           nodeKnownToExist = true;
-        } else if (db._snapshot) {
-          nodeKnownToExist = getPhysNode(db._snapshot, nodeId) >= 0;
+        } else if (snapshot) {
+          nodeKnownToExist = getPhysNode(snapshot, nodeId) >= 0;
         }
       }
       
@@ -392,10 +397,10 @@ export function getNodeProp(
       }
       
       // Fall back to snapshot
-      if (db._snapshot) {
-        const phys = getPhysNode(db._snapshot, nodeId);
+      if (snapshot) {
+        const phys = getPhysNode(snapshot, nodeId);
         if (phys >= 0) {
-          const value = snapshotGetNodeProp(db._snapshot, phys, keyId);
+          const value = snapshotGetNodeProp(snapshot, phys, keyId);
           if (!tx && cache) {
             cache.setNodeProp(nodeId, keyId, value);
           }
@@ -439,10 +444,11 @@ export function getNodeProp(
   }
 
   // Fall back to snapshot
-  if (db._snapshot) {
-    const phys = getPhysNode(db._snapshot, nodeId);
+  const snapshot = getSnapshot(db);
+  if (snapshot) {
+    const phys = getPhysNode(snapshot, nodeId);
     if (phys >= 0) {
-      const value = snapshotGetNodeProp(db._snapshot, phys, keyId);
+      const value = snapshotGetNodeProp(snapshot, phys, keyId);
       if (cache) {
         cache.setNodeProp(nodeId, keyId, value);
       }
@@ -480,12 +486,13 @@ export function getNodeProps(
   }
 
   const props = new Map<PropKeyID, PropValue>();
+  const snapshot = getSnapshot(db);
 
   // Get from snapshot first
-  if (db._snapshot) {
-    const phys = getPhysNode(db._snapshot, nodeId);
+  if (snapshot) {
+    const phys = getPhysNode(snapshot, nodeId);
     if (phys >= 0) {
-      const snapshotProps = snapshotGetNodeProps(db._snapshot, phys);
+      const snapshotProps = snapshotGetNodeProps(snapshot, phys);
       if (snapshotProps) {
         for (const [keyId, value] of snapshotProps) {
           props.set(keyId, value);
@@ -522,15 +529,173 @@ export function getNodeProps(
 
   // Check if node exists at all
   const nodeExistsInPending = tx?.pendingCreatedNodes.has(nodeId);
-  if (!nodeDelta && !nodeExistsInPending && db._snapshot) {
-    const phys = getPhysNode(db._snapshot, nodeId);
+  if (!nodeDelta && !nodeExistsInPending && snapshot) {
+    const phys = getPhysNode(snapshot, nodeId);
     if (phys < 0) {
       return null;
     }
-  } else if (!nodeDelta && !nodeExistsInPending && !db._snapshot) {
+  } else if (!nodeDelta && !nodeExistsInPending && !snapshot) {
     return null;
   }
 
   return props;
+}
+
+// ============================================================================
+// Node Listing and Counting
+// ============================================================================
+
+/**
+ * List all nodes in the database
+ * 
+ * This is a generator that yields node IDs lazily for memory efficiency.
+ * It merges snapshot nodes with delta changes (created/deleted nodes).
+ * 
+ * Accepts GraphDB for auto-commit reads or TxHandle for transactional reads.
+ * 
+ * @example
+ * ```ts
+ * // Iterate all nodes
+ * for (const nodeId of listNodes(db)) {
+ *   console.log(nodeId);
+ * }
+ * 
+ * // Collect to array (be careful with large datasets)
+ * const allNodes = [...listNodes(db)];
+ * ```
+ */
+export function* listNodes(
+  handle: GraphDB | TxHandle,
+): Generator<NodeID> {
+  const db = isTxHandle(handle) ? handle._db : handle;
+  const tx = isTxHandle(handle) ? handle._tx : null;
+  const snapshot = getSnapshot(db);
+  const delta = db._delta;
+  
+  // Track nodes we've already yielded from snapshot to avoid duplicates
+  // when we process delta created nodes
+  const yieldedFromSnapshot = new Set<NodeID>();
+  
+  // 1. Iterate snapshot nodes (if snapshot exists)
+  if (snapshot) {
+    const numNodes = Number(snapshot.header.numNodes);
+    
+    for (let phys = 0; phys < numNodes; phys++) {
+      const nodeId = getNodeId(snapshot, phys);
+      
+      // Skip if deleted in delta
+      if (delta.deletedNodes.has(nodeId)) {
+        continue;
+      }
+      
+      // Skip if deleted in pending transaction
+      if (tx?.pendingDeletedNodes.has(nodeId)) {
+        continue;
+      }
+      
+      yieldedFromSnapshot.add(nodeId);
+      yield nodeId;
+    }
+  }
+  
+  // 2. Yield nodes created in delta (not in snapshot)
+  for (const nodeId of delta.createdNodes.keys()) {
+    // Skip if already yielded from snapshot (shouldn't happen, but defensive)
+    if (yieldedFromSnapshot.has(nodeId)) {
+      continue;
+    }
+    
+    // Skip if deleted in delta (created then deleted = net nothing)
+    if (delta.deletedNodes.has(nodeId)) {
+      continue;
+    }
+    
+    // Skip if deleted in pending transaction
+    if (tx?.pendingDeletedNodes.has(nodeId)) {
+      continue;
+    }
+    
+    yield nodeId;
+  }
+  
+  // 3. Yield nodes created in pending transaction
+  if (tx) {
+    for (const nodeId of tx.pendingCreatedNodes.keys()) {
+      // Skip if already yielded (shouldn't happen for pending, but defensive)
+      if (yieldedFromSnapshot.has(nodeId)) {
+        continue;
+      }
+      
+      // Skip if already in delta created nodes (shouldn't happen)
+      if (delta.createdNodes.has(nodeId)) {
+        continue;
+      }
+      
+      yield nodeId;
+    }
+  }
+}
+
+/**
+ * Count total nodes in the database
+ * 
+ * This is optimized to avoid full iteration when possible by using
+ * snapshot metadata and delta size adjustments.
+ * 
+ * Accepts GraphDB for auto-commit reads or TxHandle for transactional reads.
+ * 
+ * @example
+ * ```ts
+ * const total = countNodes(db);
+ * console.log(`Database has ${total} nodes`);
+ * ```
+ */
+export function countNodes(handle: GraphDB | TxHandle): number {
+  const db = isTxHandle(handle) ? handle._db : handle;
+  const tx = isTxHandle(handle) ? handle._tx : null;
+  const snapshot = getSnapshot(db);
+  const delta = db._delta;
+  
+  // Start with snapshot count
+  let count = snapshot ? Number(snapshot.header.numNodes) : 0;
+  
+  // Subtract snapshot nodes that were deleted in delta
+  // (We need to check if deleted nodes were actually in snapshot)
+  for (const nodeId of delta.deletedNodes) {
+    // Only subtract if it was a snapshot node (not a delta-created node)
+    if (!delta.createdNodes.has(nodeId)) {
+      // Check if it existed in snapshot
+      if (snapshot && getPhysNode(snapshot, nodeId) >= 0) {
+        count--;
+      }
+    }
+  }
+  
+  // Add delta created nodes (that weren't deleted)
+  for (const nodeId of delta.createdNodes.keys()) {
+    if (!delta.deletedNodes.has(nodeId)) {
+      count++;
+    }
+  }
+  
+  // Handle pending transaction changes
+  if (tx) {
+    // Subtract pending deletions (that weren't already counted)
+    for (const nodeId of tx.pendingDeletedNodes) {
+      // Check if it exists (in snapshot or delta created)
+      const inSnapshot = snapshot && getPhysNode(snapshot, nodeId) >= 0;
+      const inDeltaCreated = delta.createdNodes.has(nodeId);
+      const deletedInDelta = delta.deletedNodes.has(nodeId);
+      
+      if ((inSnapshot || inDeltaCreated) && !deletedInDelta) {
+        count--;
+      }
+    }
+    
+    // Add pending creations
+    count += tx.pendingCreatedNodes.size;
+  }
+  
+  return count;
 }
 

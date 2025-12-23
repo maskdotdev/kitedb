@@ -55,6 +55,8 @@ export {
   deleteNode,
   getNodeByKey,
   nodeExists,
+  listNodes,
+  countNodes,
 } from "./ray/graph-db/index.ts";
 
 // ============================================================================
@@ -67,6 +69,8 @@ export {
   getNeighborsOut,
   getNeighborsIn,
   edgeExists,
+  listEdges,
+  countEdges,
 } from "./ray/graph-db/index.ts";
 
 // ============================================================================
@@ -108,6 +112,28 @@ export {
 } from "./ray/graph-db/index.ts";
 
 export { optimize, type OptimizeOptions } from "./core/compactor.ts";
+
+// ============================================================================
+// Single-file database format (.raydb)
+// These are maintenance utilities - database opening/closing is handled
+// automatically by openGraphDB/closeGraphDB based on path detection
+// ============================================================================
+
+export {
+  optimizeSingleFile,
+  vacuumSingleFile,
+  type SingleFileOptimizeOptions,
+  type VacuumOptions,
+} from "./core/single-file-compactor.ts";
+
+export { WalBufferFullError } from "./types.ts";
+
+// Deprecated exports for backwards compatibility
+// Use openGraphDB/closeGraphDB instead - they auto-detect format
+/** @deprecated Use openGraphDB instead - it auto-detects format */
+export { openSingleFileDB, closeSingleFileDB, isSingleFilePath } from "./ray/graph-db/single-file.ts";
+/** @deprecated SingleFileDB is now just an alias for GraphDB */
+export type { SingleFileDB, SingleFileOpenOptions } from "./types.ts";
 
 // ============================================================================
 // Utilities for advanced use

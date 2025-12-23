@@ -21,6 +21,8 @@ export {
   delNodeProp,
   getNodeProp,
   getNodeProps,
+  listNodes,
+  countNodes,
 } from "./nodes.ts";
 
 // Edge operations
@@ -34,6 +36,8 @@ export {
   delEdgeProp,
   getEdgeProp,
   getEdgeProps,
+  listEdges,
+  countEdges,
 } from "./edges.ts";
 
 // Schema definitions
