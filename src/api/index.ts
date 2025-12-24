@@ -87,6 +87,7 @@ export {
 export type {
   AsyncTraversalResult,
   EdgeResult,
+  RawEdge,
   TraversalBuilder,
   TraversalDirection,
   TraverseOptions,

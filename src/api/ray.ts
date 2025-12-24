@@ -118,6 +118,8 @@ export class Ray {
   private readonly _edges: Map<string, EdgeDef>;
   private readonly _etypeIds: Map<EdgeDef, ETypeID>;
   private readonly _propKeyIds: Map<string, PropKeyID>;
+  // Optimized cache: key prefix -> NodeDef for fast lookups
+  private readonly _keyPrefixToNodeDef: Map<string, NodeDef>;
 
   private constructor(
     db: GraphDB,
@@ -131,6 +133,18 @@ export class Ray {
     this._edges = new Map(edges.map((e) => [e.name, e]));
     this._etypeIds = etypeIds;
     this._propKeyIds = propKeyIds;
+
+    // Build optimized key prefix -> NodeDef cache
+    this._keyPrefixToNodeDef = new Map();
+    for (const nodeDef of nodes) {
+      try {
+        const testKey = nodeDef.keyFn("__test__" as never);
+        const prefix = testKey.replace("__test__", "");
+        this._keyPrefixToNodeDef.set(prefix, nodeDef);
+      } catch {
+        // If keyFn fails with test value, skip this def
+      }
+    }
   }
 
   /** Open or create a ray database */
@@ -206,23 +220,14 @@ export class Ray {
   }
 
   private getNodeDef(nodeId: NodeID): NodeDef | null {
-    // Try to match by node key
+    // Try to match by node key using cached prefix map
     const key = getNodeKey(this._db._snapshot, this._db._delta, nodeId);
     if (key) {
-      // Try each node definition to see if its key function matches
-      for (const nodeDef of this._nodes.values()) {
-        // Extract the prefix from the key (e.g., "file:" from "file:/path")
-        const keyPrefix = key.split(":")[0] + ":";
-        // Check if this node definition's key function would produce keys with this prefix
-        // We test by calling the key function with a dummy value and checking the prefix
-        try {
-          const testKey = nodeDef.keyFn("test" as never);
-          if (testKey.startsWith(keyPrefix)) {
-            return nodeDef;
-          }
-        } catch {
-          // If keyFn fails, skip this def
-          continue;
+      // Use the cached prefix -> NodeDef map for O(n) lookup where n = number of prefixes
+      // This is much faster than calling keyFn() for every node definition
+      for (const [prefix, nodeDef] of this._keyPrefixToNodeDef) {
+        if (key.startsWith(prefix)) {
+          return nodeDef;
         }
       }
     }
@@ -306,6 +311,36 @@ export class Ray {
     }
 
     return createNodeRef(node, nodeId, fullKey, props);
+  }
+
+  /**
+   * Get a lightweight node reference by key (without loading properties)
+   * 
+   * This is much faster than get() when you only need the node reference
+   * for traversals or edge operations, and don't need the properties.
+   * 
+   * @example
+   * ```ts
+   * // Fast: only gets reference (125ns-level)
+   * const userRef = await db.getRef(user, "alice");
+   * 
+   * // Then traverse without having loaded properties
+   * const friends = await db.from(userRef).out(knows).toArray();
+   * ```
+   */
+  async getRef<N extends NodeDef>(
+    node: N,
+    key: Parameters<N["keyFn"]>[0],
+  ): Promise<NodeRef<N> | null> {
+    const fullKey = node.keyFn(key as never);
+    const nodeId = getNodeByKey(this._db, fullKey);
+
+    if (nodeId === null) {
+      return null;
+    }
+
+    // Return lightweight reference without loading properties
+    return { $id: nodeId, $key: fullKey, $def: node } as NodeRef<N>;
   }
 
   /** Check if a node exists */

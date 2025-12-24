@@ -5,12 +5,10 @@
  */
 
 import {
-  edgeExists,
   getEdgeProp,
   getNeighborsIn,
   getNeighborsOut,
   getNodeProp,
-  nodeExists,
 } from "../ray/graph-db/index.ts";
 import type {
   ETypeID,
@@ -71,11 +69,25 @@ export interface TraversalBuilder<N extends NodeDef = NodeDef> {
   /** Limit the number of results */
   take(limit: number): TraversalBuilder<N>;
 
+  /**
+   * Select specific properties to load (optimization)
+   * Only the specified properties will be loaded, reducing overhead.
+   * @param props - Array of property names to load
+   */
+  select<K extends keyof InferNode<N>>(props: K[]): TraversalBuilder<N>;
+
   /** Get the resulting nodes as an async iterable */
   nodes(): AsyncTraversalResult<NodeRef<N> & InferNode<N>>;
 
   /** Get the resulting edges as an async iterable */
   edges(): AsyncTraversalResult<EdgeResult>;
+
+  /**
+   * Get raw edge data without materializing nodes (zero-copy traversal)
+   * This is the fastest way to iterate through edges without any property loading.
+   * Returns raw Edge objects from the underlying graph.
+   */
+  rawEdges(): Generator<RawEdge>;
 
   /** Get the first result */
   first(): Promise<(NodeRef<N> & InferNode<N>) | null>;
@@ -95,6 +107,13 @@ export interface EdgeResult {
   $dst: NodeID;
   $etype: ETypeID;
   [key: string]: unknown;
+}
+
+/** Raw edge data without any property loading */
+export interface RawEdge {
+  src: NodeID;
+  dst: NodeID;
+  etype: ETypeID;
 }
 
 export interface AsyncTraversalResult<T> extends AsyncIterable<T> {
@@ -128,15 +147,33 @@ export function createTraversalBuilder<N extends NodeDef>(
   let edgeFilter: ((edge: Record<string, unknown>) => boolean) | null = null;
   let nodeFilter: ((node: Record<string, unknown>) => boolean) | null = null;
   let limit: number | null = null;
+  let selectedProps: string[] | null = null;
 
-  // Helper to load node properties
+  // Cache for propKeyIds to avoid repeated lookups
+  const propKeyCache = new Map<string, PropKeyID>();
+  const getCachedPropKeyId = (def: NodeDef | EdgeDef, propName: string): PropKeyID => {
+    const cacheKey = `${def.name}:${propName}`;
+    let keyId = propKeyCache.get(cacheKey);
+    if (keyId === undefined) {
+      keyId = resolvePropKeyId(def, propName);
+      propKeyCache.set(cacheKey, keyId);
+    }
+    return keyId;
+  };
+
+  // Helper to load node properties (with optional selective loading)
   const loadNodeProps = (
     nodeId: NodeID,
     nodeDef: NodeDef,
   ): Record<string, unknown> => {
     const props: Record<string, unknown> = {};
-    for (const [propName, propDef] of Object.entries(nodeDef.props)) {
-      const propKeyId = resolvePropKeyId(nodeDef, propName);
+    // If selectedProps is set, only load those properties
+    const propsToLoad = selectedProps 
+      ? Object.entries(nodeDef.props).filter(([name]) => selectedProps!.includes(name))
+      : Object.entries(nodeDef.props);
+    
+    for (const [propName, propDef] of propsToLoad) {
+      const propKeyId = getCachedPropKeyId(nodeDef, propName);
       const propValue = getNodeProp(db, nodeId, propKeyId);
       if (propValue) {
         props[propName] = fromPropValue(propValue);
@@ -154,7 +191,7 @@ export function createTraversalBuilder<N extends NodeDef>(
   ): Record<string, unknown> => {
     const props: Record<string, unknown> = {};
     for (const [propName, propDef] of Object.entries(edgeDef.props)) {
-      const propKeyId = resolvePropKeyId(edgeDef, propName);
+      const propKeyId = getCachedPropKeyId(edgeDef, propName);
       const propValue = getEdgeProp(db, src, etypeId, dst, propKeyId);
       if (propValue) {
         props[propName] = fromPropValue(propValue);
@@ -162,6 +199,72 @@ export function createTraversalBuilder<N extends NodeDef>(
     }
     return props;
   };
+
+  // ============================================================================
+  // Fast count path - only iterates through node IDs without loading properties
+  // ============================================================================
+  
+  // Fast single-hop iteration - yields only node IDs without property loading
+  function* iterateSingleHopIds(
+    nodeId: NodeID,
+    direction: "out" | "in" | "both",
+    etypeId: ETypeID,
+  ): Generator<NodeID> {
+    const directions: ("out" | "in")[] =
+      direction === "both" ? ["out", "in"] : [direction];
+
+    for (const dir of directions) {
+      const neighbors =
+        dir === "out"
+          ? getNeighborsOut(db, nodeId, etypeId)
+          : getNeighborsIn(db, nodeId, etypeId);
+
+      for (const edge of neighbors) {
+        yield dir === "out" ? edge.dst : edge.src;
+      }
+    }
+  }
+
+  // Fast count for simple traversals without filters
+  function countFast(): number {
+    // Can only use fast path if no filters are set
+    if (edgeFilter !== null || nodeFilter !== null) {
+      return -1; // Signal to use slow path
+    }
+    
+    // Can only use fast path for simple single-hop traversals (no variable-depth)
+    for (const step of steps) {
+      if (step.type === "traverse") {
+        return -1; // Variable-depth requires the slow path
+      }
+    }
+
+    let currentNodeIds: NodeID[] = startNodes.map(n => n.$id);
+
+    for (const step of steps) {
+      const etypeId = resolveEtypeId(step.edgeDef);
+      const nextNodeIds: NodeID[] = [];
+
+      for (const nodeId of currentNodeIds) {
+        for (const neighborId of iterateSingleHopIds(nodeId, step.type as "out" | "in" | "both", etypeId)) {
+          nextNodeIds.push(neighborId);
+        }
+      }
+
+      currentNodeIds = nextNodeIds;
+    }
+
+    // Apply limit if set
+    if (limit !== null && currentNodeIds.length > limit) {
+      return limit;
+    }
+
+    return currentNodeIds.length;
+  }
+
+  // ============================================================================
+  // Full execution path with property loading (for toArray, first, iteration)
+  // ============================================================================
 
   // Execute a single step
   async function* executeStep(
@@ -181,7 +284,7 @@ export function createTraversalBuilder<N extends NodeDef>(
     }
   }
 
-  // Execute single-hop traversal
+  // Execute single-hop traversal with full property loading
   function* executeSingleHop(
     node: NodeRef,
     direction: "out" | "in" | "both",
@@ -200,10 +303,7 @@ export function createTraversalBuilder<N extends NodeDef>(
       for (const edge of neighbors) {
         const neighborId = dir === "out" ? edge.dst : edge.src;
 
-        // Skip if node doesn't exist
-        if (!nodeExists(db, neighborId)) continue;
-
-        // Get node definition (for now, use a generic one)
+        // Get node definition
         const neighborDef = getNodeDef(neighborId);
         if (!neighborDef) continue;
 
@@ -284,7 +384,7 @@ export function createTraversalBuilder<N extends NodeDef>(
     }
   }
 
-  // Main execution generator
+  // Main execution generator (full property loading)
   async function* execute(): AsyncGenerator<{
     node: NodeRef;
     edge: EdgeResult | null;
@@ -364,6 +464,42 @@ export function createTraversalBuilder<N extends NodeDef>(
       return builder;
     },
 
+    select<K extends keyof InferNode<N>>(props: K[]) {
+      // Store selected properties for selective loading
+      selectedProps = props as string[];
+      return builder;
+    },
+
+    rawEdges(): Generator<RawEdge> {
+      // Return a generator that yields raw edge data without any property loading
+      // This is the fastest possible traversal mode
+      return (function* () {
+        // Can only process single-hop simple traversals
+        if (steps.length === 0) return;
+        
+        let currentNodeIds: NodeID[] = startNodes.map(n => n.$id);
+
+        for (const step of steps) {
+          if (step.type === "traverse") {
+            // Variable-depth not supported in rawEdges
+            throw new Error("rawEdges() does not support variable-depth traverse()");
+          }
+
+          const etypeId = resolveEtypeId(step.edgeDef);
+          const nextNodeIds: NodeID[] = [];
+
+          for (const nodeId of currentNodeIds) {
+            for (const neighborId of iterateSingleHopIds(nodeId, step.type as "out" | "in" | "both", etypeId)) {
+              yield { src: nodeId, dst: neighborId, etype: etypeId };
+              nextNodeIds.push(neighborId);
+            }
+          }
+
+          currentNodeIds = nextNodeIds;
+        }
+      })();
+    },
+
     nodes(): AsyncTraversalResult<NodeRef<N> & InferNode<N>> {
       const iter = async function* () {
         for await (const result of execute()) {
@@ -387,6 +523,12 @@ export function createTraversalBuilder<N extends NodeDef>(
           return null;
         },
         async count() {
+          // Try fast path first
+          const fastCount = countFast();
+          if (fastCount >= 0) {
+            return fastCount;
+          }
+          // Fall back to slow path
           let c = 0;
           for await (const _ of iter()) {
             c++;
@@ -421,6 +563,12 @@ export function createTraversalBuilder<N extends NodeDef>(
           return null;
         },
         async count() {
+          // Try fast path first
+          const fastCount = countFast();
+          if (fastCount >= 0) {
+            return fastCount;
+          }
+          // Fall back to slow path
           let c = 0;
           for await (const _ of iter()) {
             c++;
@@ -435,6 +583,12 @@ export function createTraversalBuilder<N extends NodeDef>(
     },
 
     async count() {
+      // Try fast path first
+      const fastCount = countFast();
+      if (fastCount >= 0) {
+        return fastCount;
+      }
+      // Fall back to slow path
       return this.nodes().count();
     },
 

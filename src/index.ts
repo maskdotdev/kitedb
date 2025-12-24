@@ -198,6 +198,7 @@ export {
   type TraversalDirection,
   type AsyncTraversalResult,
   type EdgeResult,
+  type RawEdge,
   // Pathfinding
   type PathFindingBuilder,
   type PathExecutor,

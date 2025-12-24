@@ -53,12 +53,13 @@ export function createNodeRef<N extends NodeDef>(
   key: string,
   props: Record<string, unknown>,
 ): NodeRef<N> & InferNode<N> {
-  return {
-    $id: id,
-    $key: key,
-    $def: def,
-    ...props,
-  } as NodeRef<N> & InferNode<N>;
+  // Optimized: use Object.assign instead of object spread
+  // Object spread is expensive because it creates intermediate objects
+  const ref = { $id: id, $key: key, $def: def };
+  if (props && Object.keys(props).length > 0) {
+    Object.assign(ref, props);
+  }
+  return ref as NodeRef<N> & InferNode<N>;
 }
 
 // ============================================================================
