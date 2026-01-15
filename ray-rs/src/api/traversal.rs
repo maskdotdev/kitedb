@@ -5,7 +5,14 @@
 //! Ported from src/api/traversal.ts
 
 use crate::types::{ETypeId, Edge, NodeId, PropValue};
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::sync::Arc;
+
+/// Type alias for edge filter predicates
+pub type EdgeFilter = Arc<dyn Fn(&EdgeInfo) -> bool + Send + Sync>;
+
+/// Type alias for node filter predicates  
+pub type NodeFilter = Arc<dyn Fn(&NodeInfo) -> bool + Send + Sync>;
 
 // ============================================================================
 // Traversal Types
@@ -20,7 +27,7 @@ pub enum TraversalDirection {
 }
 
 /// Options for variable-depth traversal
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TraverseOptions {
   /// Direction of traversal
   pub direction: TraversalDirection,
@@ -30,6 +37,23 @@ pub struct TraverseOptions {
   pub max_depth: usize,
   /// Whether to only visit unique nodes (default: true)
   pub unique: bool,
+  /// Edge filter predicate for variable-depth traversal
+  pub where_edge: Option<EdgeFilter>,
+  /// Node filter predicate for variable-depth traversal
+  pub where_node: Option<NodeFilter>,
+}
+
+impl std::fmt::Debug for TraverseOptions {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("TraverseOptions")
+      .field("direction", &self.direction)
+      .field("min_depth", &self.min_depth)
+      .field("max_depth", &self.max_depth)
+      .field("unique", &self.unique)
+      .field("where_edge", &self.where_edge.as_ref().map(|_| "<fn>"))
+      .field("where_node", &self.where_node.as_ref().map(|_| "<fn>"))
+      .finish()
+  }
 }
 
 impl Default for TraverseOptions {
@@ -39,6 +63,8 @@ impl Default for TraverseOptions {
       min_depth: 1,
       max_depth: 1,
       unique: true,
+      where_edge: None,
+      where_node: None,
     }
   }
 }
@@ -50,6 +76,8 @@ impl TraverseOptions {
       min_depth: 1,
       max_depth,
       unique: true,
+      where_edge: None,
+      where_node: None,
     }
   }
 
@@ -60,6 +88,24 @@ impl TraverseOptions {
 
   pub fn with_unique(mut self, unique: bool) -> Self {
     self.unique = unique;
+    self
+  }
+
+  /// Add an edge filter predicate for variable-depth traversal
+  pub fn with_edge_filter<F>(mut self, predicate: F) -> Self
+  where
+    F: Fn(&EdgeInfo) -> bool + Send + Sync + 'static,
+  {
+    self.where_edge = Some(Arc::new(predicate));
+    self
+  }
+
+  /// Add a node filter predicate for variable-depth traversal
+  pub fn with_node_filter<F>(mut self, predicate: F) -> Self
+  where
+    F: Fn(&NodeInfo) -> bool + Send + Sync + 'static,
+  {
+    self.where_node = Some(Arc::new(predicate));
     self
   }
 }
@@ -99,23 +145,78 @@ pub struct TraversalResult {
   pub depth: usize,
 }
 
+/// Edge info for filter predicates
+#[derive(Debug, Clone)]
+pub struct EdgeInfo {
+  pub src: NodeId,
+  pub dst: NodeId,
+  pub etype: ETypeId,
+  pub props: HashMap<String, PropValue>,
+}
+
+impl From<RawEdge> for EdgeInfo {
+  fn from(edge: RawEdge) -> Self {
+    Self {
+      src: edge.src,
+      dst: edge.dst,
+      etype: edge.etype,
+      props: HashMap::new(),
+    }
+  }
+}
+
+/// Node info for filter predicates
+#[derive(Debug, Clone)]
+pub struct NodeInfo {
+  pub id: NodeId,
+  pub props: HashMap<String, PropValue>,
+}
+
 // ============================================================================
 // Traversal Step
 // ============================================================================
 
 /// A single step in a traversal query
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum TraversalStep {
   /// Single-hop traversal (out, in, or both)
   SingleHop {
     direction: TraversalDirection,
     etype: Option<ETypeId>,
+    /// Edge filter for this step
+    edge_filter: Option<EdgeFilter>,
+    /// Node filter for this step
+    node_filter: Option<NodeFilter>,
   },
   /// Variable-depth traversal
   Traverse {
     etype: Option<ETypeId>,
     options: TraverseOptions,
   },
+}
+
+impl std::fmt::Debug for TraversalStep {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      Self::SingleHop {
+        direction,
+        etype,
+        edge_filter,
+        node_filter,
+      } => f
+        .debug_struct("SingleHop")
+        .field("direction", direction)
+        .field("etype", etype)
+        .field("edge_filter", &edge_filter.as_ref().map(|_| "<fn>"))
+        .field("node_filter", &node_filter.as_ref().map(|_| "<fn>"))
+        .finish(),
+      Self::Traverse { etype, options } => f
+        .debug_struct("Traverse")
+        .field("etype", etype)
+        .field("options", options)
+        .finish(),
+    }
+  }
 }
 
 // ============================================================================
@@ -129,13 +230,14 @@ pub enum TraversalStep {
 /// let builder = TraversalBuilder::new(vec![start_node_id])
 ///     .out(Some(follows_etype))
 ///     .out(Some(knows_etype))
+///     .where_edge(|e| e.etype == 1)
 ///     .take(10);
 ///
 /// for result in builder.execute(&get_neighbors_fn) {
 ///     println!("Found node: {}", result.node_id);
 /// }
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TraversalBuilder {
   /// Starting node IDs
   start_nodes: Vec<NodeId>,
@@ -145,6 +247,23 @@ pub struct TraversalBuilder {
   limit: Option<usize>,
   /// Whether to skip visited nodes across all steps
   unique_nodes: bool,
+  /// Global edge filter applied to all results
+  edge_filter: Option<EdgeFilter>,
+  /// Global node filter applied to all results
+  node_filter: Option<NodeFilter>,
+}
+
+impl std::fmt::Debug for TraversalBuilder {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("TraversalBuilder")
+      .field("start_nodes", &self.start_nodes)
+      .field("steps", &self.steps)
+      .field("limit", &self.limit)
+      .field("unique_nodes", &self.unique_nodes)
+      .field("edge_filter", &self.edge_filter.as_ref().map(|_| "<fn>"))
+      .field("node_filter", &self.node_filter.as_ref().map(|_| "<fn>"))
+      .finish()
+  }
 }
 
 impl TraversalBuilder {
@@ -155,6 +274,8 @@ impl TraversalBuilder {
       steps: Vec::new(),
       limit: None,
       unique_nodes: true,
+      edge_filter: None,
+      node_filter: None,
     }
   }
 
@@ -168,6 +289,8 @@ impl TraversalBuilder {
     self.steps.push(TraversalStep::SingleHop {
       direction: TraversalDirection::Out,
       etype,
+      edge_filter: None,
+      node_filter: None,
     });
     self
   }
@@ -177,6 +300,8 @@ impl TraversalBuilder {
     self.steps.push(TraversalStep::SingleHop {
       direction: TraversalDirection::In,
       etype,
+      edge_filter: None,
+      node_filter: None,
     });
     self
   }
@@ -186,6 +311,8 @@ impl TraversalBuilder {
     self.steps.push(TraversalStep::SingleHop {
       direction: TraversalDirection::Both,
       etype,
+      edge_filter: None,
+      node_filter: None,
     });
     self
   }
@@ -206,6 +333,70 @@ impl TraversalBuilder {
   pub fn unique(mut self, unique: bool) -> Self {
     self.unique_nodes = unique;
     self
+  }
+
+  /// Add a global edge filter predicate
+  ///
+  /// This filter is applied to all edges traversed. Only edges where
+  /// the predicate returns `true` will be included in results.
+  ///
+  /// # Example
+  /// ```ignore
+  /// let builder = TraversalBuilder::from_node(1)
+  ///     .out(Some(knows_etype))
+  ///     .where_edge(|edge| edge.etype == 1);
+  /// ```
+  pub fn where_edge<F>(mut self, predicate: F) -> Self
+  where
+    F: Fn(&EdgeInfo) -> bool + Send + Sync + 'static,
+  {
+    self.edge_filter = Some(Arc::new(predicate));
+    self
+  }
+
+  /// Add a global node filter predicate
+  ///
+  /// This filter is applied to all nodes traversed. Only nodes where
+  /// the predicate returns `true` will be included in results.
+  ///
+  /// # Example
+  /// ```ignore
+  /// let builder = TraversalBuilder::from_node(1)
+  ///     .out(Some(knows_etype))
+  ///     .where_node(|node| node.id > 5);
+  /// ```
+  pub fn where_node<F>(mut self, predicate: F) -> Self
+  where
+    F: Fn(&NodeInfo) -> bool + Send + Sync + 'static,
+  {
+    self.node_filter = Some(Arc::new(predicate));
+    self
+  }
+
+  /// Check if the builder has any filters set
+  pub fn has_filters(&self) -> bool {
+    if self.edge_filter.is_some() || self.node_filter.is_some() {
+      return true;
+    }
+    for step in &self.steps {
+      match step {
+        TraversalStep::SingleHop {
+          edge_filter,
+          node_filter,
+          ..
+        } => {
+          if edge_filter.is_some() || node_filter.is_some() {
+            return true;
+          }
+        }
+        TraversalStep::Traverse { options, .. } => {
+          if options.where_edge.is_some() || options.where_node.is_some() {
+            return true;
+          }
+        }
+      }
+    }
+    false
   }
 
   /// Execute the traversal and return an iterator of results
@@ -242,6 +433,11 @@ impl TraversalBuilder {
 
   /// Check if we can use the fast count path
   fn can_use_fast_count(&self) -> bool {
+    // Cannot use fast path if any filters are set
+    if self.has_filters() {
+      return false;
+    }
+
     // Can only use fast path for simple single-hop traversals
     for step in &self.steps {
       if matches!(step, TraversalStep::Traverse { .. }) {
@@ -259,7 +455,10 @@ impl TraversalBuilder {
     let mut current_nodes: HashSet<NodeId> = self.start_nodes.iter().copied().collect();
 
     for step in &self.steps {
-      let TraversalStep::SingleHop { direction, etype } = step else {
+      let TraversalStep::SingleHop {
+        direction, etype, ..
+      } = step
+      else {
         unreachable!()
       };
 
@@ -327,6 +526,10 @@ pub struct TraversalIterator<F> {
   yielded: usize,
   /// Whether we're done
   done: bool,
+  /// Global edge filter
+  edge_filter: Option<EdgeFilter>,
+  /// Global node filter
+  node_filter: Option<NodeFilter>,
 }
 
 impl<F> TraversalIterator<F>
@@ -359,7 +562,35 @@ where
       limit: builder.limit,
       yielded: 0,
       done: false,
+      edge_filter: builder.edge_filter,
+      node_filter: builder.node_filter,
     }
+  }
+
+  /// Check if a result passes all filters
+  fn passes_filters(&self, result: &TraversalResult) -> bool {
+    // Check edge filter
+    if let Some(ref edge_filter) = self.edge_filter {
+      if let Some(ref raw_edge) = result.edge {
+        let edge_info = EdgeInfo::from(*raw_edge);
+        if !edge_filter(&edge_info) {
+          return false;
+        }
+      }
+    }
+
+    // Check node filter
+    if let Some(ref node_filter) = self.node_filter {
+      let node_info = NodeInfo {
+        id: result.node_id,
+        props: HashMap::new(), // Note: props would need to be loaded if used
+      };
+      if !node_filter(&node_info) {
+        return false;
+      }
+    }
+
+    true
   }
 
   /// Process a single-hop step
@@ -367,6 +598,8 @@ where
     &mut self,
     direction: TraversalDirection,
     etype: Option<ETypeId>,
+    step_edge_filter: &Option<EdgeFilter>,
+    step_node_filter: &Option<NodeFilter>,
   ) -> VecDeque<TraversalResult> {
     let mut next_frontier = VecDeque::new();
 
@@ -391,13 +624,34 @@ where
           continue;
         }
 
+        let raw_edge = RawEdge::from(edge);
+
+        // Apply step-level edge filter
+        if let Some(ref edge_filter) = step_edge_filter {
+          let edge_info = EdgeInfo::from(raw_edge);
+          if !edge_filter(&edge_info) {
+            continue;
+          }
+        }
+
+        // Apply step-level node filter
+        if let Some(ref node_filter) = step_node_filter {
+          let node_info = NodeInfo {
+            id: neighbor_id,
+            props: HashMap::new(),
+          };
+          if !node_filter(&node_info) {
+            continue;
+          }
+        }
+
         if self.unique_nodes {
           self.visited.insert(neighbor_id);
         }
 
         next_frontier.push_back(TraversalResult {
           node_id: neighbor_id,
-          edge: Some(RawEdge::from(edge)),
+          edge: Some(raw_edge),
           depth: result.depth + 1,
         });
       }
@@ -451,6 +705,28 @@ where
           if options.unique && local_visited.contains(&neighbor_id) {
             continue;
           }
+
+          let raw_edge = RawEdge::from(edge);
+
+          // Apply edge filter from TraverseOptions
+          if let Some(ref edge_filter) = options.where_edge {
+            let edge_info = EdgeInfo::from(raw_edge);
+            if !edge_filter(&edge_info) {
+              continue;
+            }
+          }
+
+          // Apply node filter from TraverseOptions
+          if let Some(ref node_filter) = options.where_node {
+            let node_info = NodeInfo {
+              id: neighbor_id,
+              props: HashMap::new(),
+            };
+            if !node_filter(&node_info) {
+              continue;
+            }
+          }
+
           if options.unique {
             local_visited.insert(neighbor_id);
           }
@@ -469,7 +745,7 @@ where
           if new_depth >= options.min_depth {
             results.push_back(TraversalResult {
               node_id: neighbor_id,
-              edge: Some(RawEdge::from(edge)),
+              edge: Some(raw_edge),
               depth: new_depth,
             });
           }
@@ -512,6 +788,12 @@ where
         // If we've processed all steps, yield from frontier
         if self.step_index >= self.steps.len() {
           let result = self.current_frontier.pop_front()?;
+
+          // Apply global filters
+          if !self.passes_filters(&result) {
+            continue;
+          }
+
           self.yielded += 1;
 
           // Check limit
@@ -531,9 +813,12 @@ where
         self.step_index += 1;
 
         let next_frontier = match step {
-          TraversalStep::SingleHop { direction, etype } => {
-            self.process_single_hop(direction, etype)
-          }
+          TraversalStep::SingleHop {
+            direction,
+            etype,
+            edge_filter,
+            node_filter,
+          } => self.process_single_hop(direction, etype, &edge_filter, &node_filter),
           TraversalStep::Traverse { etype, options } => self.process_traverse(etype, &options),
         };
 
@@ -600,7 +885,10 @@ where
       // Process next node
       if let Some(node_id) = self.current_nodes.pop_front() {
         if self.step_index < self.steps.len() {
-          let TraversalStep::SingleHop { direction, etype } = &self.steps[self.step_index] else {
+          let TraversalStep::SingleHop {
+            direction, etype, ..
+          } = &self.steps[self.step_index]
+          else {
             unreachable!()
           };
 
@@ -616,8 +904,7 @@ where
 
           // Collect neighbors from pending edges for next step
           if self.step_index < self.steps.len() {
-            let TraversalStep::SingleHop { direction, .. } = &self.steps[self.step_index - 1]
-            else {
+            let TraversalStep::SingleHop { .. } = &self.steps[self.step_index - 1] else {
               unreachable!()
             };
 
@@ -941,5 +1228,243 @@ mod tests {
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].node_id, 1);
+  }
+
+  // ============================================================================
+  // Filter Predicate Tests
+  // ============================================================================
+
+  #[test]
+  fn test_where_edge_filter_by_etype() {
+    let get_neighbors = mock_graph();
+
+    // Filter to only include edges with etype == 1 (knows)
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .out(None) // all edge types
+      .where_edge(|edge| edge.etype == 1)
+      .execute(&get_neighbors)
+      .collect();
+
+    // Should only find node 2 (via knows edge), not node 4 (via follows edge)
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].node_id, 2);
+  }
+
+  #[test]
+  fn test_where_edge_filter_by_dst() {
+    let get_neighbors = mock_graph();
+
+    // Filter to only include edges where dst > 3
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .out(None)
+      .where_edge(|edge| edge.dst > 3)
+      .execute(&get_neighbors)
+      .collect();
+
+    // Should only find node 4 (dst=4)
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].node_id, 4);
+  }
+
+  #[test]
+  fn test_where_node_filter() {
+    let get_neighbors = mock_graph();
+
+    // Filter to only include nodes with id > 3
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .out(None)
+      .where_node(|node| node.id > 3)
+      .execute(&get_neighbors)
+      .collect();
+
+    // Should only find node 4
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].node_id, 4);
+  }
+
+  #[test]
+  fn test_where_node_filter_excludes_all() {
+    let get_neighbors = mock_graph();
+
+    // Filter that excludes all nodes
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .out(None)
+      .where_node(|node| node.id > 100)
+      .execute(&get_neighbors)
+      .collect();
+
+    assert!(results.is_empty());
+  }
+
+  #[test]
+  fn test_combined_edge_and_node_filters() {
+    let get_neighbors = mock_graph();
+
+    // Combine edge and node filters
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .out(None)
+      .where_edge(|edge| edge.etype == 2) // follows only
+      .where_node(|node| node.id >= 4)
+      .execute(&get_neighbors)
+      .collect();
+
+    // Should find node 4 (follows edge with dst >= 4)
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].node_id, 4);
+  }
+
+  #[test]
+  fn test_filter_with_limit() {
+    let get_neighbors = mock_graph();
+
+    // From node 2, we can reach nodes 3 and 5 (knows->3, follows->5)
+    // Filter to etype 1 only, but also with limit
+    let results: Vec<_> = TraversalBuilder::from_node(2)
+      .out(None)
+      .where_edge(|edge| edge.etype == 1)
+      .take(10)
+      .execute(&get_neighbors)
+      .collect();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].node_id, 3);
+  }
+
+  #[test]
+  fn test_has_filters_detects_global_edge_filter() {
+    let builder = TraversalBuilder::from_node(1)
+      .out(None)
+      .where_edge(|_| true);
+
+    assert!(builder.has_filters());
+  }
+
+  #[test]
+  fn test_has_filters_detects_global_node_filter() {
+    let builder = TraversalBuilder::from_node(1)
+      .out(None)
+      .where_node(|_| true);
+
+    assert!(builder.has_filters());
+  }
+
+  #[test]
+  fn test_has_filters_false_when_no_filters() {
+    let builder = TraversalBuilder::from_node(1).out(None);
+
+    assert!(!builder.has_filters());
+  }
+
+  #[test]
+  fn test_count_falls_back_to_iteration_with_filters() {
+    let get_neighbors = mock_graph();
+
+    // With filters, count should use iteration (slow path)
+    let builder = TraversalBuilder::from_node(1)
+      .out(None)
+      .where_edge(|edge| edge.etype == 1);
+
+    // Can't use fast count
+    assert!(!builder.can_use_fast_count());
+
+    // But count still works
+    let count = builder.count(&get_neighbors);
+    assert_eq!(count, 1);
+  }
+
+  #[test]
+  fn test_traverse_with_edge_filter() {
+    let get_neighbors = mock_graph();
+
+    // Variable-depth traversal with edge filter in options
+    let options = TraverseOptions::new(TraversalDirection::Out, 2)
+      .with_edge_filter(|edge| edge.etype == 1);
+
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .traverse(Some(1), options)
+      .execute(&get_neighbors)
+      .collect();
+
+    // Should find: 2 (depth 1), 3 (depth 2) - all via knows edges
+    assert_eq!(results.len(), 2);
+    let node_ids: HashSet<_> = results.iter().map(|r| r.node_id).collect();
+    assert!(node_ids.contains(&2));
+    assert!(node_ids.contains(&3));
+  }
+
+  #[test]
+  fn test_traverse_with_node_filter() {
+    let get_neighbors = mock_graph();
+
+    // Variable-depth traversal with node filter in options
+    // Filter only yields nodes with id >= 2 (which is all reachable nodes)
+    let options = TraverseOptions::new(TraversalDirection::Out, 2)
+      .with_node_filter(|node| node.id >= 2);
+
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .traverse(Some(1), options)
+      .execute(&get_neighbors)
+      .collect();
+
+    // Should find: 2 (depth 1), 3 (depth 2)
+    assert_eq!(results.len(), 2);
+    let node_ids: HashSet<_> = results.iter().map(|r| r.node_id).collect();
+    assert!(node_ids.contains(&2));
+    assert!(node_ids.contains(&3));
+  }
+
+  #[test]
+  fn test_traverse_with_node_filter_excludes_intermediate() {
+    let get_neighbors = mock_graph();
+
+    // Filter for id >= 3 - this will filter out node 2, so we can't reach node 3
+    // because the traversal stops at filtered nodes
+    let options = TraverseOptions::new(TraversalDirection::Out, 3)
+      .with_node_filter(|node| node.id >= 3);
+
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .traverse(Some(1), options)
+      .execute(&get_neighbors)
+      .collect();
+
+    // Node 2 is filtered out, so we can't traverse through it to reach node 3
+    // This demonstrates that node filters affect traversal continuation
+    assert!(results.is_empty());
+  }
+
+  #[test]
+  fn test_traverse_options_with_combined_filters() {
+    let get_neighbors = mock_graph();
+
+    // Variable-depth traversal with both filters
+    let options = TraverseOptions::new(TraversalDirection::Out, 3)
+      .with_edge_filter(|edge| edge.etype == 1)
+      .with_node_filter(|node| node.id >= 2);
+
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .traverse(None, options)
+      .execute(&get_neighbors)
+      .collect();
+
+    // Should find nodes 2 and 3 via knows edges (etype=1)
+    let node_ids: HashSet<_> = results.iter().map(|r| r.node_id).collect();
+    assert!(node_ids.contains(&2));
+    assert!(node_ids.contains(&3));
+  }
+
+  #[test]
+  fn test_edge_info_from_raw_edge() {
+    let raw_edge = RawEdge {
+      src: 1,
+      dst: 2,
+      etype: 3,
+    };
+
+    let edge_info = EdgeInfo::from(raw_edge);
+
+    assert_eq!(edge_info.src, 1);
+    assert_eq!(edge_info.dst, 2);
+    assert_eq!(edge_info.etype, 3);
+    assert!(edge_info.props.is_empty());
   }
 }
