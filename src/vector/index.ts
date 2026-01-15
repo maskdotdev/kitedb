@@ -150,6 +150,7 @@ export {
   runCompactionIfNeeded,
   getCompactionStats,
   forceFullCompaction,
+  clearDeletedFragments,
   DEFAULT_COMPACTION_STRATEGY,
 } from "./compaction.ts";
 export type { CompactionStrategy } from "./compaction.ts";

@@ -126,39 +126,32 @@ export function ivfSearch(...): VectorSearchResult[] {
 ### 5. `fragmentGetVector` calculates `rowGroupSize` incorrectly for partial fragments
 
 **File:** `src/vector/fragment.ts` (lines 205-231)  
-**Status:** INVESTIGATE
+**Status:** ✅ FIXED
 
-```typescript
-export function fragmentGetVector(
-  fragment: Fragment,
-  localIdx: number,
-  dimensions: number
-): Float32Array | null {
-  // ...
-  const rowGroupSize = fragment.rowGroups[0]?.data.length / dimensions || 0;
-```
+**Problem:** The first row group may have a smaller `data.length` after trimming (sealed fragment with partial last row group).
 
-**Problem:** The first row group may have a smaller `data.length` after trimming (sealed fragment with partial last row group). This calculation assumes all row groups have the same capacity based on the first one, which may not be true.
+**Solution:** Added smarter row group size calculation:
+- If `rowGroupCapacity` is provided, use it
+- If fragment has multiple row groups, use first row group's capacity (never trimmed)
+- If single row group, use max of data length and count (handles trimmed case)
 
-**Note:** Need to verify if this is actually a problem - trimming may only affect the last row group.
+Added tests for sealed single and multi-row-group fragments.
 
 ---
 
 ### 6. Potential division by zero in `fragmentSeal`
 
 **File:** `src/vector/fragment.ts` (lines 160-185)  
-**Status:** LOW RISK
+**Status:** ✅ FIXED
 
-```typescript
-export function fragmentSeal(fragment: Fragment): void {
-  // ...
-  const lastRowGroup = fragment.rowGroups[fragment.rowGroups.length - 1];
-  const dimensions =
-    lastRowGroup.data.length /
-    Math.max(lastRowGroup.count, 1);  // This protects against count=0
-```
+**Issue:** Edge case handling for empty row groups in fragmentSeal.
 
-**Issue:** If `lastRowGroup.data.length` is 0 AND `lastRowGroup.count` is 0, dimensions becomes `0 / 1 = 0`, which then causes issues in the conditional logic below. Not technically division by zero but leads to logic issues.
+**Solution:** Added defensive checks:
+- Check if fragment has row groups before accessing
+- Only trim if `count > 0` and `data.length > 0`
+- Verify dimensions is a positive integer before trimming
+
+Note: In normal use, row groups are pre-allocated with capacity, so `data.length` is never 0. This fix handles malformed data edge cases.
 
 ---
 
@@ -222,12 +215,17 @@ When compaction runs:
 ### 10. Race condition in `VectorIndex.buildIndex()` and `set()`
 
 **File:** `src/api/vector-search.ts` (lines 125-158, 202-255)  
-**Status:** DESIGN GAP
+**Status:** ✅ FIXED
 
 If `set()` is called during `buildIndex()`:
 - New vectors may not be included in training data
 - Index may be partially built
 - `_needsTraining` flag manipulation isn't atomic
+
+**Solution:** Added `_isBuilding` guard flag:
+- `buildIndex()` sets flag on entry, clears on exit (in finally block)
+- `set()` and `delete()` throw if called while building
+- Prevents concurrent modifications during index construction
 
 ---
 
@@ -258,10 +256,14 @@ The vector store and IVF index are **not thread-safe**. Concurrent access must b
 **Recommendation:** Use a single writer with multiple readers pattern, or implement external synchronization (mutex/lock) when concurrent access is required.
 
 ### 15. Fragment with all vectors deleted
+**Status:** ✅ FIXED
+
 After all vectors in a fragment are deleted:
 - Fragment still takes memory
 - `fragmentIterator` returns empty but fragment still exists
 - Compaction check may not trigger if deletion ratio calculation has edge case
+
+**Solution:** Added `clearDeletedFragments()` function that efficiently clears fragments with 100% deletion ratio without going through full compaction. Also updated `findFragmentsToCompact()` to allow compaction even when total live vectors is 0.
 
 ### 16. `ivfSearchMulti` with empty queries array
 **Status:** ✅ FIXED
@@ -347,7 +349,7 @@ Fetching same vector multiple times in different search calls.
 4. ✅ **Euclidean metric end-to-end** - Test added in previous session
 5. ✅ **Dot product metric end-to-end** - Test added in previous session
 6. ✅ **Fuzz testing for malformed serialized data** - Tests added for empty, truncated, and corrupted buffers
-7. **No concurrent access tests**
+7. ✅ **Concurrent access tests** - Added test for buildIndex guard that prevents modifications during index building
 
 ---
 

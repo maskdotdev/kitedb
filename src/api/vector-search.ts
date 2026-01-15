@@ -97,6 +97,7 @@ export class VectorIndex {
   private readonly _trainingThreshold: number;
   private readonly _ivfConfig: Partial<IvfConfig>;
   private _needsTraining: boolean = true;
+  private _isBuilding: boolean = false;
 
   constructor(options: VectorIndexOptions) {
     const {
@@ -122,8 +123,14 @@ export class VectorIndex {
 
   /**
    * Set/update a vector for a node
+   * 
+   * @throws Error if called while buildIndex() is in progress
    */
   set(nodeRef: NodeRef, vector: Float32Array): void {
+    if (this._isBuilding) {
+      throw new Error("Cannot modify vectors while index is being built");
+    }
+
     if (vector.length !== this._manifest.config.dimensions) {
       throw new Error(
         `Vector dimension mismatch: expected ${this._manifest.config.dimensions}, got ${vector.length}`
@@ -167,8 +174,14 @@ export class VectorIndex {
 
   /**
    * Delete the vector for a node
+   * 
+   * @throws Error if called while buildIndex() is in progress
    */
   delete(nodeRef: NodeRef): boolean {
+    if (this._isBuilding) {
+      throw new Error("Cannot modify vectors while index is being built");
+    }
+
     const nodeId = nodeRef.$id;
     
     // Remove from index if trained
@@ -199,61 +212,72 @@ export class VectorIndex {
    * 
    * Call this after bulk loading vectors, or periodically as vectors are updated.
    * Uses k-means clustering for approximate nearest neighbor search.
+   * 
+   * Note: Modifications (set/delete) are blocked while building is in progress.
    */
   buildIndex(): void {
-    const dimensions = this._manifest.config.dimensions;
-    const stats = vectorStoreStats(this._manifest);
-    const liveVectors = stats.liveVectors;
+    if (this._isBuilding) {
+      throw new Error("Index build already in progress");
+    }
 
-    if (liveVectors < this._trainingThreshold) {
-      // Not enough vectors for index - will use brute force search
-      this._index = null;
+    this._isBuilding = true;
+    try {
+      const dimensions = this._manifest.config.dimensions;
+      const stats = vectorStoreStats(this._manifest);
+      const liveVectors = stats.liveVectors;
+
+      if (liveVectors < this._trainingThreshold) {
+        // Not enough vectors for index - will use brute force search
+        this._index = null;
+        this._needsTraining = false;
+        return;
+      }
+
+      // Determine number of clusters (sqrt rule, min 16, max 1024)
+      const nClusters = Math.min(
+        1024,
+        Math.max(16, Math.floor(Math.sqrt(liveVectors)))
+      );
+
+      // Create new index with the same metric as the store
+      this._index = createIvfIndex(dimensions, {
+        ...this._ivfConfig,
+        nClusters,
+        metric: this._manifest.config.metric,
+      });
+
+      // Collect training vectors
+      const trainingData = new Float32Array(liveVectors * dimensions);
+      const vectorIds: number[] = [];
+      let idx = 0;
+
+      for (const [nodeId, vectorId] of this._manifest.nodeIdToVectorId) {
+        const vector = vectorStoreGet(this._manifest, nodeId);
+        if (vector) {
+          trainingData.set(vector, idx * dimensions);
+          vectorIds.push(vectorId);
+          idx++;
+        }
+      }
+
+      // Train the index
+      ivfAddTrainingVectors(this._index, trainingData, dimensions, idx);
+      ivfTrain(this._index, dimensions);
+
+      // Insert all vectors into the trained index
+      idx = 0;
+      for (const [nodeId, vectorId] of this._manifest.nodeIdToVectorId) {
+        const vector = vectorStoreGet(this._manifest, nodeId);
+        if (vector) {
+          ivfInsert(this._index, vectorId, vector, dimensions);
+          idx++;
+        }
+      }
+
       this._needsTraining = false;
-      return;
+    } finally {
+      this._isBuilding = false;
     }
-
-    // Determine number of clusters (sqrt rule, min 16, max 1024)
-    const nClusters = Math.min(
-      1024,
-      Math.max(16, Math.floor(Math.sqrt(liveVectors)))
-    );
-
-    // Create new index with the same metric as the store
-    this._index = createIvfIndex(dimensions, {
-      ...this._ivfConfig,
-      nClusters,
-      metric: this._manifest.config.metric,
-    });
-
-    // Collect training vectors
-    const trainingData = new Float32Array(liveVectors * dimensions);
-    const vectorIds: number[] = [];
-    let idx = 0;
-
-    for (const [nodeId, vectorId] of this._manifest.nodeIdToVectorId) {
-      const vector = vectorStoreGet(this._manifest, nodeId);
-      if (vector) {
-        trainingData.set(vector, idx * dimensions);
-        vectorIds.push(vectorId);
-        idx++;
-      }
-    }
-
-    // Train the index
-    ivfAddTrainingVectors(this._index, trainingData, dimensions, idx);
-    ivfTrain(this._index, dimensions);
-
-    // Insert all vectors into the trained index
-    idx = 0;
-    for (const [nodeId, vectorId] of this._manifest.nodeIdToVectorId) {
-      const vector = vectorStoreGet(this._manifest, nodeId);
-      if (vector) {
-        ivfInsert(this._index, vectorId, vector, dimensions);
-        idx++;
-      }
-    }
-
-    this._needsTraining = false;
   }
 
   /**

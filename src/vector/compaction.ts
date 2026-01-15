@@ -56,7 +56,7 @@ export function findFragmentsToCompact(
     // Skip active fragment
     if (fragment.state === "active") continue;
 
-    // Skip fragments with no vectors
+    // Skip fragments with no vectors (already compacted/cleared)
     if (fragment.totalVectors === 0) continue;
 
     const deletionRatio = fragment.deletedCount / fragment.totalVectors;
@@ -83,14 +83,48 @@ export function findFragmentsToCompact(
   }
 
   // Only compact if we have enough vectors or multiple fragments
+  // Exception: Always allow compaction of fully-deleted fragments (liveVectors = 0)
   if (
     totalLiveVectors < strategy.minVectorsToCompact &&
-    selected.length < 2
+    selected.length < 2 &&
+    totalLiveVectors > 0  // Allow compaction if all selected fragments are empty
   ) {
     return [];
   }
 
   return selected;
+}
+
+/**
+ * Clear fragments that have all vectors deleted (100% deletion ratio)
+ * This is more efficient than compaction for fully-deleted fragments.
+ *
+ * @param manifest - The vector store manifest
+ * @returns Number of fragments cleared
+ */
+export function clearDeletedFragments(manifest: VectorManifest): number {
+  let cleared = 0;
+
+  for (const fragment of manifest.fragments) {
+    // Skip active fragment
+    if (fragment.state === "active") continue;
+
+    // Skip fragments with no vectors (already cleared)
+    if (fragment.totalVectors === 0) continue;
+
+    // Check if all vectors are deleted
+    if (fragment.deletedCount === fragment.totalVectors) {
+      // Clear the fragment data
+      fragment.rowGroups = [];
+      fragment.deletionBitmap = new Uint32Array(0);
+      manifest.totalDeleted -= fragment.deletedCount;
+      fragment.totalVectors = 0;
+      fragment.deletedCount = 0;
+      cleared++;
+    }
+  }
+
+  return cleared;
 }
 
 /**

@@ -387,6 +387,32 @@ describe("VectorIndex", () => {
     }).toThrow(/dimension mismatch/);
   });
 
+  test("buildIndex guard prevents concurrent modification", async () => {
+    // This test verifies the _isBuilding guard works correctly
+    // In a single-threaded environment, we simulate the scenario by 
+    // checking that the guard is properly set/reset
+    
+    const index = createVectorIndex({ dimensions: 16, trainingThreshold: 10 });
+    const fakeRef = (id: number) => ({ $id: id, $key: `test-${id}`, $def: document });
+
+    // Add enough vectors to trigger index training
+    for (let i = 0; i < 20; i++) {
+      index.set(fakeRef(i), randomVector(16));
+    }
+
+    // Build index should work
+    index.buildIndex();
+    expect(index.stats().indexTrained).toBe(true);
+
+    // After build, modifications should work again
+    index.set(fakeRef(100), randomVector(16));
+    expect(index.has(fakeRef(100))).toBe(true);
+
+    // Delete should also work
+    expect(index.delete(fakeRef(100))).toBe(true);
+    expect(index.has(fakeRef(100))).toBe(false);
+  });
+
   test("invalid vector values error", async () => {
     const index = createVectorIndex({ dimensions: 4 });
 

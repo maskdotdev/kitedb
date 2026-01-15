@@ -165,16 +165,21 @@ export function fragmentSeal(fragment: Fragment): void {
   fragment.state = "sealed";
 
   // Trim the last row group's data array if not full
-  const lastRowGroup = fragment.rowGroups[fragment.rowGroups.length - 1];
-  const dimensions =
-    lastRowGroup.data.length /
-    Math.max(lastRowGroup.count, 1);
-
-  if (dimensions > 0 && lastRowGroup.count > 0) {
-    fragment.rowGroups[fragment.rowGroups.length - 1] = rowGroupTrim(
-      lastRowGroup,
-      dimensions
-    );
+  if (fragment.rowGroups.length > 0) {
+    const lastRowGroup = fragment.rowGroups[fragment.rowGroups.length - 1];
+    
+    // Only trim if there's actually data to trim
+    if (lastRowGroup.count > 0 && lastRowGroup.data.length > 0) {
+      const dimensions = lastRowGroup.data.length / lastRowGroup.count;
+      
+      // Sanity check: dimensions should be a positive integer
+      if (dimensions > 0 && Number.isInteger(dimensions)) {
+        fragment.rowGroups[fragment.rowGroups.length - 1] = rowGroupTrim(
+          lastRowGroup,
+          dimensions
+        );
+      }
+    }
   }
 
   // Trim deletion bitmap to actual size needed
@@ -200,18 +205,42 @@ export function fragmentShouldSeal(
  * @param fragment - The fragment
  * @param localIdx - Local index within the fragment
  * @param dimensions - Number of dimensions per vector
+ * @param rowGroupCapacity - Optional row group capacity (required for sealed single-rowgroup fragments)
  * @returns The vector as a Float32Array view, or null if deleted/not found
  */
 export function fragmentGetVector(
   fragment: Fragment,
   localIdx: number,
-  dimensions: number
+  dimensions: number,
+  rowGroupCapacity?: number
 ): Float32Array | null {
   if (fragmentIsDeleted(fragment, localIdx)) {
     return null;
   }
 
-  const rowGroupSize = fragment.rowGroups[0]?.data.length / dimensions || 0;
+  // Handle empty fragment
+  if (fragment.rowGroups.length === 0 || dimensions === 0) {
+    return null;
+  }
+
+  // Calculate row group size:
+  // - If rowGroupCapacity is provided, use it (most reliable)
+  // - If fragment has multiple row groups, the first one is never trimmed
+  // - If fragment has one row group, it may have been trimmed on seal
+  let rowGroupSize: number;
+  
+  if (rowGroupCapacity !== undefined) {
+    rowGroupSize = rowGroupCapacity;
+  } else if (fragment.rowGroups.length > 1) {
+    // First row group is never trimmed, use its capacity
+    rowGroupSize = fragment.rowGroups[0].data.length / dimensions;
+  } else {
+    // Single row group - could be trimmed, so use its count as upper bound
+    // This works because localIdx can't exceed totalVectors which equals count
+    const singleRowGroup = fragment.rowGroups[0];
+    rowGroupSize = Math.max(singleRowGroup.data.length / dimensions, singleRowGroup.count);
+  }
+  
   if (rowGroupSize === 0) {
     return null;
   }

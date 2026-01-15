@@ -74,6 +74,7 @@ import {
   compactFragments,
   applyCompaction,
   getCompactionStats,
+  clearDeletedFragments,
   // Serialization
   serializeIvf,
   deserializeIvf,
@@ -665,6 +666,60 @@ describe("Fragment Operations", () => {
 
     fragmentDelete(fragment, 0);
     expect(fragmentGetVector(fragment, 0, config.dimensions)).toBeNull();
+  });
+
+  test("fragmentGetVector works after seal with single row group", () => {
+    // This tests the edge case where a single row group is trimmed on seal
+    const fragment = createFragment(0, config);
+    const v1 = randomNormalizedVector(config.dimensions);
+    const v2 = randomNormalizedVector(config.dimensions);
+    
+    fragmentAppend(fragment, v1, config);
+    fragmentAppend(fragment, v2, config);
+    
+    // Seal the fragment - this trims the single row group
+    fragmentSeal(fragment);
+    
+    // Verify we can still retrieve vectors after sealing
+    const retrieved1 = fragmentGetVector(fragment, 0, config.dimensions);
+    const retrieved2 = fragmentGetVector(fragment, 1, config.dimensions);
+    
+    expect(retrieved1).not.toBeNull();
+    expect(retrieved2).not.toBeNull();
+    
+    // Verify the data is correct
+    for (let i = 0; i < config.dimensions; i++) {
+      expect(retrieved1![i]).toBeCloseTo(v1[i], 5);
+      expect(retrieved2![i]).toBeCloseTo(v2[i], 5);
+    }
+  });
+
+  test("fragmentGetVector works with multiple row groups after seal", () => {
+    const fragment = createFragment(0, config);
+    const vectors: Float32Array[] = [];
+    
+    // Add more vectors than one row group can hold
+    for (let i = 0; i < 15; i++) {
+      const v = randomNormalizedVector(config.dimensions);
+      vectors.push(v);
+      fragmentAppend(fragment, v, config);
+    }
+    
+    // Should have 2 row groups now (rowGroupSize is 10)
+    expect(fragment.rowGroups.length).toBe(2);
+    
+    // Seal the fragment
+    fragmentSeal(fragment);
+    
+    // Verify we can still retrieve all vectors
+    for (let i = 0; i < 15; i++) {
+      const retrieved = fragmentGetVector(fragment, i, config.dimensions);
+      expect(retrieved).not.toBeNull();
+      
+      for (let d = 0; d < config.dimensions; d++) {
+        expect(retrieved![d]).toBeCloseTo(vectors[i][d], 5);
+      }
+    }
   });
 
   test("fragmentLiveCount returns correct count", () => {
@@ -1293,6 +1348,43 @@ describe("Compaction", () => {
     expect(stats.fragmentsNeedingCompaction).toBe(1);
     expect(stats.totalDeletedVectors).toBe(4);
     expect(stats.averageDeletionRatio).toBeCloseTo(0.4, 5);
+  });
+
+  test("clearDeletedFragments removes fully-deleted fragments", () => {
+    const store = createVectorStore(dimensions, {
+      fragmentTargetSize: 10,
+      rowGroupSize: 5,
+    });
+
+    // Add vectors
+    for (let i = 0; i < 10; i++) {
+      vectorStoreInsert(store, i, randomVector(dimensions));
+    }
+
+    // Seal the fragment
+    store.fragments[0].state = "sealed";
+    
+    // Create a new active fragment
+    store.fragments.push(createFragment(1, store.config));
+    store.activeFragmentId = 1;
+
+    // Delete ALL vectors from the first fragment
+    for (let i = 0; i < 10; i++) {
+      vectorStoreDelete(store, i);
+    }
+
+    // First fragment should have 100% deletion
+    expect(store.fragments[0].deletedCount).toBe(10);
+    expect(store.fragments[0].totalVectors).toBe(10);
+
+    // Clear deleted fragments
+    const cleared = clearDeletedFragments(store);
+
+    expect(cleared).toBe(1);
+    expect(store.fragments[0].totalVectors).toBe(0);
+    expect(store.fragments[0].deletedCount).toBe(0);
+    expect(store.fragments[0].rowGroups.length).toBe(0);
+    expect(store.totalDeleted).toBe(0);
   });
 });
 
