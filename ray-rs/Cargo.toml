@@ -74,6 +74,10 @@ criterion = "0.5"
 name = "distance"
 harness = false
 
+[[bench]]
+name = "graph"
+harness = false
+
 [features]
 default = []
 async = ["tokio"]
