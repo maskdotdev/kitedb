@@ -23,6 +23,7 @@ use crate::graph::nodes::{
   create_node, del_node_prop, delete_node, get_node_by_key, get_node_prop, node_exists,
   set_node_prop, NodeOpts, get_node_by_key_db, get_node_prop_db, node_exists_db,
 };
+use crate::graph::key_index::get_node_key;
 use crate::graph::tx::{begin_tx, commit, rollback, TxHandle};
 use crate::types::*;
 
@@ -414,9 +415,22 @@ impl Ray {
     let exists = node_exists_db(&self.db, node_id);
 
     if exists {
-      // Try to determine node type from key
-      // TODO: Implement key lookup from snapshot/delta
-      Ok(Some(NodeRef::new(node_id, None, "unknown")))
+      // Look up the node's key from snapshot/delta
+      let delta = self.db.delta.read();
+      let key = get_node_key(self.db.snapshot.as_ref(), &delta, node_id);
+      
+      // Try to determine node type from key prefix
+      let node_type = if let Some(ref k) = key {
+        // Find matching node def by key prefix
+        self.nodes.values()
+          .find(|def| k.starts_with(&def.key_prefix))
+          .map(|def| def.name.as_str())
+          .unwrap_or("unknown")
+      } else {
+        "unknown"
+      };
+      
+      Ok(Some(NodeRef::new(node_id, key, node_type)))
     } else {
       Ok(None)
     }
@@ -850,7 +864,7 @@ impl Ray {
     let mut count = 0u64;
 
     for node_id in list_nodes(&self.db) {
-      if let Some(key) = self.get_node_key(node_id) {
+      if let Some(key) = self.get_node_key_internal(node_id) {
         if key.starts_with(prefix) {
           count += 1;
         }
@@ -906,7 +920,7 @@ impl Ray {
     let node_type_str = node_type.to_string();
 
     Ok(list_nodes(&self.db).into_iter().filter_map(move |node_id| {
-      let key = self.get_node_key(node_id)?;
+      let key = self.get_node_key_internal(node_id)?;
       if key.starts_with(&prefix) {
         Some(NodeRef::new(node_id, Some(key), &node_type_str))
       } else {
@@ -989,21 +1003,9 @@ impl Ray {
   }
 
   /// Helper to get node key from database
-  fn get_node_key(&self, node_id: NodeId) -> Option<String> {
-    // Try to get from delta first, then snapshot
+  fn get_node_key_internal(&self, node_id: NodeId) -> Option<String> {
     let delta = self.db.delta.read();
-    if let Some(node_delta) = delta.created_nodes.get(&node_id) {
-      return node_delta.key.clone();
-    }
-
-    // Try snapshot
-    if let Some(ref snapshot) = self.db.snapshot {
-      if let Some(phys) = snapshot.get_phys_node(node_id) {
-        return snapshot.get_node_key(phys);
-      }
-    }
-
-    None
+    get_node_key(self.db.snapshot.as_ref(), &delta, node_id)
   }
 
   // ========================================================================
