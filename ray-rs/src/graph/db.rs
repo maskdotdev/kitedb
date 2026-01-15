@@ -346,8 +346,9 @@ impl GraphDB {
       // For production use cases requiring full durability, use sync_all() instead.
       #[cfg(target_os = "macos")]
       {
-        unsafe {
-          libc::fsync(fd_clone.as_raw_fd());
+        let ret = unsafe { libc::fsync(fd_clone.as_raw_fd()) };
+        if ret != 0 {
+          return Err(std::io::Error::last_os_error().into());
         }
       }
       #[cfg(not(target_os = "macos"))]
@@ -360,6 +361,68 @@ impl GraphDB {
     } else {
       Err(RayError::Internal("WAL not initialized".to_string()))
     }
+  }
+
+  // ========================================================================
+  // Compaction / Optimize
+  // ========================================================================
+
+  /// Optimize the database by compacting snapshot + delta into a new snapshot
+  ///
+  /// This operation:
+  /// 1. Collects all live nodes and edges from snapshot + delta
+  /// 2. Builds a new snapshot with the merged data
+  /// 3. Updates manifest to point to new snapshot
+  /// 4. Creates a new WAL segment
+  /// 5. Clears delta
+  /// 6. Garbage collects old snapshots
+  pub fn optimize(&mut self) -> Result<()> {
+    use crate::core::compactor::{optimize, OptimizeOptions};
+    use crate::core::snapshot::reader::{ParseSnapshotOptions, SnapshotData};
+    use memmap2::Mmap;
+    use std::sync::Arc;
+
+    if self.read_only {
+      return Err(RayError::ReadOnly);
+    }
+
+    // Must have manifest for multi-file format
+    let manifest = self
+      .manifest
+      .as_ref()
+      .ok_or_else(|| RayError::Internal("No manifest for multi-file database".to_string()))?;
+
+    // Run compaction
+    let delta = self.delta.read();
+    let (new_manifest, snapshot_path) =
+      optimize(&self.path, self.snapshot.as_ref(), &delta, manifest, &OptimizeOptions::default())?;
+    drop(delta);
+
+    // Update manifest reference
+    self.manifest = Some(new_manifest.clone());
+
+    // Clear delta
+    self.delta.write().clear();
+
+    // Reload snapshot from new file
+    let file = File::open(&snapshot_path)?;
+    let mmap = Arc::new(unsafe { Mmap::map(&file)? });
+    let snapshot_data = SnapshotData::parse(mmap, &ParseSnapshotOptions::default())?;
+    self.snapshot = Some(snapshot_data);
+
+    // Update WAL offset (new WAL segment starts at 0)
+    self.wal_offset.store(0, Ordering::SeqCst);
+
+    // Reopen WAL file descriptor for new segment
+    let wal_path = self.path.join(WAL_DIR).join(wal_filename(new_manifest.active_wal_seg));
+    let wal_fd = FsOpenOptions::new()
+      .create(true)
+      .read(true)
+      .write(true)
+      .open(&wal_path)?;
+    self.wal_fd = Some(wal_fd);
+
+    Ok(())
   }
 }
 

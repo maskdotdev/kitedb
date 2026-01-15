@@ -1266,13 +1266,19 @@ impl Ray {
   /// file size and improving read performance. This is equivalent to
   /// "VACUUM" in SQLite.
   ///
-  /// Note: For multi-file GraphDB, this creates a new snapshot and
-  /// reclaims space from deleted nodes/edges.
-  pub fn optimize(&self) -> Result<()> {
-    // GraphDB doesn't have a direct optimize method, but we can
-    // trigger similar behavior through the compactor if available.
-    // For now, this is a placeholder that can be extended.
-    Ok(())
+  /// Optimize the database by compacting snapshot + delta into a new snapshot
+  ///
+  /// This operation:
+  /// 1. Collects all live nodes and edges from snapshot + delta
+  /// 2. Builds a new snapshot with the merged data  
+  /// 3. Updates manifest to point to new snapshot
+  /// 4. Clears WAL and delta
+  /// 5. Garbage collects old snapshots (keeps last 2)
+  ///
+  /// Call this periodically to reclaim space from deleted nodes/edges
+  /// and improve read performance.
+  pub fn optimize(&mut self) -> Result<()> {
+    self.db.optimize()
   }
 
   /// Get database statistics
