@@ -7,6 +7,18 @@ use crate::types::*;
 use super::SingleFileDB;
 
 // ============================================================================
+// Edge Types
+// ============================================================================
+
+/// Full edge with source, destination, and type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FullEdge {
+  pub src: NodeId,
+  pub etype: ETypeId,
+  pub dst: NodeId,
+}
+
+// ============================================================================
 // Node Iterator
 // ============================================================================
 
@@ -151,6 +163,71 @@ impl SingleFileDB {
     count += delta.total_edges_added();
 
     count
+  }
+
+  /// Count edges of a specific type
+  pub fn count_edges_by_type(&self, etype: ETypeId) -> usize {
+    self.list_edges(Some(etype)).len()
+  }
+
+  /// List all edges in the database
+  ///
+  /// Optionally filter by edge type.
+  pub fn list_edges(&self, etype_filter: Option<ETypeId>) -> Vec<FullEdge> {
+    let delta = self.delta.read();
+    let snapshot = self.snapshot.read();
+    let mut edges = Vec::new();
+
+    // From snapshot
+    if let Some(ref snap) = *snapshot {
+      let num_nodes = snap.header.num_nodes as u32;
+      for phys in 0..num_nodes {
+        if let Some(src) = snap.get_node_id(phys) {
+          // Skip deleted nodes
+          if delta.is_node_deleted(src) {
+            continue;
+          }
+
+          for (dst_phys, etype) in snap.iter_out_edges(phys) {
+            // Apply filter
+            if let Some(filter_etype) = etype_filter {
+              if etype != filter_etype {
+                continue;
+              }
+            }
+
+            if let Some(dst) = snap.get_node_id(dst_phys) {
+              // Skip deleted edges
+              if delta.is_edge_deleted(src, etype, dst) {
+                continue;
+              }
+
+              edges.push(FullEdge { src, etype, dst });
+            }
+          }
+        }
+      }
+    }
+
+    // Add delta edges
+    for (&src, add_set) in &delta.out_add {
+      for patch in add_set {
+        // Apply filter
+        if let Some(filter_etype) = etype_filter {
+          if patch.etype != filter_etype {
+            continue;
+          }
+        }
+
+        edges.push(FullEdge {
+          src,
+          etype: patch.etype,
+          dst: patch.other,
+        });
+      }
+    }
+
+    edges
   }
 
   /// Get database statistics

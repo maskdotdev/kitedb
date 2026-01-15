@@ -226,11 +226,19 @@ impl From<JsPropValue> for PropValue {
 // Edge Result
 // ============================================================================
 
-/// Edge representation for JS
+/// Edge representation for JS (neighbor style)
 #[napi(object)]
 pub struct JsEdge {
   pub etype: u32,
   pub node_id: i64,
+}
+
+/// Full edge representation for JS (src, etype, dst)
+#[napi(object)]
+pub struct JsFullEdge {
+  pub src: i64,
+  pub etype: u32,
+  pub dst: i64,
 }
 
 // ============================================================================
@@ -473,6 +481,63 @@ impl Database {
   pub fn count_edges(&self) -> Result<i64> {
     let db = self.get_db()?;
     Ok(db.count_edges() as i64)
+  }
+
+  /// List all edges in the database
+  ///
+  /// Returns an array of {src, etype, dst} objects representing all edges.
+  /// Optionally filter by edge type.
+  #[napi]
+  pub fn list_edges(&self, etype: Option<u32>) -> Result<Vec<JsFullEdge>> {
+    let db = self.get_db()?;
+    Ok(
+      db.list_edges(etype)
+        .into_iter()
+        .map(|e| JsFullEdge {
+          src: e.src as i64,
+          etype: e.etype,
+          dst: e.dst as i64,
+        })
+        .collect(),
+    )
+  }
+
+  /// List edges by type name
+  ///
+  /// Returns an array of {src, etype, dst} objects for the given edge type.
+  #[napi]
+  pub fn list_edges_by_name(&self, etype_name: String) -> Result<Vec<JsFullEdge>> {
+    let db = self.get_db()?;
+    let etype = db
+      .get_etype_id(&etype_name)
+      .ok_or_else(|| Error::from_reason(format!("Unknown edge type: {}", etype_name)))?;
+    Ok(
+      db.list_edges(Some(etype))
+        .into_iter()
+        .map(|e| JsFullEdge {
+          src: e.src as i64,
+          etype: e.etype,
+          dst: e.dst as i64,
+        })
+        .collect(),
+    )
+  }
+
+  /// Count edges by type
+  #[napi]
+  pub fn count_edges_by_type(&self, etype: u32) -> Result<i64> {
+    let db = self.get_db()?;
+    Ok(db.count_edges_by_type(etype) as i64)
+  }
+
+  /// Count edges by type name
+  #[napi]
+  pub fn count_edges_by_name(&self, etype_name: String) -> Result<i64> {
+    let db = self.get_db()?;
+    let etype = db
+      .get_etype_id(&etype_name)
+      .ok_or_else(|| Error::from_reason(format!("Unknown edge type: {}", etype_name)))?;
+    Ok(db.count_edges_by_type(etype) as i64)
   }
 
   // ========================================================================
@@ -812,6 +877,18 @@ impl Database {
   pub fn should_checkpoint(&self, threshold: Option<f64>) -> Result<bool> {
     let db = self.get_db()?;
     Ok(db.should_checkpoint(threshold.unwrap_or(0.8)))
+  }
+
+  /// Optimize (compact) the database
+  ///
+  /// This is an alias for `checkpoint()` to match the TypeScript API.
+  /// For single-file databases, optimization means merging the WAL into
+  /// the snapshot, which reduces file size and improves read performance.
+  #[napi]
+  pub fn optimize(&self) -> Result<()> {
+    let db = self.get_db()?;
+    db.checkpoint()
+      .map_err(|e| Error::from_reason(format!("Failed to optimize: {}", e)))
   }
 
   /// Get database statistics

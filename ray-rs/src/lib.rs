@@ -51,6 +51,12 @@ pub mod napi_bindings;
 // Re-export commonly used items
 pub use error::{RayError, Result};
 
+// Re-export schema builders for convenience
+pub use api::schema::{
+    define_edge, define_node, prop, DatabaseSchema, EdgeSchema, NodeSchema, PropDef, SchemaType,
+    ValidationError,
+};
+
 // ============================================================================
 // NAPI Exports
 // ============================================================================

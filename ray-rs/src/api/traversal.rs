@@ -251,6 +251,8 @@ pub struct TraversalBuilder {
   edge_filter: Option<EdgeFilter>,
   /// Global node filter applied to all results
   node_filter: Option<NodeFilter>,
+  /// Selected properties for node projection (None = load all)
+  selected_props: Option<Vec<String>>,
 }
 
 impl std::fmt::Debug for TraversalBuilder {
@@ -262,6 +264,7 @@ impl std::fmt::Debug for TraversalBuilder {
       .field("unique_nodes", &self.unique_nodes)
       .field("edge_filter", &self.edge_filter.as_ref().map(|_| "<fn>"))
       .field("node_filter", &self.node_filter.as_ref().map(|_| "<fn>"))
+      .field("selected_props", &self.selected_props)
       .finish()
   }
 }
@@ -276,6 +279,7 @@ impl TraversalBuilder {
       unique_nodes: true,
       edge_filter: None,
       node_filter: None,
+      selected_props: None,
     }
   }
 
@@ -373,6 +377,38 @@ impl TraversalBuilder {
     self
   }
 
+  /// Select specific properties to load (optimization)
+  ///
+  /// Only the specified properties will be loaded when collecting results,
+  /// reducing overhead. This is useful when you only need a few properties
+  /// from nodes that have many properties.
+  ///
+  /// # Example
+  /// ```ignore
+  /// let builder = TraversalBuilder::from_node(1)
+  ///     .out(Some(knows_etype))
+  ///     .select(vec!["name".to_string(), "age".to_string()]);
+  ///
+  /// // Only "name" and "age" properties will be loaded
+  /// ```
+  pub fn select(mut self, props: Vec<String>) -> Self {
+    self.selected_props = Some(props);
+    self
+  }
+
+  /// Select specific properties to load using string slices
+  ///
+  /// Convenience method that accepts &str instead of String.
+  pub fn select_props(mut self, props: &[&str]) -> Self {
+    self.selected_props = Some(props.iter().map(|s| s.to_string()).collect());
+    self
+  }
+
+  /// Get the selected properties (if any)
+  pub fn selected_properties(&self) -> Option<&[String]> {
+    self.selected_props.as_deref()
+  }
+
   /// Check if the builder has any filters set
   pub fn has_filters(&self) -> bool {
     if self.edge_filter.is_some() || self.node_filter.is_some() {
@@ -397,6 +433,18 @@ impl TraversalBuilder {
       }
     }
     false
+  }
+
+  /// Build CollectOptions from the current builder configuration
+  ///
+  /// This creates CollectOptions with the selected properties for use
+  /// when materializing results with properties.
+  pub fn collect_options(&self) -> CollectOptions {
+    let mut opts = CollectOptions::new();
+    if let Some(ref props) = self.selected_props {
+      opts = opts.select_node_props(props.clone());
+    }
+    opts
   }
 
   /// Execute the traversal and return an iterator of results
@@ -919,6 +967,358 @@ where
         }
       }
     }
+  }
+}
+
+// ============================================================================
+// Result Accessors
+// ============================================================================
+
+/// Result of a traversal query with accessor methods.
+///
+/// Provides fluent methods to access traversal results:
+/// - `.nodes()` - Get an iterator over node IDs
+/// - `.edges()` - Get an iterator over edges (with traversal info)
+/// - `.to_vec()` - Collect all results into a Vec
+/// - `.first()` - Get the first result
+/// - `.count()` - Count all results
+///
+/// # Example
+///
+/// ```rust,ignore
+/// let results = TraversalBuilder::from_node(1)
+///     .out(Some(knows_etype))
+///     .results(get_neighbors);
+///
+/// // Get first node
+/// let first = results.first();
+///
+/// // Collect all node IDs
+/// let node_ids = results.nodes().collect::<Vec<_>>();
+///
+/// // Collect all edges
+/// let edges = results.edges().collect::<Vec<_>>();
+/// ```
+pub struct TraversalResults<I> {
+  iter: I,
+}
+
+impl<I> TraversalResults<I>
+where
+  I: Iterator<Item = TraversalResult>,
+{
+  /// Create a new TraversalResults wrapper
+  pub fn new(iter: I) -> Self {
+    Self { iter }
+  }
+
+  /// Get an iterator over node IDs only
+  ///
+  /// This is useful when you only need the node IDs and don't care about
+  /// the edges or depth information.
+  pub fn nodes(self) -> NodeIdIterator<I> {
+    NodeIdIterator { inner: self.iter }
+  }
+
+  /// Get an iterator over edges only
+  ///
+  /// Returns edges that were traversed to reach each node.
+  /// The first result (start nodes) will have `None` for the edge.
+  pub fn edges(self) -> EdgeIterator<I> {
+    EdgeIterator { inner: self.iter }
+  }
+
+  /// Get an iterator over full traversal results
+  ///
+  /// Each result contains the node ID, the edge used to reach it,
+  /// and the depth in the traversal.
+  pub fn full(self) -> I {
+    self.iter
+  }
+
+  /// Collect all node IDs into a Vec
+  pub fn to_vec(self) -> Vec<NodeId> {
+    self.iter.map(|r| r.node_id).collect()
+  }
+
+  /// Get the first result, or None if empty
+  pub fn first(mut self) -> Option<TraversalResult> {
+    self.iter.next()
+  }
+
+  /// Get the first node ID, or None if empty
+  pub fn first_node(mut self) -> Option<NodeId> {
+    self.iter.next().map(|r| r.node_id)
+  }
+
+  /// Count the number of results
+  ///
+  /// Note: This consumes the iterator.
+  pub fn count(self) -> usize {
+    self.iter.count()
+  }
+}
+
+/// Iterator adapter that yields only node IDs from traversal results
+pub struct NodeIdIterator<I> {
+  inner: I,
+}
+
+impl<I> Iterator for NodeIdIterator<I>
+where
+  I: Iterator<Item = TraversalResult>,
+{
+  type Item = NodeId;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    self.inner.next().map(|r| r.node_id)
+  }
+
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    self.inner.size_hint()
+  }
+}
+
+/// Iterator adapter that yields only edges from traversal results
+pub struct EdgeIterator<I> {
+  inner: I,
+}
+
+impl<I> Iterator for EdgeIterator<I>
+where
+  I: Iterator<Item = TraversalResult>,
+{
+  type Item = RawEdge;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    loop {
+      match self.inner.next() {
+        Some(result) => {
+          if let Some(edge) = result.edge {
+            return Some(edge);
+          }
+          // Skip results without edges (start nodes)
+        }
+        None => return None,
+      }
+    }
+  }
+
+  fn size_hint(&self) -> (usize, Option<usize>) {
+    let (_, upper) = self.inner.size_hint();
+    (0, upper) // Lower bound is 0 because start nodes have no edges
+  }
+}
+
+// ============================================================================
+// TraversalBuilder Result Methods
+// ============================================================================
+
+impl TraversalBuilder {
+  /// Execute the traversal and return results with accessor methods
+  ///
+  /// This is the recommended way to execute traversals when you need
+  /// flexible access to the results.
+  ///
+  /// # Example
+  ///
+  /// ```rust,ignore
+  /// let results = TraversalBuilder::from_node(1)
+  ///     .out(Some(knows_etype))
+  ///     .results(&get_neighbors);
+  ///
+  /// // Get first node ID
+  /// let first = results.first_node();
+  ///
+  /// // Or collect all nodes
+  /// let all_nodes = results.to_vec();
+  /// ```
+  pub fn results<F>(self, get_neighbors: F) -> TraversalResults<TraversalIterator<F>>
+  where
+    F: Fn(NodeId, TraversalDirection, Option<ETypeId>) -> Vec<Edge>,
+  {
+    TraversalResults::new(self.execute(get_neighbors))
+  }
+
+  /// Execute and get the first result
+  ///
+  /// Convenience method equivalent to `.results(f).first()`.
+  pub fn first<F>(self, get_neighbors: F) -> Option<TraversalResult>
+  where
+    F: Fn(NodeId, TraversalDirection, Option<ETypeId>) -> Vec<Edge>,
+  {
+    self.execute(get_neighbors).next()
+  }
+
+  /// Execute and get the first node ID
+  ///
+  /// Convenience method equivalent to `.results(f).first_node()`.
+  pub fn first_node<F>(self, get_neighbors: F) -> Option<NodeId>
+  where
+    F: Fn(NodeId, TraversalDirection, Option<ETypeId>) -> Vec<Edge>,
+  {
+    self.execute(get_neighbors).next().map(|r| r.node_id)
+  }
+
+  /// Execute and collect all node IDs into a Vec
+  ///
+  /// Convenience method equivalent to `.results(f).to_vec()`.
+  pub fn to_vec<F>(self, get_neighbors: F) -> Vec<NodeId>
+  where
+    F: Fn(NodeId, TraversalDirection, Option<ETypeId>) -> Vec<Edge>,
+  {
+    self.collect_node_ids(get_neighbors)
+  }
+}
+
+// ============================================================================
+// Extended Result Types with Properties
+// ============================================================================
+
+/// A node result with loaded properties
+#[derive(Debug, Clone)]
+pub struct NodeResult {
+  /// Node ID
+  pub id: NodeId,
+  /// Node key (if available)
+  pub key: Option<String>,
+  /// Node properties
+  pub props: HashMap<String, PropValue>,
+}
+
+impl NodeResult {
+  /// Create a new NodeResult
+  pub fn new(id: NodeId) -> Self {
+    Self {
+      id,
+      key: None,
+      props: HashMap::new(),
+    }
+  }
+
+  /// Set the node key
+  pub fn with_key(mut self, key: String) -> Self {
+    self.key = Some(key);
+    self
+  }
+
+  /// Set the node properties
+  pub fn with_props(mut self, props: HashMap<String, PropValue>) -> Self {
+    self.props = props;
+    self
+  }
+
+  /// Get a property value by name
+  pub fn get(&self, name: &str) -> Option<&PropValue> {
+    self.props.get(name)
+  }
+
+  /// Get a string property
+  pub fn get_string(&self, name: &str) -> Option<&str> {
+    match self.props.get(name) {
+      Some(PropValue::String(s)) => Some(s),
+      _ => None,
+    }
+  }
+
+  /// Get an integer property
+  pub fn get_int(&self, name: &str) -> Option<i64> {
+    match self.props.get(name) {
+      Some(PropValue::I64(v)) => Some(*v),
+      _ => None,
+    }
+  }
+
+  /// Get a float property
+  pub fn get_float(&self, name: &str) -> Option<f64> {
+    match self.props.get(name) {
+      Some(PropValue::F64(v)) => Some(*v),
+      _ => None,
+    }
+  }
+
+  /// Get a boolean property
+  pub fn get_bool(&self, name: &str) -> Option<bool> {
+    match self.props.get(name) {
+      Some(PropValue::Bool(v)) => Some(*v),
+      _ => None,
+    }
+  }
+}
+
+/// An edge result with loaded properties
+#[derive(Debug, Clone)]
+pub struct FullEdgeResult {
+  /// Source node ID
+  pub src: NodeId,
+  /// Destination node ID
+  pub dst: NodeId,
+  /// Edge type ID
+  pub etype: ETypeId,
+  /// Edge properties
+  pub props: HashMap<String, PropValue>,
+}
+
+impl FullEdgeResult {
+  /// Create from a RawEdge
+  pub fn from_raw(edge: RawEdge) -> Self {
+    Self {
+      src: edge.src,
+      dst: edge.dst,
+      etype: edge.etype,
+      props: HashMap::new(),
+    }
+  }
+
+  /// Set the edge properties
+  pub fn with_props(mut self, props: HashMap<String, PropValue>) -> Self {
+    self.props = props;
+    self
+  }
+
+  /// Get a property value by name
+  pub fn get(&self, name: &str) -> Option<&PropValue> {
+    self.props.get(name)
+  }
+}
+
+// ============================================================================
+// Collecting Results with Properties
+// ============================================================================
+
+/// Options for collecting results with properties
+#[derive(Debug, Clone, Default)]
+pub struct CollectOptions {
+  /// Property names to load for nodes (None = load all)
+  pub node_props: Option<Vec<String>>,
+  /// Property names to load for edges (None = load all)
+  pub edge_props: Option<Vec<String>>,
+  /// Whether to load node keys
+  pub load_keys: bool,
+}
+
+impl CollectOptions {
+  /// Create new options
+  pub fn new() -> Self {
+    Self::default()
+  }
+
+  /// Specify which node properties to load
+  pub fn select_node_props(mut self, props: Vec<String>) -> Self {
+    self.node_props = Some(props);
+    self
+  }
+
+  /// Specify which edge properties to load
+  pub fn select_edge_props(mut self, props: Vec<String>) -> Self {
+    self.edge_props = Some(props);
+    self
+  }
+
+  /// Enable loading node keys
+  pub fn with_keys(mut self) -> Self {
+    self.load_keys = true;
+    self
   }
 }
 
@@ -1466,5 +1866,334 @@ mod tests {
     assert_eq!(edge_info.dst, 2);
     assert_eq!(edge_info.etype, 3);
     assert!(edge_info.props.is_empty());
+  }
+
+  // ============================================================================
+  // Result Accessor Tests
+  // ============================================================================
+
+  #[test]
+  fn test_results_to_vec() {
+    let get_neighbors = mock_graph();
+
+    let nodes = TraversalBuilder::from_node(1)
+      .out(Some(1))
+      .results(&get_neighbors)
+      .to_vec();
+
+    assert_eq!(nodes, vec![2]);
+  }
+
+  #[test]
+  fn test_results_first() {
+    let get_neighbors = mock_graph();
+
+    let first = TraversalBuilder::from_node(1)
+      .out(Some(1))
+      .results(&get_neighbors)
+      .first();
+
+    assert!(first.is_some());
+    assert_eq!(first.unwrap().node_id, 2);
+  }
+
+  #[test]
+  fn test_results_first_node() {
+    let get_neighbors = mock_graph();
+
+    let first = TraversalBuilder::from_node(1)
+      .out(Some(1))
+      .results(&get_neighbors)
+      .first_node();
+
+    assert_eq!(first, Some(2));
+  }
+
+  #[test]
+  fn test_results_first_empty() {
+    let get_neighbors = mock_graph();
+
+    let first = TraversalBuilder::from_node(999)
+      .out(None)
+      .results(&get_neighbors)
+      .first();
+
+    assert!(first.is_none());
+  }
+
+  #[test]
+  fn test_results_count() {
+    let get_neighbors = mock_graph();
+
+    let count = TraversalBuilder::from_node(1)
+      .out(None)
+      .results(&get_neighbors)
+      .count();
+
+    assert_eq!(count, 2);
+  }
+
+  #[test]
+  fn test_results_nodes_iterator() {
+    let get_neighbors = mock_graph();
+
+    let nodes: Vec<_> = TraversalBuilder::from_node(1)
+      .out(None)
+      .results(&get_neighbors)
+      .nodes()
+      .collect();
+
+    assert_eq!(nodes.len(), 2);
+    assert!(nodes.contains(&2));
+    assert!(nodes.contains(&4));
+  }
+
+  #[test]
+  fn test_results_edges_iterator() {
+    let get_neighbors = mock_graph();
+
+    let edges: Vec<_> = TraversalBuilder::from_node(1)
+      .out(None)
+      .results(&get_neighbors)
+      .edges()
+      .collect();
+
+    assert_eq!(edges.len(), 2);
+    // All edges should have src=1
+    for edge in &edges {
+      assert_eq!(edge.src, 1);
+    }
+  }
+
+  #[test]
+  fn test_results_full_iterator() {
+    let get_neighbors = mock_graph();
+
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .out(Some(1))
+      .results(&get_neighbors)
+      .full()
+      .collect();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].node_id, 2);
+    assert!(results[0].edge.is_some());
+    assert_eq!(results[0].depth, 1);
+  }
+
+  #[test]
+  fn test_builder_first_method() {
+    let get_neighbors = mock_graph();
+
+    let first = TraversalBuilder::from_node(1)
+      .out(Some(1))
+      .first(&get_neighbors);
+
+    assert!(first.is_some());
+    assert_eq!(first.unwrap().node_id, 2);
+  }
+
+  #[test]
+  fn test_builder_first_node_method() {
+    let get_neighbors = mock_graph();
+
+    let first = TraversalBuilder::from_node(1)
+      .out(Some(1))
+      .first_node(&get_neighbors);
+
+    assert_eq!(first, Some(2));
+  }
+
+  #[test]
+  fn test_builder_to_vec_method() {
+    let get_neighbors = mock_graph();
+
+    let nodes = TraversalBuilder::from_node(1)
+      .out(None)
+      .to_vec(&get_neighbors);
+
+    assert_eq!(nodes.len(), 2);
+    assert!(nodes.contains(&2));
+    assert!(nodes.contains(&4));
+  }
+
+  #[test]
+  fn test_node_result_accessors() {
+    let mut props = HashMap::new();
+    props.insert("name".to_string(), PropValue::String("Alice".to_string()));
+    props.insert("age".to_string(), PropValue::I64(30));
+    props.insert("score".to_string(), PropValue::F64(95.5));
+    props.insert("active".to_string(), PropValue::Bool(true));
+
+    let result = NodeResult::new(1)
+      .with_key("user:alice".to_string())
+      .with_props(props);
+
+    assert_eq!(result.id, 1);
+    assert_eq!(result.key, Some("user:alice".to_string()));
+    assert_eq!(result.get_string("name"), Some("Alice"));
+    assert_eq!(result.get_int("age"), Some(30));
+    assert_eq!(result.get_float("score"), Some(95.5));
+    assert_eq!(result.get_bool("active"), Some(true));
+    assert_eq!(result.get_string("missing"), None);
+  }
+
+  #[test]
+  fn test_full_edge_result() {
+    let raw = RawEdge {
+      src: 1,
+      dst: 2,
+      etype: 3,
+    };
+
+    let mut props = HashMap::new();
+    props.insert("weight".to_string(), PropValue::F64(0.5));
+
+    let edge = FullEdgeResult::from_raw(raw).with_props(props);
+
+    assert_eq!(edge.src, 1);
+    assert_eq!(edge.dst, 2);
+    assert_eq!(edge.etype, 3);
+    assert!(edge.get("weight").is_some());
+  }
+
+  #[test]
+  fn test_two_hop_results() {
+    let get_neighbors = mock_graph();
+
+    // 1 -> 2 -> 3
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .out(Some(1))
+      .out(Some(1))
+      .results(&get_neighbors)
+      .full()
+      .collect();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].node_id, 3);
+    assert_eq!(results[0].depth, 2);
+  }
+
+  #[test]
+  fn test_collect_options() {
+    let opts = CollectOptions::new()
+      .select_node_props(vec!["name".to_string(), "age".to_string()])
+      .select_edge_props(vec!["weight".to_string()])
+      .with_keys();
+
+    assert!(opts.node_props.is_some());
+    assert_eq!(opts.node_props.as_ref().unwrap().len(), 2);
+    assert!(opts.edge_props.is_some());
+    assert!(opts.load_keys);
+  }
+
+  // ============================================================================
+  // Select Property Tests
+  // ============================================================================
+
+  #[test]
+  fn test_select_stores_properties() {
+    let builder = TraversalBuilder::from_node(1)
+      .out(Some(1))
+      .select(vec!["name".to_string(), "age".to_string()]);
+
+    let selected = builder.selected_properties();
+    assert!(selected.is_some());
+    let props = selected.unwrap();
+    assert_eq!(props.len(), 2);
+    assert!(props.contains(&"name".to_string()));
+    assert!(props.contains(&"age".to_string()));
+  }
+
+  #[test]
+  fn test_select_props_with_str_slices() {
+    let builder = TraversalBuilder::from_node(1)
+      .out(Some(1))
+      .select_props(&["name", "email"]);
+
+    let selected = builder.selected_properties();
+    assert!(selected.is_some());
+    let props = selected.unwrap();
+    assert_eq!(props.len(), 2);
+    assert!(props.contains(&"name".to_string()));
+    assert!(props.contains(&"email".to_string()));
+  }
+
+  #[test]
+  fn test_select_no_properties_by_default() {
+    let builder = TraversalBuilder::from_node(1).out(Some(1));
+
+    assert!(builder.selected_properties().is_none());
+  }
+
+  #[test]
+  fn test_collect_options_from_builder() {
+    let builder = TraversalBuilder::from_node(1)
+      .out(Some(1))
+      .select_props(&["name", "age"]);
+
+    let opts = builder.collect_options();
+
+    assert!(opts.node_props.is_some());
+    let props = opts.node_props.unwrap();
+    assert_eq!(props.len(), 2);
+    assert!(props.contains(&"name".to_string()));
+    assert!(props.contains(&"age".to_string()));
+  }
+
+  #[test]
+  fn test_collect_options_empty_without_select() {
+    let builder = TraversalBuilder::from_node(1).out(Some(1));
+
+    let opts = builder.collect_options();
+
+    // No props selected means load all (None)
+    assert!(opts.node_props.is_none());
+  }
+
+  #[test]
+  fn test_select_does_not_affect_execution() {
+    let get_neighbors = mock_graph();
+
+    // Select should not affect traversal execution, only property loading
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .out(Some(1))
+      .select_props(&["name", "age"])
+      .execute(&get_neighbors)
+      .collect();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].node_id, 2);
+  }
+
+  #[test]
+  fn test_select_with_take() {
+    let get_neighbors = mock_graph();
+
+    // Select combined with take should work
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .out(None)
+      .select_props(&["name"])
+      .take(1)
+      .execute(&get_neighbors)
+      .collect();
+
+    assert_eq!(results.len(), 1);
+  }
+
+  #[test]
+  fn test_select_with_filters() {
+    let get_neighbors = mock_graph();
+
+    // Select combined with filters
+    let results: Vec<_> = TraversalBuilder::from_node(1)
+      .out(None)
+      .select_props(&["name"])
+      .where_edge(|e| e.etype == 1)
+      .execute(&get_neighbors)
+      .collect();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].node_id, 2);
   }
 }

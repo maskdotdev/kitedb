@@ -182,6 +182,150 @@ pub fn get_neighbors_in(handle: &TxHandle, dst: NodeId, etype: Option<ETypeId>) 
   neighbors
 }
 
+// ============================================================================
+// Edge Property Operations
+// ============================================================================
+
+/// Set a property on an edge
+pub fn set_edge_prop(
+  handle: &mut TxHandle,
+  src: NodeId,
+  etype: ETypeId,
+  dst: NodeId,
+  key_id: PropKeyId,
+  value: PropValue,
+) -> Result<()> {
+  let payload = build_set_edge_prop_payload(src, etype, dst, key_id, &value);
+  handle.add_record(WalRecord::new(
+    WalRecordType::SetEdgeProp,
+    handle.txid(),
+    payload,
+  ))
+}
+
+/// Delete a property from an edge
+pub fn del_edge_prop(
+  handle: &mut TxHandle,
+  src: NodeId,
+  etype: ETypeId,
+  dst: NodeId,
+  key_id: PropKeyId,
+) -> Result<()> {
+  let payload = build_del_edge_prop_payload(src, etype, dst, key_id);
+  handle.add_record(WalRecord::new(
+    WalRecordType::DelEdgeProp,
+    handle.txid(),
+    payload,
+  ))
+}
+
+/// Get a property from an edge
+pub fn get_edge_prop(
+  handle: &TxHandle,
+  src: NodeId,
+  etype: ETypeId,
+  dst: NodeId,
+  key_id: PropKeyId,
+) -> Option<PropValue> {
+  let delta = handle.db.delta.read();
+
+  // Check if edge is deleted in delta
+  if delta.is_edge_deleted(src, etype, dst) {
+    return None;
+  }
+
+  // Check delta first (for modifications)
+  if let Some(delta_props) = delta.edge_props.get(&(src, etype, dst)) {
+    if let Some(value) = delta_props.get(&key_id) {
+      // Some(None) means explicitly deleted
+      return value.clone();
+    }
+  }
+
+  // Check if edge was added in delta (might not have props in snapshot)
+  let edge_added_in_delta = delta.is_edge_added(src, etype, dst);
+
+  // Fall back to snapshot
+  if let Some(ref snapshot) = handle.db.snapshot {
+    if let Some(src_phys) = snapshot.get_phys_node(src) {
+      if let Some(dst_phys) = snapshot.get_phys_node(dst) {
+        if let Some(edge_idx) = snapshot.find_edge_index(src_phys, etype, dst_phys) {
+          if let Some(snapshot_props) = snapshot.get_edge_props(edge_idx) {
+            if let Some(value) = snapshot_props.get(&key_id) {
+              return Some(value.clone());
+            }
+          }
+        } else if !edge_added_in_delta {
+          // Edge doesn't exist in snapshot and wasn't added in delta
+          return None;
+        }
+      }
+    }
+  }
+
+  None
+}
+
+/// Get all properties from an edge
+pub fn get_edge_props(
+  handle: &TxHandle,
+  src: NodeId,
+  etype: ETypeId,
+  dst: NodeId,
+) -> Option<std::collections::HashMap<PropKeyId, PropValue>> {
+  use std::collections::HashMap;
+
+  let delta = handle.db.delta.read();
+
+  // Check if edge is deleted in delta
+  if delta.is_edge_deleted(src, etype, dst) {
+    return None;
+  }
+
+  let mut props = HashMap::new();
+  let edge_added_in_delta = delta.is_edge_added(src, etype, dst);
+  let mut edge_exists_in_snapshot = false;
+
+  // Check snapshot for edge existence and get base properties
+  if let Some(ref snapshot) = handle.db.snapshot {
+    if let Some(src_phys) = snapshot.get_phys_node(src) {
+      if let Some(dst_phys) = snapshot.get_phys_node(dst) {
+        if let Some(edge_idx) = snapshot.find_edge_index(src_phys, etype, dst_phys) {
+          edge_exists_in_snapshot = true;
+          if let Some(snapshot_props) = snapshot.get_edge_props(edge_idx) {
+            props = snapshot_props;
+          }
+        }
+      }
+    }
+  }
+
+  // Edge must exist either in delta or snapshot
+  if !edge_added_in_delta && !edge_exists_in_snapshot {
+    return None;
+  }
+
+  // Apply delta modifications
+  if let Some(delta_props) = delta.edge_props.get(&(src, etype, dst)) {
+    for (&key_id, value) in delta_props {
+      match value {
+        Some(v) => {
+          props.insert(key_id, v.clone());
+        }
+        None => {
+          props.remove(&key_id);
+        }
+      }
+    }
+  }
+
+  Some(props)
+}
+
+// ============================================================================
+// Edge Counting
+// ============================================================================
+
 /// Count edges for a source node
 pub fn count_edges_out(handle: &TxHandle, src: NodeId, etype: Option<ETypeId>) -> usize {
   let delta = handle.db.delta.read();
