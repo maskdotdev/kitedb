@@ -390,6 +390,10 @@ export interface TxState {
   pendingNewPropkeys: Map<PropKeyID, string>;
   pendingKeyUpdates: Map<string, NodeID>;
   pendingKeyDeletes: Set<string>;
+  // Vector embeddings pending operations
+  // Key format: "nodeId:propKeyId"
+  pendingVectorSets: Map<string, { nodeId: NodeID; propKeyId: PropKeyID; vector: Float32Array }>;
+  pendingVectorDeletes: Set<string>; // Set of "nodeId:propKeyId" keys
 }
 
 // ============================================================================
@@ -513,6 +517,10 @@ export interface GraphDB {
   _cache?: unknown; // CacheManager instance (opaque to users)
   _mvcc?: unknown; // MVCC manager instance (opaque to users)
   _mvccEnabled?: boolean; // Cached MVCC enabled flag for fast checks
+
+  // Vector embeddings storage (keyed by propKeyId for the vector property)
+  _vectorStores?: Map<PropKeyID, unknown>; // Map<PropKeyID, VectorManifest>
+  _vectorIndexes?: Map<PropKeyID, unknown>; // Map<PropKeyID, IvfIndex>
 
   // Single-file options
   _autoCheckpoint?: boolean;

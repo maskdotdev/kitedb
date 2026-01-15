@@ -38,8 +38,10 @@ import {
   type SingleFileLockHandle,
 } from "../../util/lock.ts";
 import { CacheManager } from "../../cache/index.ts";
-import { replayWalRecord } from "./wal-replay.ts";
+import { replayWalRecord, replayVectorRecord } from "./wal-replay.ts";
 import { MvccManager } from "../../mvcc/index.ts";
+import type { PropKeyID } from "../../types.ts";
+import type { VectorManifest } from "../../vector/types.ts";
 import {
   parseCreateNodePayload,
   parseDefineEtypePayload,
@@ -146,6 +148,9 @@ export async function openSingleFileDB(
   // Initialize delta
   const delta = createDelta();
 
+  // Initialize vector stores
+  const vectorStores: Map<PropKeyID, VectorManifest> = new Map();
+
   // Initialize ID allocators
   let nextNodeId = INITIAL_NODE_ID;
   let nextLabelId = INITIAL_LABEL_ID;
@@ -175,6 +180,9 @@ export async function openSingleFileDB(
   const committed = extractCommittedTransactions(walRecords);
   let nextCommitTs = 1n;
 
+  // Create a temporary db object for vector replay (only needs _vectorStores)
+  const tempDbForVectorReplay = { _vectorStores: vectorStores } as GraphDB;
+
   for (const [txid, records] of committed) {
     if (Number(txid) >= nextTxId) {
       nextTxId = Number(txid) + 1;
@@ -186,6 +194,12 @@ export async function openSingleFileDB(
     // Replay each record
     for (const record of records) {
       replayWalRecord(record, delta);
+      
+      // Also replay vector records
+      if (record.type === WalRecordType.SET_NODE_VECTOR || 
+          record.type === WalRecordType.DEL_NODE_VECTOR) {
+        replayVectorRecord(record, tempDbForVectorReplay);
+      }
 
       // Update ID allocators
       updateAllocatorsFromRecord(record, {
@@ -281,6 +295,10 @@ export async function openSingleFileDB(
     _autoCheckpoint: autoCheckpoint,
     _checkpointThreshold: checkpointThreshold,
     _cacheSnapshot: cacheSnapshot,
+    
+    // Vector embeddings storage
+    _vectorStores: vectorStores,
+    _vectorIndexes: new Map(),
   };
 }
 

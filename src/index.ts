@@ -101,6 +101,19 @@ export { defineLabel, defineEtype, definePropkey } from "./ray/graph-db/index.ts
 export { stats, check } from "./ray/graph-db/index.ts";
 
 // ============================================================================
+// Vector operations (low-level)
+// ============================================================================
+
+export {
+  setNodeVector,
+  getNodeVector,
+  delNodeVector,
+  hasNodeVector,
+  getVectorStore,
+  getVectorStats,
+} from "./ray/graph-db/index.ts";
+
+// ============================================================================
 // Cache API
 // ============================================================================
 
@@ -304,3 +317,12 @@ export {
   serializeManifest,
   deserializeManifest,
 } from "./vector/index.ts";
+
+// High-level vector search API
+export {
+  VectorIndex,
+  createVectorIndex,
+  type VectorIndexOptions,
+  type SimilarOptions,
+  type VectorSearchHit,
+} from "./api/vector-search.ts";

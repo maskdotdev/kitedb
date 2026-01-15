@@ -52,8 +52,10 @@ import {
   type LockHandle,
 } from "../../util/lock.ts";
 import { CacheManager } from "../../cache/index.ts";
-import { replayWalRecord } from "./wal-replay.ts";
+import { replayWalRecord, replayVectorRecord } from "./wal-replay.ts";
 import { MvccManager } from "../../mvcc/index.ts";
+import type { PropKeyID } from "../../types.ts";
+import type { VectorManifest } from "../../vector/types.ts";
 import { openSingleFileDB, closeSingleFileDB, isSingleFilePath } from "./single-file.ts";
 import { releaseFileLock, type SingleFileLockHandle } from "../../util/lock.ts";
 import type { FilePager } from "../../core/pager.ts";
@@ -177,6 +179,9 @@ async function openMultiFileDB(
   // Initialize delta
   const delta = createDelta();
 
+  // Initialize vector stores
+  const vectorStores: Map<PropKeyID, VectorManifest> = new Map();
+
   // Initialize ID allocators
   let nextNodeId = INITIAL_NODE_ID;
   let nextLabelId = INITIAL_LABEL_ID;
@@ -215,6 +220,9 @@ async function openMultiFileDB(
   let nextTxId = INITIAL_TX_ID;
   let nextCommitTs = 1n;
 
+  // Create a temporary db object for vector replay (only needs _vectorStores)
+  const tempDbForVectorReplay = { _vectorStores: vectorStores } as GraphDB;
+
   if (walData) {
     const committed = extractCommittedTransactions(walData.records);
 
@@ -229,6 +237,12 @@ async function openMultiFileDB(
       // Replay each record
       for (const record of records) {
         replayWalRecord(record, delta);
+        
+        // Also replay vector records
+        if (record.type === WalRecordType.SET_NODE_VECTOR || 
+            record.type === WalRecordType.DEL_NODE_VECTOR) {
+          replayVectorRecord(record, tempDbForVectorReplay);
+        }
 
         // Update ID allocators
         if (record.type === WalRecordType.CREATE_NODE) {
@@ -414,6 +428,10 @@ async function openMultiFileDB(
     _cache: cache,
     _mvcc: mvcc,
     _mvccEnabled: mvcc !== null,
+    
+    // Vector embeddings storage
+    _vectorStores: vectorStores,
+    _vectorIndexes: new Map(),
   };
 }
 

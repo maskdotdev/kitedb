@@ -561,7 +561,7 @@ export function createUpdateEdgeBuilder<E extends EdgeDef>(
 // ============================================================================
 
 interface PropDefLike {
-  type: "string" | "int" | "float" | "bool";
+  type: "string" | "int" | "float" | "bool" | "vector";
 }
 
 function toPropValue(propDef: PropDefLike, value: unknown): PropValue {
@@ -574,7 +574,9 @@ function toPropValue(propDef: PropDefLike, value: unknown): PropValue {
       return { tag: PropValueTag.F64, value: value as number };
     case "bool":
       return { tag: PropValueTag.BOOL, value: value as boolean };
+    case "vector":
+      return { tag: PropValueTag.VECTOR_F32, value: value as Float32Array };
     default:
-      throw new Error(`Unknown prop type: ${propDef.type}`);
+      throw new Error(`Unknown prop type: ${(propDef as { type: string }).type}`);
   }
 }

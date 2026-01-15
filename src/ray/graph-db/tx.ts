@@ -34,8 +34,13 @@ import {
   buildDelNodePropPayload,
   buildSetEdgePropPayload,
   buildSetNodePropPayload,
+  buildSetNodeVectorPayload,
+  buildDelNodeVectorPayload,
   type WalRecord,
 } from "../../core/wal.ts";
+import { getOrCreateVectorStore } from "./wal-replay.ts";
+import type { VectorManifest } from "../../vector/types.ts";
+import { vectorStoreInsert, vectorStoreDelete } from "../../vector/columnar-store.ts";
 import type {
   GraphDB,
   NodeID,
@@ -77,6 +82,8 @@ function createTxState(txid: bigint): TxState {
     pendingNewPropkeys: new Map(),
     pendingKeyUpdates: new Map(),
     pendingKeyDeletes: new Set(),
+    pendingVectorSets: new Map(),  // Key: "nodeId:propKeyId"
+    pendingVectorDeletes: new Set(),  // Set of "nodeId:propKeyId"
   };
 }
 
@@ -428,6 +435,27 @@ export async function commit(handle: TxHandle): Promise<void> {
     }
   }
 
+  // Vector embeddings - set operations
+  for (const [_key, { nodeId, propKeyId, vector }] of tx.pendingVectorSets) {
+    records.push({
+      type: WalRecordType.SET_NODE_VECTOR,
+      txid: tx.txid,
+      payload: buildSetNodeVectorPayload(nodeId, propKeyId, vector),
+    });
+  }
+
+  // Vector embeddings - delete operations
+  for (const key of tx.pendingVectorDeletes) {
+    const [nodeIdStr, propKeyIdStr] = key.split(":");
+    const nodeId = Number(nodeIdStr);
+    const propKeyId = Number(propKeyIdStr);
+    records.push({
+      type: WalRecordType.DEL_NODE_VECTOR,
+      txid: tx.txid,
+      payload: buildDelNodeVectorPayload(nodeId, propKeyId),
+    });
+  }
+
   // COMMIT
   records.push({
     type: WalRecordType.COMMIT,
@@ -514,6 +542,22 @@ export async function commit(handle: TxHandle): Promise<void> {
       } else {
         deltaDeleteEdgeProp(db._delta, src, etype, dst, keyId);
       }
+    }
+  }
+
+  // Apply vector embeddings to in-memory stores
+  for (const [_key, { nodeId, propKeyId, vector }] of tx.pendingVectorSets) {
+    const store = getOrCreateVectorStore(db, propKeyId, vector.length);
+    vectorStoreInsert(store, nodeId, vector);
+  }
+
+  for (const key of tx.pendingVectorDeletes) {
+    const [nodeIdStr, propKeyIdStr] = key.split(":");
+    const nodeId = Number(nodeIdStr);
+    const propKeyId = Number(propKeyIdStr);
+    const store = db._vectorStores?.get(propKeyId) as VectorManifest | undefined;
+    if (store) {
+      vectorStoreDelete(store, nodeId);
     }
   }
 
