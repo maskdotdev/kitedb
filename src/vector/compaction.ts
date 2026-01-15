@@ -116,6 +116,17 @@ export function compactFragments(
     { fragmentId: number; localIndex: number }
   >();
 
+  // Build reverse lookup: (fragmentId, localIndex) -> vectorId
+  // This converts the O(n*m) lookup to O(n) preprocessing + O(1) lookups
+  const fragmentIdSet = new Set(fragmentIds);
+  const locationToVectorId = new Map<string, number>();
+  for (const [vectorId, loc] of manifest.vectorIdToLocation) {
+    if (fragmentIdSet.has(loc.fragmentId)) {
+      const key = `${loc.fragmentId}:${loc.localIndex}`;
+      locationToVectorId.set(key, vectorId);
+    }
+  }
+
   // Process each source fragment
   for (const fragmentId of fragmentIds) {
     const fragment = manifest.fragments.find((f) => f.id === fragmentId);
@@ -135,14 +146,9 @@ export function compactFragments(
       const offset = localRowIdx * dimensions;
       const vector = rowGroup.data.subarray(offset, offset + dimensions);
 
-      // Find the vectorId for this location
-      let vectorId: number | undefined;
-      for (const [vid, loc] of manifest.vectorIdToLocation) {
-        if (loc.fragmentId === fragmentId && loc.localIndex === localIdx) {
-          vectorId = vid;
-          break;
-        }
-      }
+      // Find the vectorId for this location using O(1) lookup
+      const key = `${fragmentId}:${localIdx}`;
+      const vectorId = locationToVectorId.get(key);
 
       if (vectorId === undefined) continue;
 

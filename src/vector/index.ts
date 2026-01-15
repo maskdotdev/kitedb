@@ -36,8 +36,12 @@ export type {
 
 export { DEFAULT_VECTOR_CONFIG, DEFAULT_IVF_CONFIG } from "./types.ts";
 
-// Normalization
+// Normalization & Validation
 export {
+  validateVector,
+  hasNaN,
+  hasInfinity,
+  isZeroVector,
   l2Norm,
   normalizeInPlace,
   normalize,
@@ -46,6 +50,7 @@ export {
   normalizeVectorAt,
   isNormalizedAt,
 } from "./normalize.ts";
+export type { VectorValidationResult } from "./normalize.ts";
 
 // Distance functions
 export {
@@ -58,6 +63,7 @@ export {
   squaredEuclideanAt,
   batchCosineDistance,
   batchSquaredEuclidean,
+  batchDotProductDistance,
   getDistanceFunction,
   getBatchDistanceFunction,
   distanceToSimilarity,

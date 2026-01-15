@@ -21,6 +21,7 @@ import {
   fragmentGetVector,
   fragmentLiveCount,
 } from "./fragment.ts";
+import { validateVector } from "./normalize.ts";
 import type { NodeID } from "../types.ts";
 
 /**
@@ -49,6 +50,7 @@ export function createVectorStore(
     totalDeleted: 0,
     nextVectorId: 0,
     nodeIdToVectorId: new Map(),
+    vectorIdToNodeId: new Map(),
     vectorIdToLocation: new Map(),
   };
 }
@@ -59,18 +61,29 @@ export function createVectorStore(
  * @param manifest - The vector store manifest
  * @param nodeId - Graph node ID to associate with this vector
  * @param vector - The vector to insert
+ * @param skipValidation - Skip validation for performance (use with caution)
  * @returns The global vector ID
+ * @throws Error if vector dimensions don't match or vector contains invalid values
  */
 export function vectorStoreInsert(
   manifest: VectorManifest,
   nodeId: NodeID,
-  vector: Float32Array
+  vector: Float32Array,
+  skipValidation: boolean = false
 ): number {
   // Check dimensions
   if (vector.length !== manifest.config.dimensions) {
     throw new Error(
       `Vector dimension mismatch: expected ${manifest.config.dimensions}, got ${vector.length}`
     );
+  }
+
+  // Validate vector for NaN, Infinity, and zero vectors
+  if (!skipValidation) {
+    const validation = validateVector(vector);
+    if (!validation.valid) {
+      throw new Error(`Invalid vector: ${validation.message}`);
+    }
   }
 
   // Check if node already has a vector - delete old one first
@@ -109,6 +122,7 @@ export function vectorStoreInsert(
 
   // Update mappings
   manifest.nodeIdToVectorId.set(nodeId, vectorId);
+  manifest.vectorIdToNodeId.set(vectorId, nodeId);
   manifest.vectorIdToLocation.set(vectorId, {
     fragmentId: fragment.id,
     localIndex: localIdx,
@@ -142,6 +156,8 @@ export function vectorStoreDelete(
   const deleted = fragmentDelete(fragment, location.localIndex);
   if (deleted) {
     manifest.nodeIdToVectorId.delete(nodeId);
+    manifest.vectorIdToNodeId.delete(vectorId);
+    manifest.vectorIdToLocation.delete(vectorId);
     manifest.totalDeleted++;
   }
 
@@ -225,12 +241,7 @@ export function vectorStoreGetNodeId(
   manifest: VectorManifest,
   vectorId: number
 ): NodeID | undefined {
-  for (const [nodeId, vid] of manifest.nodeIdToVectorId) {
-    if (vid === vectorId) {
-      return nodeId;
-    }
-  }
-  return undefined;
+  return manifest.vectorIdToNodeId.get(vectorId);
 }
 
 /**
@@ -292,19 +303,21 @@ export function* vectorStoreIteratorWithIds(
  * @param manifest - The vector store manifest
  * @param entries - Array of (nodeId, vector) pairs
  * @param onProgress - Optional progress callback
+ * @param skipValidation - Skip validation for performance (use with caution)
  * @returns Array of assigned vector IDs
  */
 export function vectorStoreBatchInsert(
   manifest: VectorManifest,
   entries: Array<{ nodeId: NodeID; vector: Float32Array }>,
-  onProgress?: (inserted: number, total: number) => void
+  onProgress?: (inserted: number, total: number) => void,
+  skipValidation: boolean = false
 ): number[] {
   const vectorIds: number[] = [];
   const total = entries.length;
 
   for (let i = 0; i < entries.length; i++) {
     const { nodeId, vector } = entries[i];
-    const vectorId = vectorStoreInsert(manifest, nodeId, vector);
+    const vectorId = vectorStoreInsert(manifest, nodeId, vector, skipValidation);
     vectorIds.push(vectorId);
 
     if (onProgress && (i + 1) % 1000 === 0) {
@@ -440,6 +453,7 @@ export function vectorStoreClear(manifest: VectorManifest): void {
   manifest.totalDeleted = 0;
   manifest.nextVectorId = 0;
   manifest.nodeIdToVectorId.clear();
+  manifest.vectorIdToNodeId.clear();
   manifest.vectorIdToLocation.clear();
 }
 
@@ -466,6 +480,7 @@ export function vectorStoreClone(manifest: VectorManifest): VectorManifest {
     totalDeleted: manifest.totalDeleted,
     nextVectorId: manifest.nextVectorId,
     nodeIdToVectorId: new Map(manifest.nodeIdToVectorId),
+    vectorIdToNodeId: new Map(manifest.vectorIdToNodeId),
     vectorIdToLocation: new Map(
       [...manifest.vectorIdToLocation].map(([k, v]) => [k, { ...v }])
     ),

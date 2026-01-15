@@ -5,6 +5,102 @@
  * For normalized vectors: cos(a,b) = dot(a,b)
  */
 
+// ============================================================================
+// Validation
+// ============================================================================
+
+/**
+ * Result of vector validation
+ */
+export interface VectorValidationResult {
+  valid: boolean;
+  error?: "zero_vector" | "contains_nan" | "contains_infinity";
+  message?: string;
+}
+
+/**
+ * Validate a vector for invalid values
+ * 
+ * Checks for:
+ * - NaN values
+ * - Infinity values  
+ * - Zero vectors (all zeros)
+ * 
+ * @param v - The vector to validate
+ * @returns Validation result with error details if invalid
+ */
+export function validateVector(v: Float32Array): VectorValidationResult {
+  let hasNonZero = false;
+  
+  for (let i = 0; i < v.length; i++) {
+    const val = v[i];
+    
+    if (Number.isNaN(val)) {
+      return {
+        valid: false,
+        error: "contains_nan",
+        message: `Vector contains NaN at index ${i}`,
+      };
+    }
+    
+    if (!Number.isFinite(val)) {
+      return {
+        valid: false,
+        error: "contains_infinity",
+        message: `Vector contains Infinity at index ${i}`,
+      };
+    }
+    
+    if (val !== 0) {
+      hasNonZero = true;
+    }
+  }
+  
+  if (!hasNonZero) {
+    return {
+      valid: false,
+      error: "zero_vector",
+      message: "Vector is all zeros (zero vector)",
+    };
+  }
+  
+  return { valid: true };
+}
+
+/**
+ * Check if a vector contains any NaN values
+ */
+export function hasNaN(v: Float32Array): boolean {
+  for (let i = 0; i < v.length; i++) {
+    if (Number.isNaN(v[i])) return true;
+  }
+  return false;
+}
+
+/**
+ * Check if a vector contains any Infinity values
+ */
+export function hasInfinity(v: Float32Array): boolean {
+  for (let i = 0; i < v.length; i++) {
+    if (!Number.isFinite(v[i])) return true;
+  }
+  return false;
+}
+
+/**
+ * Check if a vector is all zeros
+ */
+export function isZeroVector(v: Float32Array): boolean {
+  for (let i = 0; i < v.length; i++) {
+    if (v[i] !== 0) return false;
+  }
+  return true;
+}
+
+// ============================================================================
+// Normalization
+// ============================================================================
+
 /**
  * Compute L2 norm (Euclidean length) of a vector
  */

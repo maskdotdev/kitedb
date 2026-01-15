@@ -44,6 +44,8 @@ export interface IvfConfig {
   nClusters: number;
   /** Number of clusters to probe during search (default: 10) */
   nProbe: number;
+  /** Distance metric for clustering and search (default: cosine) */
+  metric: "cosine" | "euclidean" | "dot";
   /** Use Product Quantization for compression (default: false) */
   usePQ: boolean;
   /** PQ subvector count (default: dimensions / 8) */
@@ -58,6 +60,7 @@ export interface IvfConfig {
 export const DEFAULT_IVF_CONFIG: IvfConfig = {
   nClusters: 256,
   nProbe: 10,
+  metric: "cosine",
   usePQ: false,
 };
 
@@ -122,6 +125,8 @@ export interface VectorManifest {
   nextVectorId: number;
   /** NodeID -> global vector ID mapping */
   nodeIdToVectorId: Map<NodeID, number>;
+  /** Global vector ID -> NodeID mapping (reverse lookup) */
+  vectorIdToNodeId: Map<number, NodeID>;
   /** Global vector ID -> (fragmentId, localIndex) mapping */
   vectorIdToLocation: Map<number, { fragmentId: number; localIndex: number }>;
 }

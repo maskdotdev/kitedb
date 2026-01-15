@@ -21,6 +21,7 @@ import {
   cosineDistance,
   squaredEuclidean,
   distanceToSimilarity,
+  getDistanceFunction,
   MaxHeap,
 } from "./distance.ts";
 import { normalize, l2Norm } from "./normalize.ts";
@@ -122,7 +123,7 @@ export function ivfTrain(
     throw new Error("No training vectors provided");
   }
 
-  const { nClusters } = index.config;
+  const { nClusters, metric } = index.config;
   const n = index.trainingCount!;
   const vectors = index.trainingVectors!;
 
@@ -133,13 +134,17 @@ export function ivfTrain(
     );
   }
 
+  // Get the appropriate distance function for this metric
+  const distanceFn = getDistanceFunction(metric);
+
   // Initialize centroids using k-means++
   initializeCentroidsKMeansPlusPlus(
     index.centroids,
     vectors,
     dimensions,
     n,
-    nClusters
+    nClusters,
+    distanceFn
   );
 
   // Run k-means iterations
@@ -162,7 +167,7 @@ export function ivfTrain(
           centOffset,
           centOffset + dimensions
         );
-        const dist = cosineDistance(vec, centroid);
+        const dist = distanceFn(vec, centroid);
 
         if (dist < bestDist) {
           bestDist = dist;
@@ -214,12 +219,14 @@ export function ivfTrain(
         index.centroids[offset + d] = clusterSums[offset + d] / count;
       }
 
-      // Normalize centroid (for cosine similarity)
-      const centroid = index.centroids.subarray(offset, offset + dimensions);
-      const norm = l2Norm(centroid);
-      if (norm > 0) {
-        for (let d = 0; d < dimensions; d++) {
-          index.centroids[offset + d] /= norm;
+      // Normalize centroid only for cosine metric
+      if (metric === "cosine") {
+        const centroid = index.centroids.subarray(offset, offset + dimensions);
+        const norm = l2Norm(centroid);
+        if (norm > 0) {
+          for (let d = 0; d < dimensions; d++) {
+            index.centroids[offset + d] /= norm;
+          }
         }
       }
     }
@@ -245,22 +252,14 @@ function initializeCentroidsKMeansPlusPlus(
   vectors: Float32Array,
   dimensions: number,
   n: number,
-  k: number
+  k: number,
+  distanceFn: (a: Float32Array, b: Float32Array) => number
 ): void {
   // First centroid: random vector
   const firstIdx = Math.floor(Math.random() * n);
   const firstOffset = firstIdx * dimensions;
   for (let d = 0; d < dimensions; d++) {
     centroids[d] = vectors[firstOffset + d];
-  }
-
-  // Normalize first centroid
-  const firstCentroid = centroids.subarray(0, dimensions);
-  const firstNorm = l2Norm(firstCentroid);
-  if (firstNorm > 0) {
-    for (let d = 0; d < dimensions; d++) {
-      centroids[d] /= firstNorm;
-    }
   }
 
   // Remaining centroids: weighted by distance squared
@@ -278,8 +277,10 @@ function initializeCentroidsKMeansPlusPlus(
     for (let i = 0; i < n; i++) {
       const vecOffset = i * dimensions;
       const vec = vectors.subarray(vecOffset, vecOffset + dimensions);
-      const dist = cosineDistance(vec, prevCentroid);
-      minDists[i] = Math.min(minDists[i], dist * dist); // Square for weighting
+      const dist = distanceFn(vec, prevCentroid);
+      // For k-means++ we need positive weights, so use abs(dist)^2
+      const absDist = Math.abs(dist);
+      minDists[i] = Math.min(minDists[i], absDist * absDist);
       totalDist += minDists[i];
     }
 
@@ -300,15 +301,6 @@ function initializeCentroidsKMeansPlusPlus(
     const centOffset = c * dimensions;
     for (let d = 0; d < dimensions; d++) {
       centroids[centOffset + d] = vectors[selectedOffset + d];
-    }
-
-    // Normalize centroid
-    const centroid = centroids.subarray(centOffset, centOffset + dimensions);
-    const norm = l2Norm(centroid);
-    if (norm > 0) {
-      for (let d = 0; d < dimensions; d++) {
-        centroids[centOffset + d] /= norm;
-      }
     }
   }
 }
@@ -388,12 +380,13 @@ function findNearestCentroid(
   vector: Float32Array,
   dimensions: number
 ): number {
-  const { nClusters } = index.config;
+  const { nClusters, metric } = index.config;
+  const distanceFn = getDistanceFunction(metric);
   let bestCluster = 0;
   let bestDist = Infinity;
 
-  // Normalize query for cosine
-  const queryNorm = normalize(vector);
+  // Prepare query vector (normalize for cosine metric)
+  const queryVec = metric === "cosine" ? normalize(vector) : vector;
 
   for (let c = 0; c < nClusters; c++) {
     const centOffset = c * dimensions;
@@ -401,7 +394,7 @@ function findNearestCentroid(
       centOffset,
       centOffset + dimensions
     );
-    const dist = cosineDistance(queryNorm, centroid);
+    const dist = distanceFn(queryVec, centroid);
 
     if (dist < bestDist) {
       bestDist = dist;
@@ -421,7 +414,8 @@ function findNearestCentroids(
   dimensions: number,
   nProbe: number
 ): number[] {
-  const { nClusters } = index.config;
+  const { nClusters, metric } = index.config;
+  const distanceFn = getDistanceFunction(metric);
   const centroidDists: Array<{ cluster: number; distance: number }> = [];
 
   for (let c = 0; c < nClusters; c++) {
@@ -430,7 +424,7 @@ function findNearestCentroids(
       centOffset,
       centOffset + dimensions
     );
-    const dist = cosineDistance(query, centroid);
+    const dist = distanceFn(query, centroid);
     centroidDists.push({ cluster: c, distance: dist });
   }
 
@@ -467,13 +461,16 @@ export function ivfSearch(
 
   const dimensions = manifest.config.dimensions;
   const nProbe = options?.nProbe ?? index.config.nProbe;
-  const metric = manifest.config.metric;
+  const metric = index.config.metric; // Use index's metric
 
-  // Normalize query
-  const queryNorm = normalize(query);
+  // Normalize query for cosine metric, use raw for others
+  const queryForSearch = metric === "cosine" ? normalize(query) : query;
+  
+  // Get the appropriate distance function for this metric
+  const distanceFn = getDistanceFunction(metric);
 
-  // Find top nProbe nearest centroids
-  const probeClusters = findNearestCentroids(index, queryNorm, dimensions, nProbe);
+  // Find top nProbe nearest centroids (uses index's metric internally)
+  const probeClusters = findNearestCentroids(index, queryForSearch, dimensions, nProbe);
 
   // Use max-heap to track top-k candidates
   const heap = new MaxHeap();
@@ -506,12 +503,12 @@ export function ivfSearch(
         if (nodeId !== undefined && !options.filter(nodeId)) continue;
       }
 
-      // Compute distance
-      const dist = cosineDistance(queryNorm, vec);
+      // Compute distance using the appropriate function
+      const dist = distanceFn(queryForSearch, vec);
 
       // Apply threshold filter
       if (options?.threshold !== undefined) {
-        const similarity = 1 - dist;
+        const similarity = distanceToSimilarity(dist, metric);
         if (similarity < options.threshold) continue;
       }
 
@@ -548,6 +545,8 @@ export function ivfSearch(
  * @param k - Number of results to return
  * @param aggregation - How to aggregate scores
  * @param options - Search options
+ * @returns Array of search results sorted by aggregated distance
+ * @throws Error if queries array is empty
  */
 export function ivfSearchMulti(
   index: IvfIndex,
@@ -561,6 +560,11 @@ export function ivfSearchMulti(
     threshold?: number;
   }
 ): VectorSearchResult[] {
+  // Validate queries array
+  if (!queries || queries.length === 0) {
+    throw new Error("ivfSearchMulti requires at least one query vector");
+  }
+
   // Get results for each query (with higher k to ensure we have enough)
   const allResults = queries.map((q) =>
     ivfSearch(index, manifest, q, k * 2, options)

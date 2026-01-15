@@ -8,6 +8,11 @@ import {
   // Types and constants
   DEFAULT_VECTOR_CONFIG,
   DEFAULT_IVF_CONFIG,
+  // Validation
+  validateVector,
+  hasNaN,
+  hasInfinity,
+  isZeroVector,
   // Normalization
   l2Norm,
   normalizeInPlace,
@@ -23,6 +28,7 @@ import {
   euclideanDistance,
   dotProductAt,
   batchCosineDistance,
+  batchDotProductDistance,
   distanceToSimilarity,
   findKNearest,
   MinHeap,
@@ -60,6 +66,7 @@ import {
   ivfTrain,
   ivfInsert,
   ivfSearch,
+  ivfSearchMulti,
   ivfBuildFromStore,
   ivfStats,
   // Compaction
@@ -196,6 +203,104 @@ describe("Vector Normalization", () => {
 });
 
 // ============================================================================
+// Vector Validation Tests
+// ============================================================================
+
+describe("Vector Validation", () => {
+  test("validateVector accepts valid vectors", () => {
+    const valid = new Float32Array([1, 2, 3, 4]);
+    const result = validateVector(valid);
+    expect(result.valid).toBe(true);
+    expect(result.error).toBeUndefined();
+  });
+
+  test("validateVector rejects NaN values", () => {
+    const withNaN = new Float32Array([1, NaN, 3, 4]);
+    const result = validateVector(withNaN);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("contains_nan");
+    expect(result.message).toContain("NaN");
+    expect(result.message).toContain("index 1");
+  });
+
+  test("validateVector rejects Infinity values", () => {
+    const withInf = new Float32Array([1, 2, Infinity, 4]);
+    const result = validateVector(withInf);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("contains_infinity");
+    expect(result.message).toContain("Infinity");
+  });
+
+  test("validateVector rejects negative Infinity", () => {
+    const withNegInf = new Float32Array([1, -Infinity, 3, 4]);
+    const result = validateVector(withNegInf);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("contains_infinity");
+  });
+
+  test("validateVector rejects zero vectors", () => {
+    const zero = new Float32Array([0, 0, 0, 0]);
+    const result = validateVector(zero);
+    expect(result.valid).toBe(false);
+    expect(result.error).toBe("zero_vector");
+    expect(result.message).toContain("zero vector");
+  });
+
+  test("validateVector accepts vectors with some zeros", () => {
+    const sparse = new Float32Array([0, 1, 0, 0]);
+    const result = validateVector(sparse);
+    expect(result.valid).toBe(true);
+  });
+
+  test("hasNaN detects NaN values", () => {
+    expect(hasNaN(new Float32Array([1, 2, 3]))).toBe(false);
+    expect(hasNaN(new Float32Array([1, NaN, 3]))).toBe(true);
+    expect(hasNaN(new Float32Array([NaN]))).toBe(true);
+  });
+
+  test("hasInfinity detects Infinity values", () => {
+    expect(hasInfinity(new Float32Array([1, 2, 3]))).toBe(false);
+    expect(hasInfinity(new Float32Array([1, Infinity, 3]))).toBe(true);
+    expect(hasInfinity(new Float32Array([1, -Infinity, 3]))).toBe(true);
+  });
+
+  test("isZeroVector detects all-zero vectors", () => {
+    expect(isZeroVector(new Float32Array([0, 0, 0]))).toBe(true);
+    expect(isZeroVector(new Float32Array([0, 1, 0]))).toBe(false);
+    expect(isZeroVector(new Float32Array([0.0001, 0, 0]))).toBe(false);
+  });
+
+  test("vectorStoreInsert rejects invalid vectors", () => {
+    const store = createVectorStore(4);
+    
+    // NaN
+    expect(() => {
+      vectorStoreInsert(store, 1, new Float32Array([1, NaN, 3, 4]));
+    }).toThrow(/Invalid vector.*NaN/);
+
+    // Infinity
+    expect(() => {
+      vectorStoreInsert(store, 2, new Float32Array([1, 2, Infinity, 4]));
+    }).toThrow(/Invalid vector.*Infinity/);
+
+    // Zero vector
+    expect(() => {
+      vectorStoreInsert(store, 3, new Float32Array([0, 0, 0, 0]));
+    }).toThrow(/Invalid vector.*zero vector/);
+  });
+
+  test("vectorStoreInsert with skipValidation bypasses checks", () => {
+    const store = createVectorStore(4);
+    
+    // This would normally throw, but skipValidation allows it
+    // (useful for performance when you trust the data source)
+    expect(() => {
+      vectorStoreInsert(store, 1, new Float32Array([0, 0, 0, 0]), true);
+    }).not.toThrow();
+  });
+});
+
+// ============================================================================
 // Distance Function Tests
 // ============================================================================
 
@@ -275,12 +380,39 @@ describe("Distance Functions", () => {
     expect(distances[2]).toBeCloseTo(2, 5); // Opposite
   });
 
+  test("batchDotProductDistance computes negated dot products", () => {
+    const dimensions = 4;
+    const query = normalize(new Float32Array([1, 0, 0, 0]));
+
+    const rowGroupData = new Float32Array(12); // 3 vectors
+    rowGroupData.set(normalize(new Float32Array([1, 0, 0, 0])), 0);
+    rowGroupData.set(normalize(new Float32Array([0, 1, 0, 0])), 4);
+    rowGroupData.set(normalize(new Float32Array([-1, 0, 0, 0])), 8);
+
+    const distances = batchDotProductDistance(query, rowGroupData, dimensions, 0, 3);
+
+    // Dot product distance is -dot, so:
+    // Same direction: dot=1, distance=-1
+    // Orthogonal: dot=0, distance=0
+    // Opposite: dot=-1, distance=1
+    expect(distances[0]).toBeCloseTo(-1, 5); // Same direction (highest similarity = lowest distance)
+    expect(distances[1]).toBeCloseTo(0, 5);  // Orthogonal
+    expect(distances[2]).toBeCloseTo(1, 5);  // Opposite (lowest similarity = highest distance)
+  });
+
   test("distanceToSimilarity converts correctly", () => {
+    // Cosine: similarity = 1 - distance
     expect(distanceToSimilarity(0, "cosine")).toBeCloseTo(1, 5);
     expect(distanceToSimilarity(1, "cosine")).toBeCloseTo(0, 5);
 
+    // Euclidean: similarity = 1 / (1 + sqrt(distance))
     expect(distanceToSimilarity(0, "euclidean")).toBeCloseTo(1, 5);
     expect(distanceToSimilarity(4, "euclidean")).toBeCloseTo(1 / 3, 5);
+
+    // Dot product: distance is -dot, so similarity = -distance = dot
+    expect(distanceToSimilarity(-1, "dot")).toBeCloseTo(1, 5);  // distance=-1 means dot=1
+    expect(distanceToSimilarity(0, "dot")).toBeCloseTo(0, 5);   // distance=0 means dot=0
+    expect(distanceToSimilarity(1, "dot")).toBeCloseTo(-1, 5);  // distance=1 means dot=-1
   });
 
   test("findKNearest returns sorted results", () => {
@@ -848,6 +980,210 @@ describe("IVF Index", () => {
     expect(stats.totalVectors).toBe(20);
     expect(stats.avgVectorsPerCluster).toBe(5);
   });
+
+  test("IVF with euclidean metric", () => {
+    const store = createVectorStore(dimensions, { metric: "euclidean", normalize: false });
+    const index = createIvfIndex(dimensions, { nClusters: 2, nProbe: 2, metric: "euclidean" });
+
+    // Create vectors with known distances
+    // v1 = [1,0,0,...], v2 = [2,0,0,...], v3 = [10,0,0,...]
+    const v1 = new Float32Array(dimensions).fill(0); v1[0] = 1;
+    const v2 = new Float32Array(dimensions).fill(0); v2[0] = 2;
+    const v3 = new Float32Array(dimensions).fill(0); v3[0] = 10;
+
+    vectorStoreInsert(store, 1, v1, true); // skip validation since not normalized
+    vectorStoreInsert(store, 2, v2, true);
+    vectorStoreInsert(store, 3, v3, true);
+
+    ivfBuildFromStore(index, store);
+
+    // Query with v1 - should find v2 as closest (distance 1), then v3 (distance 9)
+    const query = new Float32Array(dimensions).fill(0); query[0] = 1;
+    const results = ivfSearch(index, store, query, 3);
+
+    expect(results.length).toBe(3);
+    // Euclidean distance: v1 is identical (dist=0), v2 is close (squared dist=1), v3 is far (squared dist=81)
+    expect(results[0].nodeId).toBe(1); // Itself
+    expect(results[0].distance).toBeCloseTo(0, 5);
+    expect(results[1].nodeId).toBe(2);
+    expect(results[1].distance).toBeCloseTo(1, 5); // squared euclidean
+    expect(results[2].nodeId).toBe(3);
+    expect(results[2].distance).toBeCloseTo(81, 5);
+  });
+
+  test("IVF with dot product metric", () => {
+    const store = createVectorStore(dimensions, { metric: "dot", normalize: false });
+    const index = createIvfIndex(dimensions, { nClusters: 2, nProbe: 2, metric: "dot" });
+
+    // Create vectors where dot product ordering is different from cosine
+    const v1 = new Float32Array(dimensions).fill(0); v1[0] = 1;
+    const v2 = new Float32Array(dimensions).fill(0); v2[0] = 5;  // Higher magnitude
+    const v3 = new Float32Array(dimensions).fill(0); v3[0] = -1; // Opposite direction
+
+    vectorStoreInsert(store, 1, v1, true);
+    vectorStoreInsert(store, 2, v2, true);
+    vectorStoreInsert(store, 3, v3, true);
+
+    ivfBuildFromStore(index, store);
+
+    // Query with [1,0,0,...] - dot products: v1=1, v2=5, v3=-1
+    // Distance is -dot, so: v1=-1, v2=-5, v3=1
+    // Smallest distance (best match) should be v2 with distance -5
+    const query = new Float32Array(dimensions).fill(0); query[0] = 1;
+    const results = ivfSearch(index, store, query, 3);
+
+    expect(results.length).toBe(3);
+    // Dot product: v2 has highest dot product (5), so lowest distance (-5)
+    expect(results[0].nodeId).toBe(2);
+    expect(results[0].distance).toBeCloseTo(-5, 5);
+    expect(results[0].similarity).toBeCloseTo(5, 5); // similarity = -distance = dot
+    
+    expect(results[1].nodeId).toBe(1);
+    expect(results[1].distance).toBeCloseTo(-1, 5);
+    
+    expect(results[2].nodeId).toBe(3);
+    expect(results[2].distance).toBeCloseTo(1, 5);
+    expect(results[2].similarity).toBeCloseTo(-1, 5);
+  });
+
+  test("ivfSearchMulti throws on empty queries", () => {
+    const store = createVectorStore(dimensions);
+    const index = createIvfIndex(dimensions, { nClusters: 4 });
+
+    // Train index
+    const trainingData = new Float32Array(50 * dimensions);
+    for (let i = 0; i < 50; i++) {
+      trainingData.set(randomNormalizedVector(dimensions), i * dimensions);
+    }
+    ivfAddTrainingVectors(index, trainingData, dimensions, 50);
+    ivfTrain(index, dimensions);
+
+    expect(() => ivfSearchMulti(index, store, [], 10, "min")).toThrow(
+      "ivfSearchMulti requires at least one query vector"
+    );
+  });
+
+  test("ivfSearchMulti with min aggregation", () => {
+    const store = createVectorStore(dimensions);
+    // Use 2 clusters since we have few vectors
+    const index = createIvfIndex(dimensions, { nClusters: 2, nProbe: 2 });
+
+    // Create vectors in truly different directions
+    // v1: [1,0,0,...] normalized
+    // v2: [0,1,0,...] normalized (orthogonal to v1)
+    // v3: [-1,0,0,...] normalized (opposite to v1)
+    const v1 = new Float32Array(dimensions); v1[0] = 1;
+    const v2 = new Float32Array(dimensions); v2[1] = 1;
+    const v3 = new Float32Array(dimensions); v3[0] = -1;
+
+    vectorStoreInsert(store, 1, v1);
+    vectorStoreInsert(store, 2, v2);
+    vectorStoreInsert(store, 3, v3);
+
+    ivfBuildFromStore(index, store);
+
+    // Query with v1 and v3 - min aggregation should favor results close to either
+    const q1 = new Float32Array(dimensions); q1[0] = 1;  // Same as v1
+    const q2 = new Float32Array(dimensions); q2[0] = -1; // Same as v3
+    const queries = [q1, q2];
+
+    const results = ivfSearchMulti(index, store, queries, 3, "min");
+
+    expect(results.length).toBe(3);
+    // v1 matches q1 perfectly (dist=0), v3 matches q2 perfectly (dist=0)
+    // v2 is orthogonal to both (dist=1 for cosine)
+    // With min aggregation: v1 min=0, v3 min=0, v2 min=1
+    const topTwo = results.slice(0, 2).map(r => r.nodeId);
+    expect(topTwo).toContain(1);
+    expect(topTwo).toContain(3);
+  });
+
+  test("ivfSearchMulti with max aggregation", () => {
+    const store = createVectorStore(dimensions);
+    const index = createIvfIndex(dimensions, { nClusters: 2, nProbe: 2 });
+
+    // Create vectors: v1 and v3 are opposite, v2 is orthogonal
+    const v1 = new Float32Array(dimensions); v1[0] = 1;
+    const v2 = new Float32Array(dimensions); v2[1] = 1;
+    const v3 = new Float32Array(dimensions); v3[0] = -1;
+
+    vectorStoreInsert(store, 1, v1);
+    vectorStoreInsert(store, 2, v2);
+    vectorStoreInsert(store, 3, v3);
+
+    ivfBuildFromStore(index, store);
+
+    // Query with v1 and v3 directions
+    const q1 = new Float32Array(dimensions); q1[0] = 1;
+    const q2 = new Float32Array(dimensions); q2[0] = -1;
+    const queries = [q1, q2];
+
+    const results = ivfSearchMulti(index, store, queries, 3, "max");
+
+    expect(results.length).toBe(3);
+    // With max aggregation:
+    // v1: dist to q1=0, dist to q2=2 -> max=2
+    // v2: dist to q1=1, dist to q2=1 -> max=1 (orthogonal to both)
+    // v3: dist to q1=2, dist to q2=0 -> max=2
+    // v2 should win with lowest max distance
+    expect(results[0].nodeId).toBe(2);
+  });
+
+  test("ivfSearchMulti with avg aggregation", () => {
+    const store = createVectorStore(dimensions);
+    const index = createIvfIndex(dimensions, { nClusters: 2, nProbe: 2 });
+
+    // Same setup: v1 and v3 opposite, v2 orthogonal
+    const v1 = new Float32Array(dimensions); v1[0] = 1;
+    const v2 = new Float32Array(dimensions); v2[1] = 1;
+    const v3 = new Float32Array(dimensions); v3[0] = -1;
+
+    vectorStoreInsert(store, 1, v1);
+    vectorStoreInsert(store, 2, v2);
+    vectorStoreInsert(store, 3, v3);
+
+    ivfBuildFromStore(index, store);
+
+    const q1 = new Float32Array(dimensions); q1[0] = 1;
+    const q2 = new Float32Array(dimensions); q2[0] = -1;
+    const queries = [q1, q2];
+
+    const results = ivfSearchMulti(index, store, queries, 3, "avg");
+
+    expect(results.length).toBe(3);
+    // With avg aggregation:
+    // v1: (0 + 2) / 2 = 1
+    // v2: (1 + 1) / 2 = 1
+    // v3: (2 + 0) / 2 = 1
+    // All have same average - just check we get 3 results
+    expect(results.map(r => r.nodeId).sort()).toEqual([1, 2, 3]);
+  });
+
+  test("ivfSearchMulti with sum aggregation", () => {
+    const store = createVectorStore(dimensions);
+    const index = createIvfIndex(dimensions, { nClusters: 2, nProbe: 2 });
+
+    // Same setup
+    const v1 = new Float32Array(dimensions); v1[0] = 1;
+    const v2 = new Float32Array(dimensions); v2[1] = 1;
+    const v3 = new Float32Array(dimensions); v3[0] = -1;
+
+    vectorStoreInsert(store, 1, v1);
+    vectorStoreInsert(store, 2, v2);
+    vectorStoreInsert(store, 3, v3);
+
+    ivfBuildFromStore(index, store);
+
+    const q1 = new Float32Array(dimensions); q1[0] = 1;
+    const q2 = new Float32Array(dimensions); q2[0] = -1;
+    const queries = [q1, q2];
+
+    const results = ivfSearchMulti(index, store, queries, 3, "sum");
+
+    expect(results.length).toBe(3);
+    // Sum is just avg * count, so same ordering as avg
+    expect(results.map(r => r.nodeId).sort()).toEqual([1, 2, 3]);
+  });
 });
 
 // ============================================================================
@@ -1054,6 +1390,106 @@ describe("Serialization", () => {
 
     expect(restored.totalVectors).toBe(0);
     expect(restored.nodeIdToVectorId.size).toBe(0);
+  });
+
+  test("Serialization with large node IDs (within safe integer range)", () => {
+    const store = createVectorStore(dimensions);
+
+    // Use large node IDs that are still within Number.MAX_SAFE_INTEGER
+    const largeIds = [
+      1_000_000_000,           // 1 billion
+      1_000_000_000_000,       // 1 trillion
+      Number.MAX_SAFE_INTEGER - 1, // Just under the limit
+    ];
+
+    for (let i = 0; i < largeIds.length; i++) {
+      vectorStoreInsert(store, largeIds[i], randomVector(dimensions));
+    }
+
+    // Serialize and deserialize
+    const serialized = serializeManifest(store);
+    const restored = deserializeManifest(serialized);
+
+    // Verify large IDs are preserved correctly
+    for (const largeId of largeIds) {
+      expect(restored.nodeIdToVectorId.has(largeId)).toBe(true);
+      const restoredVec = vectorStoreGet(restored, largeId);
+      expect(restoredVec).not.toBeNull();
+    }
+  });
+
+  test("Serialization with node ID at MAX_SAFE_INTEGER", () => {
+    const store = createVectorStore(dimensions);
+
+    // Use exactly MAX_SAFE_INTEGER
+    const maxSafeId = Number.MAX_SAFE_INTEGER;
+    vectorStoreInsert(store, maxSafeId, randomVector(dimensions));
+
+    // Serialize and deserialize
+    const serialized = serializeManifest(store);
+    const restored = deserializeManifest(serialized);
+
+    // Verify the max safe ID is preserved
+    expect(restored.nodeIdToVectorId.has(maxSafeId)).toBe(true);
+    const restoredVec = vectorStoreGet(restored, maxSafeId);
+    expect(restoredVec).not.toBeNull();
+  });
+
+  test("Deserialize rejects empty buffer", () => {
+    expect(() => deserializeManifest(new Uint8Array(0))).toThrow();
+  });
+
+  test("Deserialize rejects truncated buffer", () => {
+    const store = createVectorStore(dimensions);
+    vectorStoreInsert(store, 1, randomVector(dimensions));
+    
+    const serialized = serializeManifest(store);
+    
+    // Truncate to half the size
+    const truncated = serialized.slice(0, Math.floor(serialized.length / 2));
+    
+    expect(() => deserializeManifest(truncated)).toThrow();
+  });
+
+  test("Deserialize rejects invalid magic number", () => {
+    const store = createVectorStore(dimensions);
+    vectorStoreInsert(store, 1, randomVector(dimensions));
+    
+    const serialized = serializeManifest(store);
+    
+    // Corrupt the magic number (first 4 bytes)
+    serialized[0] = 0xFF;
+    serialized[1] = 0xFF;
+    serialized[2] = 0xFF;
+    serialized[3] = 0xFF;
+    
+    expect(() => deserializeManifest(serialized)).toThrow(/Invalid manifest magic/);
+  });
+
+  test("IVF deserialize rejects empty buffer", () => {
+    expect(() => deserializeIvf(new Uint8Array(0))).toThrow();
+  });
+
+  test("IVF deserialize rejects invalid magic number", () => {
+    const index = createIvfIndex(dimensions, { nClusters: 4 });
+    
+    // Train the index
+    const trainingData = new Float32Array(50 * dimensions);
+    for (let i = 0; i < 50; i++) {
+      trainingData.set(randomNormalizedVector(dimensions), i * dimensions);
+    }
+    ivfAddTrainingVectors(index, trainingData, dimensions, 50);
+    ivfTrain(index, dimensions);
+    
+    const serialized = serializeIvf(index, dimensions);
+    
+    // Corrupt the magic number
+    serialized[0] = 0xFF;
+    serialized[1] = 0xFF;
+    serialized[2] = 0xFF;
+    serialized[3] = 0xFF;
+    
+    expect(() => deserializeIvf(serialized)).toThrow(/Invalid IVF magic/);
   });
 });
 

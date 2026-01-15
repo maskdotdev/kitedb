@@ -215,6 +215,50 @@ export function batchSquaredEuclidean(
 }
 
 /**
+ * Batch dot product distance (negated so lower = better)
+ * For dot product similarity, higher values are better, so we negate for distance ordering.
+ */
+export function batchDotProductDistance(
+  query: Float32Array,
+  rowGroupData: Float32Array,
+  dimensions: number,
+  startIdx: number,
+  count: number
+): Float32Array {
+  const distances = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const offset = (startIdx + i) * dimensions;
+    let sum = 0;
+
+    // Unrolled for SIMD
+    const remainder = dimensions % 8;
+    const mainLen = dimensions - remainder;
+
+    for (let d = 0; d < mainLen; d += 8) {
+      sum +=
+        query[d] * rowGroupData[offset + d] +
+        query[d + 1] * rowGroupData[offset + d + 1] +
+        query[d + 2] * rowGroupData[offset + d + 2] +
+        query[d + 3] * rowGroupData[offset + d + 3] +
+        query[d + 4] * rowGroupData[offset + d + 4] +
+        query[d + 5] * rowGroupData[offset + d + 5] +
+        query[d + 6] * rowGroupData[offset + d + 6] +
+        query[d + 7] * rowGroupData[offset + d + 7];
+    }
+
+    for (let d = mainLen; d < dimensions; d++) {
+      sum += query[d] * rowGroupData[offset + d];
+    }
+
+    // Negate: higher dot product = more similar = lower distance
+    distances[i] = -sum;
+  }
+
+  return distances;
+}
+
+/**
  * Get distance function by metric name
  */
 export function getDistanceFunction(
@@ -245,8 +289,9 @@ export function getBatchDistanceFunction(
 ) => Float32Array {
   switch (metric) {
     case "cosine":
-    case "dot":
       return batchCosineDistance;
+    case "dot":
+      return batchDotProductDistance;
     case "euclidean":
       return batchSquaredEuclidean;
   }
@@ -265,45 +310,82 @@ export function distanceToSimilarity(
     case "euclidean":
       return 1 / (1 + Math.sqrt(distance));
     case "dot":
-      return 1 - distance; // distance was negated dot product
+      // distance is -dot, so similarity is -distance = dot
+      // Note: dot product can be negative, so this isn't bounded to [0,1]
+      return -distance;
   }
 }
 
 /**
  * Find k nearest neighbors from distances array
  * Returns indices sorted by distance (ascending)
+ * 
+ * Uses a max-heap to track the k smallest distances efficiently,
+ * avoiding allocation of pairs for all distances.
  */
 export function findKNearest(
   distances: Float32Array,
   k: number,
   startIdx: number = 0
 ): Array<{ index: number; distance: number }> {
-  // Create array of (index, distance) pairs
-  const pairs: Array<{ index: number; distance: number }> = [];
-  for (let i = 0; i < distances.length; i++) {
-    pairs.push({ index: startIdx + i, distance: distances[i] });
-  }
-
-  // Partial sort to get k smallest (using simple selection for small k)
-  if (k >= pairs.length) {
+  const n = distances.length;
+  
+  // For very small arrays or k >= n, just sort everything
+  if (k >= n || n <= 16) {
+    const pairs: Array<{ index: number; distance: number }> = [];
+    for (let i = 0; i < n; i++) {
+      pairs.push({ index: startIdx + i, distance: distances[i] });
+    }
     pairs.sort((a, b) => a.distance - b.distance);
-    return pairs;
+    return k >= n ? pairs : pairs.slice(0, k);
   }
 
-  // For small k, use partial selection sort
-  for (let i = 0; i < k; i++) {
-    let minIdx = i;
-    for (let j = i + 1; j < pairs.length; j++) {
-      if (pairs[j].distance < pairs[minIdx].distance) {
-        minIdx = j;
-      }
+  // Use max-heap to track k smallest distances
+  // We keep a max-heap so we can quickly check/replace the largest of the k smallest
+  const heap: Array<{ index: number; distance: number }> = [];
+  
+  // Helper functions for max-heap operations
+  const bubbleUp = (i: number) => {
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (heap[parent].distance >= heap[i].distance) break;
+      [heap[parent], heap[i]] = [heap[i], heap[parent]];
+      i = parent;
     }
-    if (minIdx !== i) {
-      [pairs[i], pairs[minIdx]] = [pairs[minIdx], pairs[i]];
+  };
+  
+  const bubbleDown = (i: number) => {
+    const len = heap.length;
+    while (true) {
+      const left = 2 * i + 1;
+      const right = 2 * i + 2;
+      let largest = i;
+      if (left < len && heap[left].distance > heap[largest].distance) largest = left;
+      if (right < len && heap[right].distance > heap[largest].distance) largest = right;
+      if (largest === i) break;
+      [heap[largest], heap[i]] = [heap[i], heap[largest]];
+      i = largest;
     }
+  };
+
+  // Process all distances
+  for (let i = 0; i < n; i++) {
+    const distance = distances[i];
+    
+    if (heap.length < k) {
+      // Heap not full yet, just add
+      heap.push({ index: startIdx + i, distance });
+      bubbleUp(heap.length - 1);
+    } else if (distance < heap[0].distance) {
+      // New distance is smaller than the largest in heap, replace it
+      heap[0] = { index: startIdx + i, distance };
+      bubbleDown(0);
+    }
+    // Otherwise, this distance is larger than all k smallest, skip it
   }
 
-  return pairs.slice(0, k);
+  // Sort the heap contents by distance (ascending)
+  return heap.sort((a, b) => a.distance - b.distance);
 }
 
 /**

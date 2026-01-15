@@ -42,7 +42,8 @@ export function ivfSerializedSize(index: IvfIndex, dimensions: number): number {
  *   - nProbe (4)
  *   - trained (1)
  *   - usePQ (1)
- *   - reserved (14)
+ *   - metric (1): 0=cosine, 1=euclidean, 2=dot
+ *   - reserved (13)
  * - Centroids (nClusters * dimensions * 4 bytes)
  * - numLists (4)
  * - For each inverted list:
@@ -69,7 +70,9 @@ export function serializeIvf(index: IvfIndex, dimensions: number): Uint8Array {
   offset += 1;
   view.setUint8(offset, index.config.usePQ ? 1 : 0);
   offset += 1;
-  offset += 14; // Reserved
+  view.setUint8(offset, metricToNumber(index.config.metric));
+  offset += 1;
+  offset += 13; // Reserved
 
   // Centroids
   for (let i = 0; i < index.centroids.length; i++) {
@@ -122,11 +125,14 @@ export function deserializeIvf(buffer: Uint8Array): {
   offset += 1;
   const usePQ = view.getUint8(offset) === 1;
   offset += 1;
-  offset += 14; // Skip reserved
+  const metric = numberToMetric(view.getUint8(offset));
+  offset += 1;
+  offset += 13; // Skip reserved
 
   const config: IvfConfig = {
     nClusters,
     nProbe,
+    metric,
     usePQ,
   };
 
@@ -428,6 +434,7 @@ export function deserializeManifest(buffer: Uint8Array): VectorManifest {
   const nodeIdToVectorIdCount = view.getUint32(offset, true);
   offset += 4;
   const nodeIdToVectorId = new Map<number, number>();
+  const vectorIdToNodeId = new Map<number, number>();
 
   for (let i = 0; i < nodeIdToVectorIdCount; i++) {
     const nodeId = Number(view.getBigInt64(offset, true));
@@ -436,6 +443,7 @@ export function deserializeManifest(buffer: Uint8Array): VectorManifest {
     offset += 4;
     offset += 4; // padding
     nodeIdToVectorId.set(nodeId, vectorId);
+    vectorIdToNodeId.set(vectorId, nodeId);
   }
 
   // Vector ID to Location mapping
@@ -462,6 +470,7 @@ export function deserializeManifest(buffer: Uint8Array): VectorManifest {
     totalDeleted,
     nextVectorId,
     nodeIdToVectorId,
+    vectorIdToNodeId,
     vectorIdToLocation,
   };
 }
