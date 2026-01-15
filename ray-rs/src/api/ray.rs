@@ -961,7 +961,20 @@ impl Ray {
   ///     // Can now use node.id for edges, traversals, etc.
   /// }
   /// ```
-  pub fn get_ref(&mut self, node_type: &str, key_suffix: &str) -> Result<Option<NodeRef>> {
+  /// Get a lightweight node reference by key (direct read, no transaction overhead)
+  ///
+  /// This is faster than `get()` as it only returns a reference without loading properties.
+  /// Use this when you only need the node ID for traversals or edge operations.
+  ///
+  /// # Example
+  /// ```ignore
+  /// // Fast: only gets reference (~85ns)
+  /// if let Some(node) = ray.get_ref("User", "alice")? {
+  ///     // Can now use node.id for edges, traversals, etc.
+  ///     let friends = ray.from(node.id).out("FOLLOWS").collect();
+  /// }
+  /// ```
+  pub fn get_ref(&self, node_type: &str, key_suffix: &str) -> Result<Option<NodeRef>> {
     let node_def = self
       .nodes
       .get(node_type)
@@ -969,9 +982,8 @@ impl Ray {
 
     let full_key = node_def.key(key_suffix);
 
-    let mut handle = begin_tx(&mut self.db)?;
-    let node_id = get_node_by_key(&handle, &full_key);
-    commit(&mut handle)?;
+    // Direct read without transaction
+    let node_id = get_node_by_key_db(&self.db, &full_key);
 
     match node_id {
       Some(id) => Ok(Some(NodeRef::new(id, Some(full_key), node_type))),
@@ -1541,12 +1553,59 @@ impl<'a> RayTraversalBuilder<'a> {
       .count(|node_id, dir, etype| self.ray.get_neighbors(node_id, dir, etype))
   }
 
-  /// Execute and return iterator
+  /// Execute and return iterator over traversal results
   pub fn execute(self) -> impl Iterator<Item = TraversalResult> + 'a {
     let ray = self.ray;
     self
       .builder
       .execute(move |node_id, dir, etype| ray.get_neighbors(node_id, dir, etype))
+  }
+
+  /// Execute and return iterator over edges only
+  ///
+  /// This is useful when you want to collect the edges traversed rather than nodes.
+  /// Each result contains the source, destination, and edge type of edges encountered.
+  ///
+  /// # Example
+  /// ```ignore
+  /// let edges: Vec<_> = ray.from(user_id)
+  ///     .out(Some("FOLLOWS"))?
+  ///     .edges()
+  ///     .collect();
+  ///
+  /// for edge in edges {
+  ///     println!("{} -[{}]-> {}", edge.src, edge.etype, edge.dst);
+  /// }
+  /// ```
+  pub fn edges(self) -> impl Iterator<Item = Edge> + 'a {
+    let ray = self.ray;
+    self
+      .builder
+      .execute(move |node_id, dir, etype| ray.get_neighbors(node_id, dir, etype))
+      .filter_map(|result| {
+        result.edge.map(|e| Edge {
+          src: e.src,
+          etype: e.etype,
+          dst: e.dst,
+        })
+      })
+  }
+
+  /// Execute and return iterator over full edge details
+  ///
+  /// Similar to `edges()` but returns FullEdge structs.
+  pub fn full_edges(self) -> impl Iterator<Item = FullEdge> + 'a {
+    let ray = self.ray;
+    self
+      .builder
+      .execute(move |node_id, dir, etype| ray.get_neighbors(node_id, dir, etype))
+      .filter_map(move |result| {
+        result.edge.map(|e| FullEdge {
+          src: e.src,
+          etype: e.etype,
+          dst: e.dst,
+        })
+      })
   }
 
   fn resolve_etype(&self, edge_type: Option<&str>) -> Result<Option<ETypeId>> {

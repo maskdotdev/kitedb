@@ -312,6 +312,131 @@ impl Default for SharedGcState {
 }
 
 // ============================================================================
+// Background GC Runner
+// ============================================================================
+
+use std::thread::{self, JoinHandle};
+
+/// Handle to a running background GC thread
+///
+/// When dropped, the GC thread is stopped and joined.
+pub struct BackgroundGcHandle {
+  /// Shared state for communicating with the GC thread
+  state: Arc<SharedGcState>,
+  /// The thread handle (Option so we can take it in drop)
+  thread: Option<JoinHandle<()>>,
+}
+
+impl BackgroundGcHandle {
+  /// Stop the background GC thread
+  ///
+  /// This signals the thread to stop and waits for it to finish.
+  pub fn stop(mut self) {
+    self.state.stop();
+    if let Some(handle) = self.thread.take() {
+      let _ = handle.join();
+    }
+  }
+
+  /// Check if the GC thread is still running
+  pub fn is_running(&self) -> bool {
+    self.thread.as_ref().map(|h| !h.is_finished()).unwrap_or(false)
+  }
+
+  /// Get the number of GC runs completed
+  pub fn gc_runs(&self) -> u64 {
+    self.state.gc_runs.load(Ordering::Relaxed)
+  }
+
+  /// Get the total number of versions pruned
+  pub fn versions_pruned(&self) -> u64 {
+    self.state.versions_pruned.load(Ordering::Relaxed)
+  }
+
+  /// Get a reference to the shared state
+  pub fn state(&self) -> &Arc<SharedGcState> {
+    &self.state
+  }
+}
+
+impl Drop for BackgroundGcHandle {
+  fn drop(&mut self) {
+    // Signal stop and wait for thread to finish
+    self.state.stop();
+    if let Some(handle) = self.thread.take() {
+      let _ = handle.join();
+    }
+  }
+}
+
+/// Start a background GC thread
+///
+/// The GC thread will run periodically based on the interval in `GcConfig`.
+/// It requires mutable access to the TxManager and VersionChainManager,
+/// so these must be wrapped in appropriate synchronization primitives.
+///
+/// # Arguments
+/// * `tx_manager` - Arc-wrapped TxManager with interior mutability
+/// * `version_chain` - Arc-wrapped VersionChainManager with interior mutability
+/// * `config` - GC configuration
+///
+/// # Returns
+/// A handle that can be used to stop the GC thread
+///
+/// # Example
+/// ```ignore
+/// use std::sync::Arc;
+/// use parking_lot::Mutex;
+///
+/// let tx_manager = Arc::new(Mutex::new(TxManager::new()));
+/// let version_chain = Arc::new(Mutex::new(VersionChainManager::new()));
+///
+/// let handle = start_background_gc(
+///   tx_manager.clone(),
+///   version_chain.clone(),
+///   GcConfig::default(),
+/// );
+///
+/// // Later, stop the GC
+/// handle.stop();
+/// ```
+pub fn start_background_gc(
+  tx_manager: Arc<parking_lot::Mutex<TxManager>>,
+  version_chain: Arc<parking_lot::Mutex<VersionChainManager>>,
+  config: GcConfig,
+) -> BackgroundGcHandle {
+  let state = Arc::new(SharedGcState::new());
+  let state_clone = state.clone();
+  let interval = Duration::from_millis(config.interval_ms);
+
+  let thread = thread::spawn(move || {
+    let mut gc = GarbageCollector::with_config(config);
+
+    while !state_clone.should_stop() {
+      // Sleep for the interval
+      thread::sleep(interval);
+
+      if state_clone.should_stop() {
+        break;
+      }
+
+      // Run GC
+      let mut tx_mgr = tx_manager.lock();
+      let mut vc = version_chain.lock();
+      let result = gc.run_gc(&mut tx_mgr, &mut vc);
+
+      // Record stats
+      state_clone.record_gc_run(result.versions_pruned as u64);
+    }
+  });
+
+  BackgroundGcHandle {
+    state,
+    thread: Some(thread),
+  }
+}
+
+// ============================================================================
 // Helper functions
 // ============================================================================
 
