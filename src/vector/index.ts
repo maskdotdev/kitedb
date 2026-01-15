@@ -164,3 +164,30 @@ export {
   serializeManifest,
   deserializeManifest,
 } from "./ivf-serialize.ts";
+
+// Product Quantization
+export {
+  createPQIndex,
+  pqTrain,
+  pqEncode,
+  pqEncodeOne,
+  pqBuildDistanceTable,
+  pqDistanceADC,
+  pqSearch,
+  pqSearchWithTable,
+  pqStats,
+  DEFAULT_PQ_CONFIG,
+} from "./pq.ts";
+export type { PQConfig, PQIndex } from "./pq.ts";
+
+// IVF-PQ Combined Index
+export {
+  createIvfPqIndex,
+  ivfPqAddTrainingVectors,
+  ivfPqTrain,
+  ivfPqInsert,
+  ivfPqSearch,
+  ivfPqStats,
+  DEFAULT_IVF_PQ_CONFIG,
+} from "./ivf-pq.ts";
+export type { IvfPqConfig, IvfPqIndex } from "./ivf-pq.ts";

@@ -22,6 +22,7 @@ import {
   squaredEuclidean,
   distanceToSimilarity,
   getDistanceFunction,
+  getBatchDistanceFunction,
   MaxHeap,
 } from "./distance.ts";
 import { normalize, l2Norm } from "./normalize.ts";
@@ -462,6 +463,7 @@ export function ivfSearch(
   const dimensions = manifest.config.dimensions;
   const nProbe = options?.nProbe ?? index.config.nProbe;
   const metric = index.config.metric; // Use index's metric
+  const { rowGroupSize } = manifest.config;
 
   // Normalize query for cosine metric, use raw for others
   const queryForSearch = metric === "cosine" ? normalize(query) : query;
@@ -472,8 +474,16 @@ export function ivfSearch(
   // Find top nProbe nearest centroids (uses index's metric internally)
   const probeClusters = findNearestCentroids(index, queryForSearch, dimensions, nProbe);
 
+  // Build fragment lookup map for O(1) access (avoid .find() in hot loop)
+  const fragmentMap = new Map(manifest.fragments.map(f => [f.id, f]));
+
   // Use max-heap to track top-k candidates
   const heap = new MaxHeap();
+  
+  // Pre-fetch threshold for inner loop
+  const hasFilter = options?.filter !== undefined;
+  const hasThreshold = options?.threshold !== undefined;
+  const threshold = options?.threshold;
 
   // Search within selected clusters
   for (const cluster of probeClusters) {
@@ -481,45 +491,50 @@ export function ivfSearch(
     if (!vectorIds || vectorIds.length === 0) continue;
 
     for (const vectorId of vectorIds) {
-      // Get vector location
-      const location = vectorStoreGetLocation(manifest, vectorId);
+      // Get vector location - single map lookup
+      const location = manifest.vectorIdToLocation.get(vectorId);
       if (!location) continue;
 
-      // Get fragment and check deletion
-      const fragment = manifest.fragments.find(
-        (f) => f.id === location.fragmentId
-      );
+      // Get fragment with O(1) lookup
+      const fragment = fragmentMap.get(location.fragmentId);
       if (!fragment) continue;
 
-      if (fragmentIsDeleted(fragment, location.localIndex)) continue;
+      // Check deletion bitmap inline (avoid function call overhead)
+      const wordIdx = location.localIndex >>> 5;
+      const bitIdx = location.localIndex & 31;
+      if (fragment.deletionBitmap[wordIdx] & (1 << bitIdx)) continue;
 
-      // Get vector data
-      const vec = vectorStoreGetById(manifest, vectorId);
-      if (!vec) continue;
-
-      // Apply filter if provided
-      if (options?.filter) {
-        const nodeId = vectorStoreGetNodeId(manifest, vectorId);
+      // Apply filter early if provided (before computing distance)
+      if (hasFilter) {
+        const nodeId = manifest.vectorIdToNodeId.get(vectorId);
         if (nodeId !== undefined) {
           try {
-            if (!options.filter(nodeId)) continue;
+            if (!options!.filter!(nodeId)) continue;
           } catch {
-            // Filter threw an error - skip this result
             continue;
           }
         }
       }
 
+      // Get vector data inline (avoid function call + redundant lookups)
+      const rowGroupIdx = Math.floor(location.localIndex / rowGroupSize);
+      const localRowIdx = location.localIndex % rowGroupSize;
+      const rowGroup = fragment.rowGroups[rowGroupIdx];
+      if (!rowGroup || localRowIdx >= rowGroup.count) continue;
+      
+      const offset = localRowIdx * dimensions;
+      const vec = rowGroup.data.subarray(offset, offset + dimensions);
+
       // Compute distance using the appropriate function
       const dist = distanceFn(queryForSearch, vec);
 
       // Apply threshold filter
-      if (options?.threshold !== undefined) {
+      if (hasThreshold) {
         const similarity = distanceToSimilarity(dist, metric);
-        if (similarity < options.threshold) continue;
+        if (similarity < threshold!) continue;
       }
 
-      // Add to heap
+      // Add to heap - only if better than worst candidate
       if (heap.size < k) {
         heap.push(vectorId, dist);
       } else if (dist < heap.peek()!.distance) {
@@ -533,7 +548,7 @@ export function ivfSearch(
   const results = heap.toSortedArray();
 
   return results.map(({ id: vectorId, distance }) => {
-    const nodeId = vectorStoreGetNodeId(manifest, vectorId) ?? 0;
+    const nodeId = manifest.vectorIdToNodeId.get(vectorId) ?? 0;
     return {
       vectorId,
       nodeId,
