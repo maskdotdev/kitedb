@@ -32,7 +32,9 @@ mod write;
 
 // Re-export everything for backward compatibility
 pub use iter::*;
-pub use open::*;
+pub use open::{
+  close_single_file, open_single_file, SingleFileOpenOptions, SyncMode,
+};
 
 // Also re-export recovery items that are used externally
 pub use recovery::replay_wal_record;
@@ -121,6 +123,9 @@ pub struct SingleFileDB {
 
   /// Cache manager for property, traversal, query, and key caches
   pub cache: RwLock<Option<CacheManager>>,
+
+  /// Synchronization mode for WAL writes
+  pub(crate) sync_mode: open::SyncMode,
 }
 
 /// Checkpoint state for background checkpointing

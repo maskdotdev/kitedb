@@ -9,7 +9,7 @@ use std::collections::HashSet;
 
 use crate::core::single_file::{
   close_single_file, open_single_file, SingleFileDB as RustSingleFileDB,
-  SingleFileOpenOptions as RustOpenOptions,
+  SingleFileOpenOptions as RustOpenOptions, SyncMode as RustSyncMode,
 };
 use crate::types::{ETypeId, NodeId, PropKeyId, PropValue, Edge};
 use crate::api::traversal::{TraversalBuilder as RustTraversalBuilder, TraversalDirection, TraverseOptions};
@@ -19,6 +19,48 @@ use super::traversal::{PyTraversalResult, PyPathResult, PyPathEdge};
 // ============================================================================
 // Open Options
 // ============================================================================
+
+/// Synchronization mode for WAL writes
+///
+/// Controls the durability vs performance trade-off for commits.
+/// - "full": Fsync on every commit (safest, ~3ms per commit)
+/// - "normal": Fsync only on checkpoint (~1000x faster, safe from app crash)
+/// - "off": No fsync (fastest, data may be lost on any crash)
+#[pyclass(name = "SyncMode")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PySyncMode {
+  mode: RustSyncMode,
+}
+
+#[pymethods]
+impl PySyncMode {
+  /// Full durability: fsync on every commit (~3ms)
+  #[staticmethod]
+  fn full() -> Self {
+    Self { mode: RustSyncMode::Full }
+  }
+
+  /// Normal: fsync on checkpoint only (~1000x faster)
+  /// Safe from application crashes, but not OS crashes.
+  #[staticmethod]
+  fn normal() -> Self {
+    Self { mode: RustSyncMode::Normal }
+  }
+
+  /// No fsync (fastest, for testing only)
+  #[staticmethod]
+  fn off() -> Self {
+    Self { mode: RustSyncMode::Off }
+  }
+
+  fn __repr__(&self) -> String {
+    match self.mode {
+      RustSyncMode::Full => "SyncMode.full()".to_string(),
+      RustSyncMode::Normal => "SyncMode.normal()".to_string(),
+      RustSyncMode::Off => "SyncMode.off()".to_string(),
+    }
+  }
+}
 
 /// Options for opening a database
 #[pyclass(name = "OpenOptions")]
@@ -63,6 +105,8 @@ pub struct PyOpenOptions {
   /// Query cache TTL in milliseconds
   #[pyo3(get, set)]
   pub cache_query_ttl_ms: Option<i64>,
+  /// Sync mode: "full", "normal", or "off"
+  pub sync_mode: Option<PySyncMode>,
 }
 
 #[pymethods]
@@ -81,7 +125,8 @@ impl PyOpenOptions {
     cache_max_edge_props=None,
     cache_max_traversal_entries=None,
     cache_max_query_entries=None,
-    cache_query_ttl_ms=None
+    cache_query_ttl_ms=None,
+    sync_mode=None
   ))]
   fn new(
     read_only: Option<bool>,
@@ -97,6 +142,7 @@ impl PyOpenOptions {
     cache_max_traversal_entries: Option<i64>,
     cache_max_query_entries: Option<i64>,
     cache_query_ttl_ms: Option<i64>,
+    sync_mode: Option<PySyncMode>,
   ) -> Self {
     Self {
       read_only,
@@ -112,6 +158,7 @@ impl PyOpenOptions {
       cache_max_traversal_entries,
       cache_max_query_entries,
       cache_query_ttl_ms,
+      sync_mode,
     }
   }
 }
@@ -166,6 +213,11 @@ impl From<PyOpenOptions> for RustOpenOptions {
         traversal_cache,
         query_cache,
       }));
+    }
+
+    // Sync mode
+    if let Some(sync) = opts.sync_mode {
+      rust_opts = rust_opts.sync_mode(sync.mode);
     }
 
     rust_opts

@@ -7,9 +7,40 @@ use napi_derive::napi;
 
 use crate::core::single_file::{
   close_single_file, open_single_file, SingleFileDB as RustSingleFileDB,
-  SingleFileOpenOptions as RustOpenOptions,
+  SingleFileOpenOptions as RustOpenOptions, SyncMode as RustSyncMode,
 };
 use crate::types::{ETypeId, NodeId, PropKeyId, PropValue};
+
+// ============================================================================
+// Sync Mode
+// ============================================================================
+
+/// Synchronization mode for WAL writes
+///
+/// Controls the durability vs performance trade-off for commits.
+/// - Full: Fsync on every commit (safest, ~3ms per commit)
+/// - Normal: Fsync only on checkpoint (~1000x faster, safe from app crash)
+/// - Off: No fsync (fastest, data may be lost on any crash)
+#[napi(string_enum)]
+#[derive(Debug)]
+pub enum JsSyncMode {
+  /// Fsync on every commit (safest, slowest)
+  Full,
+  /// Fsync on checkpoint only (balanced)
+  Normal,
+  /// No fsync (fastest, least safe)
+  Off,
+}
+
+impl From<JsSyncMode> for RustSyncMode {
+  fn from(mode: JsSyncMode) -> Self {
+    match mode {
+      JsSyncMode::Full => RustSyncMode::Full,
+      JsSyncMode::Normal => RustSyncMode::Normal,
+      JsSyncMode::Off => RustSyncMode::Off,
+    }
+  }
+}
 
 // ============================================================================
 // Open Options
@@ -45,6 +76,8 @@ pub struct OpenOptions {
   pub cache_max_query_entries: Option<i64>,
   /// Query cache TTL in milliseconds
   pub cache_query_ttl_ms: Option<i64>,
+  /// Sync mode: "Full", "Normal", or "Off" (default: "Full")
+  pub sync_mode: Option<JsSyncMode>,
 }
 
 impl From<OpenOptions> for RustOpenOptions {
@@ -97,6 +130,11 @@ impl From<OpenOptions> for RustOpenOptions {
         traversal_cache,
         query_cache,
       }));
+    }
+
+    // Sync mode
+    if let Some(mode) = opts.sync_mode {
+      rust_opts = rust_opts.sync_mode(mode.into());
     }
 
     rust_opts

@@ -22,10 +22,12 @@ use pyo3::prelude::*;
 /// RayDB Python module
 #[cfg(feature = "python")]
 #[pymodule]
+#[pyo3(name = "_raydb")]
 pub fn raydb(m: &Bound<'_, PyModule>) -> PyResult<()> {
   // Database classes
   m.add_class::<database::PyDatabase>()?;
   m.add_class::<database::PyOpenOptions>()?;
+  m.add_class::<database::PySyncMode>()?;
   m.add_class::<database::PyDbStats>()?;
   m.add_class::<database::PyCacheStats>()?;
   m.add_class::<database::PyPropValue>()?;

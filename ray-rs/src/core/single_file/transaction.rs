@@ -8,6 +8,7 @@ use crate::core::wal::record::{
 use crate::error::{RayError, Result};
 use crate::types::*;
 
+use super::open::SyncMode;
 use super::{SingleFileDB, SingleFileTxState};
 
 impl SingleFileDB {
@@ -60,9 +61,26 @@ impl SingleFileDB {
       let mut wal = self.wal_buffer.lock();
       wal.write_record(&record, &mut pager)?;
 
-      // Flush WAL to disk
-      wal.flush(&mut pager)?;
-      pager.sync()?;
+      // Flush WAL to disk based on sync mode
+      match self.sync_mode {
+        SyncMode::Full => {
+          // Full durability: flush + fsync on every commit (~3ms)
+          wal.flush(&mut pager)?;
+          pager.sync()?;
+        }
+        SyncMode::Normal => {
+          // Normal: flush to OS cache but no fsync (~1-10us)
+          // Data is in kernel buffer cache, safe from app crash
+          // Will be synced on checkpoint or close
+          wal.flush(&mut pager)?;
+          // No pager.sync() - let OS handle write-back
+        }
+        SyncMode::Off => {
+          // Off: don't even flush immediately, just buffer in memory
+          // Most dangerous but fastest for bulk operations
+          // Data only written when buffer is full or on checkpoint
+        }
+      }
     }
 
     // Apply pending vector operations

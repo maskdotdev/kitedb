@@ -25,6 +25,27 @@ use super::{CheckpointStatus, SingleFileDB};
 // Open Options
 // ============================================================================
 
+/// Synchronization mode for WAL writes
+///
+/// Controls the durability vs performance trade-off for commits.
+/// Similar to SQLite's PRAGMA synchronous setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SyncMode {
+  /// Fsync on every commit (safest, slowest ~3ms per commit)
+  /// Data is guaranteed to be on disk after commit returns.
+  #[default]
+  Full,
+
+  /// Fsync only on checkpoint (balanced)
+  /// WAL writes are buffered in OS cache. Data may be lost if OS crashes,
+  /// but not if application crashes. ~1000x faster than Full.
+  Normal,
+
+  /// No fsync (fastest, least safe)
+  /// Data may be lost on any crash. Only for testing/ephemeral data.
+  Off,
+}
+
 /// Options for opening a single-file database
 #[derive(Debug, Clone)]
 pub struct SingleFileOpenOptions {
@@ -44,6 +65,8 @@ pub struct SingleFileOpenOptions {
   pub background_checkpoint: bool,
   /// Cache options (None = disabled)
   pub cache: Option<CacheOptions>,
+  /// Synchronization mode for WAL writes (default: Full)
+  pub sync_mode: SyncMode,
 }
 
 impl Default for SingleFileOpenOptions {
@@ -57,6 +80,7 @@ impl Default for SingleFileOpenOptions {
       checkpoint_threshold: 0.8,
       background_checkpoint: true,
       cache: None,
+      sync_mode: SyncMode::Full,
     }
   }
 }
@@ -111,6 +135,25 @@ impl SingleFileOpenOptions {
       enabled: true,
       ..Default::default()
     });
+    self
+  }
+
+  pub fn sync_mode(mut self, mode: SyncMode) -> Self {
+    self.sync_mode = mode;
+    self
+  }
+
+  /// Set sync mode to Normal (fsync on checkpoint only)
+  /// This is ~1000x faster than Full mode but data may be lost if OS crashes.
+  pub fn sync_normal(mut self) -> Self {
+    self.sync_mode = SyncMode::Normal;
+    self
+  }
+
+  /// Set sync mode to Off (no fsync)
+  /// Only for testing or ephemeral data. Data may be lost on any crash.
+  pub fn sync_off(mut self) -> Self {
+    self.sync_mode = SyncMode::Off;
     self
   }
 }
@@ -335,6 +378,7 @@ pub fn open_single_file<P: AsRef<Path>>(
     checkpoint_status: Mutex::new(CheckpointStatus::Idle),
     vector_stores: RwLock::new(vector_stores),
     cache: RwLock::new(cache),
+    sync_mode: options.sync_mode,
   })
 }
 

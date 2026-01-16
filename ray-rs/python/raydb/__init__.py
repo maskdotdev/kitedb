@@ -43,6 +43,7 @@ from raydb._raydb import (
     # Core classes
     Database,
     OpenOptions,
+    SyncMode,
     DbStats,
     CacheStats,
     PropValue,
@@ -75,6 +76,7 @@ __all__ = [
     # Core
     "Database",
     "OpenOptions",
+    "SyncMode",
     "DbStats",
     "CacheStats",
     "PropValue",

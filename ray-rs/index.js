@@ -576,6 +576,19 @@ if (!nativeBinding) {
 }
 
 module.exports = nativeBinding
+module.exports.Database = nativeBinding.Database
+module.exports.JsGraphAccessor = nativeBinding.JsGraphAccessor
+module.exports.JsIvfIndex = nativeBinding.JsIvfIndex
+module.exports.JsIvfPqIndex = nativeBinding.JsIvfPqIndex
+module.exports.bruteForceSearch = nativeBinding.bruteForceSearch
+module.exports.JsAggregation = nativeBinding.JsAggregation
+module.exports.JsDistanceMetric = nativeBinding.JsDistanceMetric
+module.exports.JsSyncMode = nativeBinding.JsSyncMode
+module.exports.JsTraversalDirection = nativeBinding.JsTraversalDirection
+module.exports.openDatabase = nativeBinding.openDatabase
+module.exports.pathConfig = nativeBinding.pathConfig
 module.exports.plus100 = nativeBinding.plus100
+module.exports.PropType = nativeBinding.PropType
 module.exports.PropValueTag = nativeBinding.PropValueTag
+module.exports.traversalStep = nativeBinding.traversalStep
 module.exports.version = nativeBinding.version
