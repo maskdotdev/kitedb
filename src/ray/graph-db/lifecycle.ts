@@ -50,6 +50,7 @@ import {
   acquireExclusiveLock,
   acquireSharedLock,
   releaseLock,
+  isProperLockingAvailable,
   type LockHandle,
 } from "../../util/lock.ts";
 import { CacheManager } from "../../cache/index.ts";
@@ -157,7 +158,17 @@ async function openMultiFileDB(
   path: string,
   options: OpenOptions = {},
 ): Promise<GraphDB> {
-  const { readOnly = false, createIfMissing = true, lockFile = true } = options;
+  const { readOnly = false, createIfMissing = true, lockFile = true, requireLocking = false } = options;
+
+  // Check if strict locking is required but not available
+  if (requireLocking && lockFile) {
+    if (!isProperLockingAvailable()) {
+      throw new Error(
+        "requireLocking is enabled but proper file locking is not available. " +
+        "This may happen if Bun FFI cannot load the system's libc."
+      );
+    }
+  }
 
   // Ensure directory exists
   const fs = await import("node:fs/promises");

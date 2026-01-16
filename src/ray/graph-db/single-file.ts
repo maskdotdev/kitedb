@@ -35,6 +35,7 @@ import {
   acquireExclusiveFileLock,
   acquireSharedFileLock,
   releaseFileLock,
+  isProperLockingAvailable,
   type SingleFileLockHandle,
 } from "../../util/lock.ts";
 import { CacheManager } from "../../cache/index.ts";
@@ -69,12 +70,23 @@ export async function openSingleFileDB(
     readOnly = false,
     createIfMissing = true,
     lockFile = true,
+    requireLocking = false,
     pageSize = DEFAULT_PAGE_SIZE,
     walSize = WAL_DEFAULT_SIZE,
     autoCheckpoint = true,
     checkpointThreshold = 0.8,
     cacheSnapshot = true,
   } = options;
+
+  // Check if strict locking is required but not available
+  if (requireLocking && lockFile) {
+    if (!isProperLockingAvailable()) {
+      throw new Error(
+        "requireLocking is enabled but proper file locking is not available. " +
+        "This may happen if Bun FFI cannot load the system's libc."
+      );
+    }
+  }
 
   // Validate page size
   if (!isValidPageSize(pageSize)) {

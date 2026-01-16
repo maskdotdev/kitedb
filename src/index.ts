@@ -41,6 +41,41 @@ export { PropValueTag } from "./types.ts";
 export { openGraphDB, closeGraphDB } from "./ray/graph-db/index.ts";
 
 // ============================================================================
+// Locking utilities
+// ============================================================================
+
+/**
+ * Check if proper OS-level file locking is available.
+ * Uses native flock() via Bun FFI - no external dependencies required.
+ * 
+ * @example
+ * ```ts
+ * if (!isProperLockingAvailable()) {
+ *   console.warn("File locking not available on this platform");
+ * }
+ * 
+ * const db = await openGraphDB("./mydb", {
+ *   requireLocking: true, // Throws if locking unavailable
+ * });
+ * ```
+ */
+export { isProperLockingAvailable } from "./util/lock.ts";
+
+// ============================================================================
+// Backup and Restore
+// ============================================================================
+
+export {
+  createBackup,
+  restoreBackup,
+  getBackupInfo,
+  createOfflineBackup,
+  type BackupOptions,
+  type RestoreOptions,
+  type BackupResult,
+} from "./backup/index.ts";
+
+// ============================================================================
 // Transactions
 // ============================================================================
 

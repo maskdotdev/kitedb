@@ -287,7 +287,18 @@ export interface DeltaState {
 export interface OpenOptions {
   readOnly?: boolean;
   createIfMissing?: boolean;
+  /** 
+   * Enable file locking for cross-process safety. Default: true
+   * Set to false to disable locking entirely (useful for single-process scenarios)
+   */
   lockFile?: boolean;
+  /**
+   * Require proper OS-level file locking (via fs-ext). Default: false
+   * When true, opening the database will fail if fs-ext is not installed.
+   * This provides strict guarantees against multi-process data corruption.
+   * Install fs-ext with: `bun add fs-ext`
+   */
+  requireLocking?: boolean;
   cache?: CacheOptions;
   mvcc?: boolean; // Enable MVCC mode (default: false for backward compatibility)
   mvccGcInterval?: number; // GC interval in ms (default: 5000)
