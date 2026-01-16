@@ -1345,6 +1345,59 @@ impl Ray {
     }
   }
 
+  /// Get a human-readable description of the database
+  ///
+  /// Useful for debugging and monitoring. Returns information about:
+  /// - Database path and format
+  /// - Schema (node types and edge types)
+  /// - Current statistics
+  ///
+  /// # Example
+  /// ```ignore
+  /// println!("{}", ray.describe());
+  /// // Output:
+  /// // RayDB at /path/to/db (multi-file format)
+  /// // Schema:
+  /// //   Node types: User, Post, Comment
+  /// //   Edge types: FOLLOWS, LIKES, WROTE
+  /// // Statistics:
+  /// //   Nodes: 1,234 (snapshot: 1,200, delta: +34)
+  /// //   Edges: 5,678 (snapshot: 5,600, delta: +78)
+  /// ```
+  pub fn describe(&self) -> String {
+    let stats = self.stats();
+    let path = self.db.path.display();
+    let format = if self.db.is_single_file { "single-file" } else { "multi-file" };
+    
+    let node_types: Vec<&str> = self.nodes.keys().map(|s| s.as_str()).collect();
+    let edge_types: Vec<&str> = self.edges.keys().map(|s| s.as_str()).collect();
+    
+    let delta_nodes = stats.delta_nodes_created as i64 - stats.delta_nodes_deleted as i64;
+    let delta_edges = stats.delta_edges_added as i64 - stats.delta_edges_deleted as i64;
+    
+    format!(
+      "RayDB at {} ({} format)\n\
+       Schema:\n  \
+         Node types: {}\n  \
+         Edge types: {}\n\
+       Statistics:\n  \
+         Nodes: {} (snapshot: {}, delta: {:+})\n  \
+         Edges: {} (snapshot: {}, delta: {:+})\n  \
+         Recommend compact: {}",
+      path,
+      format,
+      if node_types.is_empty() { "(none)".to_string() } else { node_types.join(", ") },
+      if edge_types.is_empty() { "(none)".to_string() } else { edge_types.join(", ") },
+      stats.snapshot_nodes,
+      stats.snapshot_nodes.saturating_sub(stats.delta_nodes_created as u64),
+      delta_nodes,
+      stats.snapshot_edges,
+      stats.snapshot_edges.saturating_sub(stats.delta_edges_added as u64),
+      delta_edges,
+      if stats.recommend_compact { "yes" } else { "no" }
+    )
+  }
+
   /// Check database integrity
   ///
   /// Performs validation checks on the database structure:
