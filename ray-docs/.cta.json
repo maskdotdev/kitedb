@@ -1,0 +1,17 @@
+{
+  "projectName": "ray-docs",
+  "mode": "file-router",
+  "typescript": true,
+  "packageManager": "pnpm",
+  "tailwind": true,
+  "addOnOptions": {},
+  "git": true,
+  "version": 1,
+  "framework": "solid",
+  "chosenAddOns": [
+    "biome",
+    "nitro",
+    "start",
+    "solid-ui"
+  ]
+}
