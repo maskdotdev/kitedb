@@ -581,12 +581,12 @@ export interface JsSearchResult {
  * Synchronization mode for WAL writes
  *
  * Controls the durability vs performance trade-off for commits.
- * - Full: Fsync on every commit (safest, ~3ms per commit)
+ * - Full: Fsync on every commit (durable to OS, slowest)
  * - Normal: Fsync only on checkpoint (~1000x faster, safe from app crash)
  * - Off: No fsync (fastest, data may be lost on any crash)
  */
 export declare const enum JsSyncMode {
-  /** Fsync on every commit (safest, slowest) */
+  /** Fsync on every commit (durable to OS, slowest) */
   Full = 'Full',
   /** Fsync on checkpoint only (balanced) */
   Normal = 'Normal',
