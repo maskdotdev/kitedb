@@ -41,13 +41,18 @@ export const docsStructure: DocSection[] = [
     ],
   },
   {
+    label: 'Benchmarks',
+    items: [
+      { title: 'Benchmarks', description: 'Performance comparisons', slug: 'benchmarks' },
+    ],
+  },
+  {
     label: 'Deep Dive',
     collapsed: true,
     items: [
       { title: 'Architecture', description: 'Internal design and data structures', slug: 'internals/architecture' },
       { title: 'CSR Format', description: 'Compressed Sparse Row storage', slug: 'internals/csr' },
       { title: 'Performance', description: 'Optimization techniques', slug: 'internals/performance' },
-      { title: 'Benchmarks', description: 'Performance comparisons', slug: 'benchmarks' },
     ],
   },
 ]
