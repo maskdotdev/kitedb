@@ -512,12 +512,21 @@ kbd {
   color: var(--speed-accent);
 }
 
-.prose pre {
+.prose pre:not(.console-container pre):not(.shiki-wrapper pre) {
   @apply my-6 p-4 rounded-xl bg-slate-900 dark:bg-slate-950 overflow-x-auto border border-slate-800;
 }
 
-.prose pre code {
+.prose pre:not(.console-container pre):not(.shiki-wrapper pre) code {
   @apply text-sm text-slate-200 leading-relaxed;
+}
+
+/* Reset prose styles inside CodeBlock - let Tailwind classes handle padding */
+.prose .console-container pre,
+.prose .shiki-wrapper pre {
+  margin: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
 }
 
 .prose ul {
@@ -1836,11 +1845,20 @@ kbd {
     color: #00d4ff;
   }
 
-  .prose-console pre {
+  .prose-console pre:not(.console-container pre):not(.shiki-wrapper pre) {
     margin-top: 1.5rem;
     margin-bottom: 1.5rem;
     border-radius: 0.5rem;
     overflow: hidden;
+  }
+
+  /* Reset prose-console styles inside CodeBlock - let Tailwind classes handle padding */
+  .prose-console .console-container pre,
+  .prose-console .shiki-wrapper pre {
+    margin: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
   }
 
   .prose-console ul {
