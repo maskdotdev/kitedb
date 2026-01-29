@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -25,24 +25,41 @@ import {
   createNode,
   getNodeByKey,
   nodeExists,
-  optimize,
+  optimizeSingleFile,
   definePropkey,
   setNodeProp,
   getNodeProp,
 } from "../../src/index.ts";
 import { PropValueTag } from "../../src/types.ts";
 import type { GraphDB, NodeID } from "../../src/types.ts";
-import { MANIFEST_FILENAME, WAL_DIR, walFilename } from "../../src/constants.ts";
+import { parseHeader, getWalAreaOffset, getWalAreaSize } from "../../src/core/header.ts";
 import { getConfig, isQuickMode } from "./stress.config.ts";
-import { randomString, randomInt } from "./helpers/generators.ts";
 
 const config = getConfig(isQuickMode());
+const dbOptions = {
+  autoCheckpoint: false,
+  walSize: config.durability.walSizeBytes,
+};
 
-describe.skip("Durability Stress Tests (legacy multi-file)", () => {
+function getWalBounds(file: Uint8Array): { start: number; end: number; used: number } {
+  const header = parseHeader(file.subarray(0, 4096));
+  const walOffset = getWalAreaOffset(header);
+  const walSize = getWalAreaSize(header);
+  const used = Math.max(
+    Number(header.walPrimaryHead),
+    Number(header.walSecondaryHead),
+    Number(header.walHead)
+  );
+  return { start: walOffset, end: walOffset + walSize, used };
+}
+
+describe("Durability Stress Tests (single-file)", () => {
   let testDir: string;
+  let testPath: string;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-durability-stress-"));
+    testPath = join(testDir, "db.raydb");
   });
 
   afterEach(async () => {
@@ -56,7 +73,7 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
     const expectedNodes = new Map<string, boolean>(); // key -> committed
 
     for (let cycle = 0; cycle < CYCLES; cycle++) {
-      const db = await openGraphDB(testDir);
+      const db = await openGraphDB(testPath, dbOptions);
 
       // Create some nodes
       const tx = beginTx(db);
@@ -89,7 +106,7 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
     }
 
     // Final verification
-    const verifyDb = await openGraphDB(testDir);
+    const verifyDb = await openGraphDB(testPath, dbOptions);
     
     let correctlyPresent = 0;
     let correctlyAbsent = 0;
@@ -117,7 +134,7 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
 
   test("WAL truncation during transaction is handled gracefully", async () => {
     // Create database with multiple transactions
-    const db1 = await openGraphDB(testDir);
+    const db1 = await openGraphDB(testPath, dbOptions);
 
     const committedKeys: string[] = [];
     
@@ -133,32 +150,32 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
     await closeGraphDB(db1);
 
     // Truncate WAL to various lengths
-    const walPath = join(testDir, WAL_DIR, walFilename(1n));
-    const originalWal = await readFile(walPath);
+    const originalFile = await readFile(testPath);
+    const { start: walStart, used } = getWalBounds(originalFile);
     
     // Test various truncation points
+    const usedBytes = Math.max(used, 1);
     const truncationPoints = [
-      Math.floor(originalWal.length * 0.9),
-      Math.floor(originalWal.length * 0.7),
-      Math.floor(originalWal.length * 0.5),
+      Math.floor(usedBytes * 0.9),
+      Math.floor(usedBytes * 0.7),
+      Math.floor(usedBytes * 0.5),
     ];
 
     for (const truncPoint of truncationPoints) {
-      // Create a copy of test directory for this truncation test
+      // Create a copy of the database file for this truncation test
       const truncDir = await mkdtemp(join(tmpdir(), "ray-trunc-test-"));
+      const truncPath = join(truncDir, "db.raydb");
       
       try {
-        // Copy manifest
-        const manifest = await readFile(join(testDir, MANIFEST_FILENAME));
-        await writeFile(join(truncDir, MANIFEST_FILENAME), manifest);
-        
-        // Copy truncated WAL
-        await mkdir(join(truncDir, WAL_DIR), { recursive: true });
-        const truncatedWal = originalWal.subarray(0, truncPoint);
-        await writeFile(join(truncDir, WAL_DIR, walFilename(1n)), truncatedWal);
+        // Copy and truncate WAL data in-place
+        const truncatedFile = Buffer.from(originalFile);
+        const start = walStart + truncPoint;
+        const end = walStart + used;
+        truncatedFile.fill(0, start, end);
+        await writeFile(truncPath, truncatedFile);
 
         // Try to open - should handle gracefully
-        const db2 = await openGraphDB(truncDir);
+        const db2 = await openGraphDB(truncPath, dbOptions);
 
         // Some transactions should be recovered
         let recovered = 0;
@@ -168,7 +185,7 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
           }
         }
 
-        console.log(`Truncation at ${truncPoint}/${originalWal.length}: recovered ${recovered}/${committedKeys.length}`);
+        console.log(`Truncation at ${truncPoint}/${used}: recovered ${recovered}/${committedKeys.length}`);
         expect(recovered).toBeGreaterThan(0);
 
         await closeGraphDB(db2);
@@ -180,7 +197,7 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
 
   test("random byte corruption in WAL is detected", async () => {
     // Create database with data
-    const db1 = await openGraphDB(testDir);
+    const db1 = await openGraphDB(testPath, dbOptions);
 
     const tx = beginTx(db1);
     for (let i = 0; i < 50; i++) {
@@ -191,28 +208,22 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
     await closeGraphDB(db1);
 
     // Corrupt random bytes in WAL
-    const walPath = join(testDir, WAL_DIR, walFilename(1n));
-    const walData = await readFile(walPath);
+    const originalFile = await readFile(testPath);
+    const { start: walStart, used } = getWalBounds(originalFile);
     
     // Create copy for corruption test
     const corruptDir = await mkdtemp(join(tmpdir(), "ray-corrupt-test-"));
+    const corruptPath = join(corruptDir, "db.raydb");
 
     try {
-      // Copy manifest
-      const manifest = await readFile(join(testDir, MANIFEST_FILENAME));
-      await writeFile(join(corruptDir, MANIFEST_FILENAME), manifest);
-
-      // Corrupt WAL
-      await mkdir(join(corruptDir, WAL_DIR), { recursive: true });
-      const corrupted = Buffer.from(walData);
+      // Corrupt WAL inside the single-file database
+      const corrupted = Buffer.from(originalFile);
       
-      // Flip some random bits in the middle
-      for (let i = 0; i < 10; i++) {
-        const pos = randomInt(100, corrupted.length - 100);
-        corrupted[pos] ^= 0xFF;
-      }
+      // Corrupt the first record header to force a CRC/parse failure
+      const corruptAt = walStart + 8;
+      corrupted[corruptAt] ^= 0xFF;
       
-      await writeFile(join(corruptDir, WAL_DIR, walFilename(1n)), corrupted);
+      await writeFile(corruptPath, corrupted);
 
       // Open should either recover partial data or fail gracefully
       let opened = false;
@@ -221,7 +232,7 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
       let detectionMessage = "";
 
       try {
-        const db2 = await openGraphDB(corruptDir);
+        const db2 = await openGraphDB(corruptPath, dbOptions);
         opened = true;
         
         // Count recovered nodes
@@ -252,7 +263,7 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
 
   test("recovery after crash during compaction", async () => {
     // Create database with data
-    const db1 = await openGraphDB(testDir);
+    const db1 = await openGraphDB(testPath, dbOptions);
 
     const tx1 = beginTx(db1);
     for (let i = 0; i < 100; i++) {
@@ -261,7 +272,7 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
     await commit(tx1);
 
     // Run compaction
-    await optimize(db1);
+    await optimizeSingleFile(db1);
 
     // Add more data after compaction
     const tx2 = beginTx(db1);
@@ -274,29 +285,37 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
     await closeGraphDB(db1);
 
     // Simulate partial corruption of snapshot by truncating it
-    const snapshotsDir = join(testDir, "snapshots");
-    try {
-      const files = await readdir(snapshotsDir);
-      const snapshotFile = files.find(f => f.endsWith(".gds"));
-      
-      if (snapshotFile) {
-        const snapshotPath = join(snapshotsDir, snapshotFile);
-        const data = await readFile(snapshotPath);
-        // Truncate snapshot
-        const truncated = data.subarray(0, Math.floor(data.length * 0.8));
-        await writeFile(snapshotPath, truncated);
-      }
-    } catch {
-      // No snapshots directory yet
+    // Simulate snapshot corruption by truncating the snapshot area in the file
+    const fileData = Buffer.from(await readFile(testPath));
+    const header = parseHeader(fileData.subarray(0, 4096));
+    if (header.snapshotPageCount > 0n) {
+      const snapshotOffset = Number(header.snapshotStartPage) * header.pageSize;
+      const snapshotSize = Number(header.snapshotPageCount) * header.pageSize;
+      const truncateStart = snapshotOffset + Math.floor(snapshotSize * 0.8);
+      fileData.fill(0, truncateStart, snapshotOffset + snapshotSize);
+      await writeFile(testPath, fileData);
     }
 
     // Reopen - should recover from WAL
-    const db2 = await openGraphDB(testDir);
+    let db2: GraphDB | null = null;
+    let opened = false;
+    let errorMessage = "";
+    try {
+      db2 = await openGraphDB(testPath, dbOptions);
+      opened = true;
+    } catch (e) {
+      errorMessage = String(e);
+      console.log(`Snapshot corruption detected and rejected: ${errorMessage}`);
+      expect(errorMessage.toLowerCase()).toMatch(/crc|checksum|corrupt|snapshot/);
+    }
+    if (!opened) {
+      return;
+    }
 
     // Pre-compaction data should be in snapshot or WAL
     let preCompactRecovered = 0;
     for (let i = 0; i < 100; i++) {
-      if (getNodeByKey(db2, `pre_compact_${i}`) !== null) {
+      if (getNodeByKey(db2!, `pre_compact_${i}`) !== null) {
         preCompactRecovered++;
       }
     }
@@ -304,7 +323,7 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
     // Post-compaction data should be in WAL
     let postCompactRecovered = 0;
     for (let i = 0; i < 50; i++) {
-      if (getNodeByKey(db2, `post_compact_${i}`) !== null) {
+      if (getNodeByKey(db2!, `post_compact_${i}`) !== null) {
         postCompactRecovered++;
       }
     }
@@ -314,7 +333,7 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
     // Post-compaction data should definitely be recovered (in WAL)
     expect(postCompactRecovered).toBe(50);
 
-    await closeGraphDB(db2);
+    await closeGraphDB(db2!);
   }, 120000);
 
   test("large WAL recovery performance", async () => {
@@ -322,7 +341,7 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
     const NODES_PER_TX = 10;
 
     // Create many transactions
-    const db1 = await openGraphDB(testDir);
+    const db1 = await openGraphDB(testPath, dbOptions);
 
     const startCreate = performance.now();
     for (let t = 0; t < TRANSACTIONS; t++) {
@@ -339,7 +358,7 @@ describe.skip("Durability Stress Tests (legacy multi-file)", () => {
 
     // Measure recovery time
     const startRecovery = performance.now();
-    const db2 = await openGraphDB(testDir);
+    const db2 = await openGraphDB(testPath, dbOptions);
     const recoveryTime = performance.now() - startRecovery;
     console.log(`WAL recovery took ${recoveryTime.toFixed(0)}ms`);
 
