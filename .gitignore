@@ -36,3 +36,15 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Benchmark results
 bench/results/
+
+# Local tooling / build artifacts
+.cursor/
+ray-docs/.vercel/
+
+# Python artifacts
+**/__pycache__/
+ray-rs/python/raydb/_raydb*.so
+ray-rs/python/benchmarks/results/*.txt
+
+# Bench/trace outputs
+ray-rs/flamegraph.svg
