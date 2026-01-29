@@ -1,6 +1,6 @@
 import type { Component } from 'solid-js'
 import { Link } from '@tanstack/solid-router'
-import Logo from './Logo'
+import Logo from './logo'
 
 export const NotFound: Component = () => {
   return (

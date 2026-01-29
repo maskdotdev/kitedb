@@ -19,10 +19,10 @@ import {
 	Server,
 	Layers,
 } from "lucide-solid";
-import Logo from "~/components/Logo";
-import ThemeToggle from "~/components/ThemeToggle";
-import CodeBlock from "~/components/CodeBlock";
-import { Tabs } from "~/components/Tabs";
+import Logo from "~/components/logo";
+import ThemeToggle from "~/components/theme-toggle";
+import CodeBlock from "~/components/code-block";
+import { Tabs } from "~/components/tabs";
 
 export const Route = createFileRoute("/")({
 	component: HomePage,

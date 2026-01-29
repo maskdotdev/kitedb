@@ -1,8 +1,8 @@
 import type { Component } from 'solid-js'
 import { Menu, Search } from 'lucide-solid'
 import { Link } from '@tanstack/solid-router'
-import Logo from './Logo'
-import ThemeToggle from './ThemeToggle'
+import Logo from './logo'
+import ThemeToggle from './theme-toggle'
 
 interface DocHeaderProps {
   onMenuClick: () => void

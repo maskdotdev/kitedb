@@ -2,9 +2,10 @@
 import { createFileRoute, Outlet, Link, useLocation } from '@tanstack/solid-router'
 import { createSignal, For, Show } from 'solid-js'
 import { ChevronDown, ChevronRight, Menu, X, Search, Terminal, Zap } from 'lucide-solid'
-import Logo from '~/components/Logo'
-import ThemeToggle from '~/components/ThemeToggle'
+import Logo from '~/components/logo'
+import ThemeToggle from '~/components/theme-toggle'
 import { docsStructure } from '~/lib/docs'
+import { cn } from '~/lib/utils'
 
 export const Route = createFileRoute('/docs')({
   component: DocsLayout,
@@ -117,14 +118,21 @@ function DocsLayout() {
                             <UnsafeLink
                               to={`/docs/${item.slug}`}
                               onClick={() => setSidebarOpen(false)}
-                              class={`group block px-3 py-2 text-sm font-mono rounded-lg transition-all duration-150 ${isActive(item.slug)
-                                  ? 'bg-[#00d4ff]/10 text-[#00d4ff] border-l-2 border-[#00d4ff] ml-0.5'
-                                  : 'text-slate-400 hover:bg-[#1a2a42]/50 hover:text-white'
-                                }`}
+                              class={cn(
+                                'group block px-3 py-2 text-sm font-mono transition-all duration-150',
+                                isActive(item.slug)
+                                  ? 'bg-[#00d4ff]/10 text-[#00d4ff] border-l-2 border-[#00d4ff] ml-0.5 rounded-r-lg'
+                                  : 'text-slate-400 hover:bg-[#1a2a42]/50 hover:text-white rounded-lg'
+                              )}
                               aria-current={isActive(item.slug) ? 'page' : undefined}
                             >
                               <span class="flex items-center gap-2">
-                                <span class={`text-xs ${isActive(item.slug) ? 'text-[#00d4ff]' : 'text-slate-600 group-hover:text-[#00d4ff]'}`}>
+                                <span class={cn(
+                                  'text-xs',
+                                  isActive(item.slug)
+                                    ? 'text-[#00d4ff]'
+                                    : 'text-slate-600 group-hover:text-[#00d4ff]'
+                                )}>
                                   →
                                 </span>
                                 {item.title}

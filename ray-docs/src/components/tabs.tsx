@@ -1,6 +1,6 @@
 import type { Component } from 'solid-js'
 import { createSignal, createUniqueId, For, Show } from 'solid-js'
-import CodeBlock from './CodeBlock'
+import CodeBlock from './code-block'
 
 interface TabItem {
   label: string

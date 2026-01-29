@@ -3,7 +3,8 @@ import { For, Show, createSignal } from 'solid-js'
 import { Link, useLocation } from '@tanstack/solid-router'
 import { ChevronDown, ChevronRight, X } from 'lucide-solid'
 import { docsStructure } from '~/lib/docs'
-import Logo from './Logo'
+import { cn } from '~/lib/utils'
+import Logo from './logo'
 
 interface SidebarProps {
   isOpen: boolean
@@ -95,14 +96,25 @@ export const Sidebar: Component<SidebarProps> = (props) => {
                             <a
                               href={`/docs/${item.slug}`}
                               onClick={props.onClose}
-                              class={`block px-3 py-2 text-sm rounded-lg transition-all ${
+                              class={cn(
+                                'group block px-3 py-2 text-sm font-mono transition-all duration-150',
                                 isActive(item.slug)
-                                  ? 'bg-gradient-to-r from-cyan-500/10 to-violet-500/10 text-cyan-600 dark:text-cyan-400 font-medium border-l-2 border-cyan-500'
-                                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
-                              }`}
+                                  ? 'bg-[#00d4ff]/10 text-[#00d4ff] border-l-2 border-[#00d4ff] ml-0.5 rounded-r-lg'
+                                  : 'text-slate-400 hover:bg-[#1a2a42]/50 hover:text-white rounded-lg'
+                              )}
                               aria-current={isActive(item.slug) ? 'page' : undefined}
                             >
-                              {item.title}
+                              <span class="flex items-center gap-2">
+                                <span class={cn(
+                                  'text-xs',
+                                  isActive(item.slug)
+                                    ? 'text-[#00d4ff]'
+                                    : 'text-slate-600 group-hover:text-[#00d4ff]'
+                                )}>
+                                  →
+                                </span>
+                                {item.title}
+                              </span>
                             </a>
                           </li>
                         )}

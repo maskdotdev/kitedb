@@ -10,7 +10,7 @@ import { Suspense } from "solid-js";
 
 // Import styles as URL to ensure explicit stylesheet link
 import stylesHref from "../styles.css?url";
-import NotFound from "../components/NotFound";
+import NotFound from "../components/not-found";
 
 function RootErrorComponent({ error }: { error: Error }) {
   return (

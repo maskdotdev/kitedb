@@ -1,7 +1,7 @@
 import { createFileRoute, useLocation } from '@tanstack/solid-router'
 import { Show } from 'solid-js'
-import DocPage from '~/components/DocPage'
-import CodeBlock from '~/components/CodeBlock'
+import DocPage from '~/components/doc-page'
+import CodeBlock from '~/components/code-block'
 import { findDocBySlug } from '~/lib/docs'
 
 export const Route = createFileRoute('/docs/$')({
@@ -67,31 +67,83 @@ function DocPageContent(props: { slug: string }) {
         </ul>
 
         <h2 id="insertion">Node Insertion</h2>
-        <CodeBlock
-          code={`Inserting 1M nodes:
-RayDB:     1.2s (833k ops/sec)
-Neo4j:     8.4s (119k ops/sec)
-ArangoDB:  5.1s (196k ops/sec)`}
-          language="text"
-        />
+        <p>Inserting 1M nodes:</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Database</th>
+              <th>Time</th>
+              <th>Throughput</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>RayDB</td>
+              <td>1.2s</td>
+              <td>833k ops/sec</td>
+            </tr>
+            <tr>
+              <td>Neo4j</td>
+              <td>8.4s</td>
+              <td>119k ops/sec</td>
+            </tr>
+            <tr>
+              <td>ArangoDB</td>
+              <td>5.1s</td>
+              <td>196k ops/sec</td>
+            </tr>
+          </tbody>
+        </table>
 
         <h2 id="traversal">Graph Traversal</h2>
-        <CodeBlock
-          code={`3-hop traversal on 1M node graph:
-RayDB:     12ms
-Neo4j:     45ms
-ArangoDB:  38ms`}
-          language="text"
-        />
+        <p>3-hop traversal on 1M node graph:</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Database</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>RayDB</td>
+              <td>12ms</td>
+            </tr>
+            <tr>
+              <td>Neo4j</td>
+              <td>45ms</td>
+            </tr>
+            <tr>
+              <td>ArangoDB</td>
+              <td>38ms</td>
+            </tr>
+          </tbody>
+        </table>
 
         <h2 id="vector-search">Vector Search</h2>
-        <CodeBlock
-          code={`Top-10 similarity on 100k vectors (1536 dims):
-RayDB (HNSW):  0.8ms
-pgvector:      2.1ms
-Pinecone:      1.5ms`}
-          language="text"
-        />
+        <p>Top-10 similarity on 100k vectors (1536 dims):</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Database</th>
+              <th>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>RayDB (HNSW)</td>
+              <td>0.8ms</td>
+            </tr>
+            <tr>
+              <td>pgvector</td>
+              <td>2.1ms</td>
+            </tr>
+            <tr>
+              <td>Pinecone</td>
+              <td>1.5ms</td>
+            </tr>
+          </tbody>
+        </table>
       </DocPage>
     )
   }

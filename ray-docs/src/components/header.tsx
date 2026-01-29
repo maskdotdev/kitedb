@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/solid-router'
 import { createSignal } from 'solid-js'
 import { Menu, X } from 'lucide-solid'
-import Logo from './Logo'
-import ThemeToggle from './ThemeToggle'
+import Logo from './logo'
+import ThemeToggle from './theme-toggle'
 
 export default function Header() {
   const [isOpen, setIsOpen] = createSignal(false)

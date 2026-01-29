@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/solid-router'
-import DocPage from '~/components/DocPage'
-import CodeBlock from '~/components/CodeBlock'
+import DocPage from '~/components/doc-page'
+import CodeBlock from '~/components/code-block'
 
 export const Route = createFileRoute('/docs/getting-started/installation')({
   component: InstallationPage,

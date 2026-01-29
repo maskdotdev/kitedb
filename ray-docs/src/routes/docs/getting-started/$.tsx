@@ -1,7 +1,7 @@
 import { createFileRoute, useLocation } from '@tanstack/solid-router'
 import { Show } from 'solid-js'
-import DocPage from '~/components/DocPage'
-import CodeBlock from '~/components/CodeBlock'
+import DocPage from '~/components/doc-page'
+import CodeBlock from '~/components/code-block'
 import { findDocBySlug } from '~/lib/docs'
 
 export const Route = createFileRoute('/docs/getting-started/$')({
