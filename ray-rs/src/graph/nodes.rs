@@ -60,6 +60,18 @@ pub fn create_node(handle: &mut TxHandle, opts: NodeOpts) -> Result<NodeId> {
     payload,
   ))?;
 
+  // Add label records if any
+  if let Some(labels) = opts.labels {
+    for label_id in labels {
+      let payload = build_add_node_label_payload(node_id, label_id);
+      handle.add_record(WalRecord::new(
+        WalRecordType::AddNodeLabel,
+        handle.txid(),
+        payload,
+      ))?;
+    }
+  }
+
   // Add property records if any
   if let Some(props) = opts.props {
     for (key_id, value) in props {
@@ -203,12 +215,133 @@ pub fn get_node_prop_db(
   None
 }
 
+/// Get all node properties (direct read, no transaction)
+pub fn get_node_props_db(
+  db: &super::db::GraphDB,
+  node_id: NodeId,
+) -> Option<std::collections::HashMap<PropKeyId, PropValue>> {
+  use std::collections::HashMap;
+
+  let delta = db.delta.read();
+  if delta.is_node_deleted(node_id) {
+    return None;
+  }
+
+  let mut props = HashMap::new();
+  let node_created_in_delta = delta.is_node_created(node_id);
+  let mut node_exists_in_snapshot = false;
+
+  if let Some(ref snapshot) = db.snapshot {
+    if let Some(phys) = snapshot.get_phys_node(node_id) {
+      node_exists_in_snapshot = true;
+      if let Some(snapshot_props) = snapshot.get_node_props(phys) {
+        props = snapshot_props;
+      }
+    }
+  }
+
+  if !node_created_in_delta && !node_exists_in_snapshot {
+    return None;
+  }
+
+  if let Some(node_delta) = delta
+    .created_nodes
+    .get(&node_id)
+    .or_else(|| delta.modified_nodes.get(&node_id))
+  {
+    if let Some(delta_props) = node_delta.props.as_ref() {
+      for (&key_id, value) in delta_props {
+        match value {
+          Some(v) => {
+            props.insert(key_id, v.clone());
+          }
+          None => {
+            props.remove(&key_id);
+          }
+        }
+      }
+    }
+  }
+
+  Some(props)
+}
+
+// ============================================================================
+// Node Label Operations
+// ============================================================================
+
+/// Add a label to a node
+pub fn add_node_label(handle: &mut TxHandle, node_id: NodeId, label_id: LabelId) -> Result<()> {
+  let payload = build_add_node_label_payload(node_id, label_id);
+  handle.add_record(WalRecord::new(
+    WalRecordType::AddNodeLabel,
+    handle.txid(),
+    payload,
+  ))?;
+  Ok(())
+}
+
+/// Remove a label from a node
+pub fn remove_node_label(handle: &mut TxHandle, node_id: NodeId, label_id: LabelId) -> Result<()> {
+  let payload = build_remove_node_label_payload(node_id, label_id);
+  handle.add_record(WalRecord::new(
+    WalRecordType::RemoveNodeLabel,
+    handle.txid(),
+    payload,
+  ))?;
+  Ok(())
+}
+
+/// Check if a node has a label (direct read)
+pub fn node_has_label_db(db: &super::db::GraphDB, node_id: NodeId, label_id: LabelId) -> bool {
+  let delta = db.delta.read();
+  if delta.is_node_deleted(node_id) {
+    return false;
+  }
+
+  if delta.is_label_removed(node_id, label_id) {
+    return false;
+  }
+
+  if delta.is_label_added(node_id, label_id) {
+    return true;
+  }
+
+  false
+}
+
+/// Get all labels for a node (direct read)
+pub fn get_node_labels_db(db: &super::db::GraphDB, node_id: NodeId) -> Vec<LabelId> {
+  let delta = db.delta.read();
+  if delta.is_node_deleted(node_id) {
+    return Vec::new();
+  }
+
+  let mut labels: std::collections::HashSet<LabelId> = std::collections::HashSet::new();
+
+  if let Some(added) = delta.get_added_labels(node_id) {
+    labels.extend(added.iter().copied());
+  }
+
+  if let Some(removed) = delta.get_removed_labels(node_id) {
+    for label_id in removed {
+      labels.remove(label_id);
+    }
+  }
+
+  labels.into_iter().collect()
+}
+
 /// Count total nodes in the database (direct read, no transaction)
 pub fn count_nodes_db(db: &super::db::GraphDB) -> u64 {
   let delta = db.delta.read();
 
   // Start with snapshot count
-  let snapshot_count = db.snapshot.as_ref().map(|s| s.header.num_nodes).unwrap_or(0);
+  let snapshot_count = db
+    .snapshot
+    .as_ref()
+    .map(|s| s.header.num_nodes)
+    .unwrap_or(0);
 
   // Count nodes created in delta
   let created = delta.created_nodes.len() as u64;

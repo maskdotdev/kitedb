@@ -139,6 +139,7 @@ pub fn commit(handle: &mut TxHandle) -> Result<()> {
   // Apply changes to delta
   // This happens by processing the WAL records we just wrote
   apply_records_to_delta(handle.db, &all_records)?;
+  handle.db.apply_pending_vectors();
 
   // Clear current transaction
   {
@@ -213,6 +214,16 @@ fn apply_records_to_delta(db: &GraphDB, records: &[WalRecord]) -> Result<()> {
           delta.define_label(data.label_id, &data.name);
         }
       }
+      WalRecordType::AddNodeLabel => {
+        if let Some(data) = parse_add_node_label_payload(&record.payload) {
+          delta.add_node_label(data.node_id, data.label_id);
+        }
+      }
+      WalRecordType::RemoveNodeLabel => {
+        if let Some(data) = parse_remove_node_label_payload(&record.payload) {
+          delta.remove_node_label(data.node_id, data.label_id);
+        }
+      }
       WalRecordType::DefineEtype => {
         if let Some(data) = parse_define_etype_payload(&record.payload) {
           delta.define_etype(data.label_id, &data.name);
@@ -231,6 +242,20 @@ fn apply_records_to_delta(db: &GraphDB, records: &[WalRecord]) -> Result<()> {
       WalRecordType::DelEdgeProp => {
         if let Some(data) = parse_del_edge_prop_payload(&record.payload) {
           delta.delete_edge_prop(data.src, data.etype, data.dst, data.key_id);
+        }
+      }
+      WalRecordType::SetNodeVector => {
+        if let Some(data) = parse_set_node_vector_payload(&record.payload) {
+          delta
+            .pending_vectors
+            .insert((data.node_id, data.prop_key_id), Some(data.vector));
+        }
+      }
+      WalRecordType::DelNodeVector => {
+        if let Some(data) = parse_del_node_vector_payload(&record.payload) {
+          delta
+            .pending_vectors
+            .insert((data.node_id, data.prop_key_id), None);
         }
       }
       _ => {

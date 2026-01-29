@@ -42,6 +42,12 @@ pub mod vector;
 // Cache modules
 pub mod cache;
 
+// Export/import
+pub mod export;
+
+// Streaming/pagination
+pub mod streaming;
+
 // High-level API modules (Phase 6)
 pub mod api;
 
@@ -58,8 +64,8 @@ pub use error::{RayError, Result};
 
 // Re-export schema builders for convenience
 pub use api::schema::{
-    define_edge, define_node, prop, DatabaseSchema, EdgeSchema, NodeSchema, PropDef, SchemaType,
-    ValidationError,
+  define_edge, define_node, prop, DatabaseSchema, EdgeSchema, NodeSchema, PropDef, SchemaType,
+  ValidationError,
 };
 
 // ============================================================================
@@ -89,7 +95,9 @@ pub use types::PropValueTag;
 // Re-export NAPI database types
 #[cfg(feature = "napi")]
 pub use napi_bindings::{
-  open_database, Database, DbStats, JsEdge, JsNodeProp, JsPropValue, OpenOptions, PropType,
+  open_database, ray, Database, DbStats, EdgePage, EdgeWithProps, JsEdge, JsFullEdge, JsNodeProp,
+  JsPropValue, NodePage, NodeWithProps, OpenOptions, PaginationOptions, PropType, Ray,
+  StreamOptions,
 };
 
 // ============================================================================

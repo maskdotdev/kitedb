@@ -269,12 +269,7 @@ pub fn deserialize_ivf(buffer: &[u8]) -> Result<IvfIndex, SerializeError> {
   let mut inverted_lists: HashMap<usize, Vec<u64>> = HashMap::new();
 
   for i in 0..num_lists {
-    ensure_bytes(
-      buf_len,
-      offset,
-      8,
-      &format!("IVF inverted list {i} header"),
-    )?;
+    ensure_bytes(buf_len, offset, 8, &format!("IVF inverted list {i} header"))?;
     let cluster = u32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap()) as usize;
     offset += 4;
     let list_length = u32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap()) as usize;

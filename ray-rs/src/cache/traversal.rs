@@ -306,11 +306,7 @@ impl TraversalCache {
 
   /// Add a key to the node index
   fn add_to_node_index(&mut self, node_id: NodeId, key: TraversalKey) {
-    self
-      .node_key_index
-      .entry(node_id)
-      .or_default()
-      .insert(key);
+    self.node_key_index.entry(node_id).or_default().insert(key);
   }
 
   /// Invalidate specific traversals for a node

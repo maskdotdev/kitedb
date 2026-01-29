@@ -340,7 +340,11 @@ impl BackgroundGcHandle {
 
   /// Check if the GC thread is still running
   pub fn is_running(&self) -> bool {
-    self.thread.as_ref().map(|h| !h.is_finished()).unwrap_or(false)
+    self
+      .thread
+      .as_ref()
+      .map(|h| !h.is_finished())
+      .unwrap_or(false)
   }
 
   /// Get the number of GC runs completed

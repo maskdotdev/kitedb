@@ -233,10 +233,7 @@ impl IvfPqIndex {
     let n_clusters = self.config.ivf.n_clusters;
 
     if n < n_clusters {
-      return Err(IvfPqError::NotEnoughTrainingVectors {
-        n,
-        k: n_clusters,
-      });
+      return Err(IvfPqError::NotEnoughTrainingVectors { n, k: n_clusters });
     }
 
     if n < self.config.pq.num_centroids {
@@ -436,8 +433,7 @@ impl IvfPqIndex {
 
       for c in 0..num_centroids {
         let cent_offset = c * self.subspace_dims;
-        let centroid =
-          &self.pq_centroids[m][cent_offset..cent_offset + self.subspace_dims];
+        let centroid = &self.pq_centroids[m][cent_offset..cent_offset + self.subspace_dims];
 
         let mut dist = 0.0;
         for d in 0..self.subspace_dims {
@@ -636,8 +632,7 @@ impl IvfPqIndex {
 
       for c in 0..num_centroids {
         let cent_offset = c * self.subspace_dims;
-        let centroid =
-          &self.pq_centroids[m][cent_offset..cent_offset + self.subspace_dims];
+        let centroid = &self.pq_centroids[m][cent_offset..cent_offset + self.subspace_dims];
 
         let mut dist = 0.0;
         for d in 0..self.subspace_dims {
@@ -782,7 +777,11 @@ impl IvfPqIndex {
     }
 
     // Sort by distance and return top k
-    scored.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
+    scored.sort_by(|a, b| {
+      a.distance
+        .partial_cmp(&b.distance)
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
     scored.truncate(k);
 
     scored
@@ -915,7 +914,6 @@ pub struct IvfPqSearchOptions {
   /// Minimum similarity threshold
   pub threshold: Option<f32>,
 }
-
 
 impl std::fmt::Debug for IvfPqSearchOptions {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1590,7 +1588,12 @@ pub fn deserialize_ivf_pq(buffer: &[u8]) -> Result<IvfPqIndex, SerializeError> {
     let code_len = u32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap()) as usize;
     offset += 4;
 
-    ensure_bytes(buf_len, offset, code_len, &format!("IVF-PQ PQ code {i} data"))?;
+    ensure_bytes(
+      buf_len,
+      offset,
+      code_len,
+      &format!("IVF-PQ PQ code {i} data"),
+    )?;
     let codes = buffer[offset..offset + code_len].to_vec();
     offset += code_len;
     pq_codes.insert(vector_id, codes);
@@ -1607,7 +1610,12 @@ pub fn deserialize_ivf_pq(buffer: &[u8]) -> Result<IvfPqIndex, SerializeError> {
       u32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap()) as usize;
     offset += 4;
 
-    ensure_bytes(buf_len, offset, distance_count * 4, "IVF-PQ centroid distances")?;
+    ensure_bytes(
+      buf_len,
+      offset,
+      distance_count * 4,
+      "IVF-PQ centroid distances",
+    )?;
     let mut dists = Vec::with_capacity(distance_count);
     for _ in 0..distance_count {
       let val = f32::from_le_bytes(buffer[offset..offset + 4].try_into().unwrap());
@@ -1638,7 +1646,10 @@ pub fn deserialize_ivf_pq(buffer: &[u8]) -> Result<IvfPqIndex, SerializeError> {
 }
 
 /// Write IVF-PQ index to a writer
-pub fn write_ivf_pq<W: std::io::Write>(index: &IvfPqIndex, writer: &mut W) -> std::io::Result<usize> {
+pub fn write_ivf_pq<W: std::io::Write>(
+  index: &IvfPqIndex,
+  writer: &mut W,
+) -> std::io::Result<usize> {
   let data = serialize_ivf_pq(index);
   writer.write_all(&data)?;
   Ok(data.len())
@@ -1647,12 +1658,14 @@ pub fn write_ivf_pq<W: std::io::Write>(index: &IvfPqIndex, writer: &mut W) -> st
 /// Read IVF-PQ index from a reader
 pub fn read_ivf_pq<R: std::io::Read>(reader: &mut R) -> Result<IvfPqIndex, SerializeError> {
   let mut buffer = Vec::new();
-  reader.read_to_end(&mut buffer).map_err(|e| SerializeError::BufferUnderflow {
-    context: format!("IO error: {e}"),
-    offset: 0,
-    needed: 0,
-    available: 0,
-  })?;
+  reader
+    .read_to_end(&mut buffer)
+    .map_err(|e| SerializeError::BufferUnderflow {
+      context: format!("IO error: {e}"),
+      offset: 0,
+      needed: 0,
+      available: 0,
+    })?;
   deserialize_ivf_pq(&buffer)
 }
 
@@ -1979,9 +1992,18 @@ mod tests {
     let deserialized = deserialize_ivf_pq(&serialized).unwrap();
 
     assert_eq!(deserialized.dimensions, index.dimensions);
-    assert_eq!(deserialized.config.ivf.n_clusters, index.config.ivf.n_clusters);
-    assert_eq!(deserialized.config.pq.num_subspaces, index.config.pq.num_subspaces);
-    assert_eq!(deserialized.config.use_residuals, index.config.use_residuals);
+    assert_eq!(
+      deserialized.config.ivf.n_clusters,
+      index.config.ivf.n_clusters
+    );
+    assert_eq!(
+      deserialized.config.pq.num_subspaces,
+      index.config.pq.num_subspaces
+    );
+    assert_eq!(
+      deserialized.config.use_residuals,
+      index.config.use_residuals
+    );
     assert!(deserialized.trained);
     assert_eq!(deserialized.pq_codes.len(), 10);
     assert!(deserialized.centroid_distances.is_some());
@@ -2005,7 +2027,10 @@ mod tests {
   fn test_ivf_pq_serialize_buffer_underflow() {
     let buffer = vec![]; // Empty buffer
     let result = deserialize_ivf_pq(&buffer);
-    assert!(matches!(result, Err(SerializeError::BufferUnderflow { .. })));
+    assert!(matches!(
+      result,
+      Err(SerializeError::BufferUnderflow { .. })
+    ));
   }
 
   #[test]
@@ -2057,13 +2082,7 @@ mod tests {
     let manifest = crate::vector::types::VectorManifest::new(config);
 
     // Empty queries should return empty results
-    let results = index.search_multi(
-      &manifest,
-      &[],
-      5,
-      MultiQueryAggregation::Min,
-      None,
-    );
+    let results = index.search_multi(&manifest, &[], 5, MultiQueryAggregation::Min, None);
     assert!(results.is_empty());
   }
 
@@ -2074,13 +2093,7 @@ mod tests {
     let manifest = crate::vector::types::VectorManifest::new(config);
 
     let query = vec![0.5f32; 16];
-    let results = index.search_multi(
-      &manifest,
-      &[&query],
-      5,
-      MultiQueryAggregation::Min,
-      None,
-    );
+    let results = index.search_multi(&manifest, &[&query], 5, MultiQueryAggregation::Min, None);
     assert!(results.is_empty());
   }
 }

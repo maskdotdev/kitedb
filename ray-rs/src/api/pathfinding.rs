@@ -649,7 +649,12 @@ where
 ///     println!("Path {}: {:?} (weight: {})", i + 1, path.path, path.total_weight);
 /// }
 /// ```
-pub fn yen_k_shortest<F, W>(config: PathConfig, k: usize, get_neighbors: F, get_weight: W) -> Vec<PathResult>
+pub fn yen_k_shortest<F, W>(
+  config: PathConfig,
+  k: usize,
+  get_neighbors: F,
+  get_weight: W,
+) -> Vec<PathResult>
 where
   F: Fn(NodeId, TraversalDirection, Option<ETypeId>) -> Vec<Edge>,
   W: Fn(NodeId, ETypeId, NodeId) -> f64,
@@ -716,9 +721,7 @@ where
 
       for existing_path in &result_paths {
         // Check if this path shares the same root
-        if existing_path.path.len() > spur_idx
-          && existing_path.path[..=spur_idx] == root_path[..]
-        {
+        if existing_path.path.len() > spur_idx && existing_path.path[..=spur_idx] == root_path[..] {
           // Exclude the edge that leaves the spur node in this path
           if let Some(&edge) = existing_path.edges.get(spur_idx) {
             excluded_edges.insert(edge);

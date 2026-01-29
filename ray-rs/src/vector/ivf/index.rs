@@ -233,8 +233,7 @@ impl IvfIndex {
     let distance_fn = self.config.metric.distance_fn();
 
     // Build fragment lookup map for O(1) access (avoid .find() in hot loop)
-    let fragment_map: HashMap<usize, &_> =
-      manifest.fragments.iter().map(|f| (f.id, f)).collect();
+    let fragment_map: HashMap<usize, &_> = manifest.fragments.iter().map(|f| (f.id, f)).collect();
 
     // Use max-heap to track top-k candidates
     let mut heap = MaxHeap::new();
@@ -408,7 +407,11 @@ impl IvfIndex {
     }
 
     // Sort by distance and return top k
-    scored.sort_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal));
+    scored.sort_by(|a, b| {
+      a.distance
+        .partial_cmp(&b.distance)
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
     scored.truncate(k);
 
     scored
@@ -427,8 +430,7 @@ impl IvfIndex {
     self.train()?;
 
     // Build fragment lookup map for O(1) access
-    let fragment_map: HashMap<usize, &_> =
-      manifest.fragments.iter().map(|f| (f.id, f)).collect();
+    let fragment_map: HashMap<usize, &_> = manifest.fragments.iter().map(|f| (f.id, f)).collect();
 
     // Insert all vectors
     for (&_node_id, &vector_id) in &manifest.node_to_vector {
@@ -572,7 +574,6 @@ pub struct SearchOptions {
   /// Minimum similarity threshold
   pub threshold: Option<f32>,
 }
-
 
 impl std::fmt::Debug for SearchOptions {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -921,13 +922,7 @@ mod tests {
     let manifest = VectorManifest::new(VectorStoreConfig::new(4));
 
     // Empty queries should return empty results
-    let results = index.search_multi(
-      &manifest,
-      &[],
-      5,
-      MultiQueryAggregation::Min,
-      None,
-    );
+    let results = index.search_multi(&manifest, &[], 5, MultiQueryAggregation::Min, None);
     assert!(results.is_empty());
   }
 
@@ -937,13 +932,7 @@ mod tests {
     let manifest = VectorManifest::new(VectorStoreConfig::new(4));
 
     let query = vec![1.0, 0.0, 0.0, 0.0];
-    let results = index.search_multi(
-      &manifest,
-      &[&query],
-      5,
-      MultiQueryAggregation::Min,
-      None,
-    );
+    let results = index.search_multi(&manifest, &[&query], 5, MultiQueryAggregation::Min, None);
     assert!(results.is_empty());
   }
 

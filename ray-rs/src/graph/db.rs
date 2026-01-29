@@ -27,6 +27,8 @@ use crate::core::wal::writer::WalWriter;
 use crate::error::{RayError, Result};
 use crate::types::*;
 use crate::util::lock::{FileLock, LockType};
+use crate::vector::store::{create_vector_store, vector_store_delete, vector_store_insert};
+use crate::vector::types::{VectorManifest, VectorStoreConfig};
 
 // ============================================================================
 // Open Options
@@ -87,6 +89,8 @@ pub struct TxState {
   pub wal_records: Vec<WalRecord>,
   /// Snapshot timestamp for MVCC reads
   pub snapshot_ts: u64,
+  /// Pending vector operations (node_id, prop_key_id -> Some(vec)=set, None=delete)
+  pub pending_vectors: HashMap<(NodeId, PropKeyId), Option<Vec<f32>>>,
 }
 
 impl TxState {
@@ -96,6 +100,7 @@ impl TxState {
       read_only,
       wal_records: Vec::new(),
       snapshot_ts,
+      pending_vectors: HashMap::new(),
     }
   }
 }
@@ -136,6 +141,9 @@ pub struct GraphDB {
   // ---- Shared fields ----
   /// Delta state (uncommitted changes)
   pub delta: RwLock<DeltaState>,
+
+  /// Vector stores keyed by property key ID
+  pub vector_stores: RwLock<HashMap<PropKeyId, VectorManifest>>,
 
   /// Next node ID to allocate
   next_node_id: AtomicU64,
@@ -201,6 +209,11 @@ impl GraphDB {
   /// Get current next node ID (without incrementing)
   pub fn peek_next_node_id(&self) -> NodeId {
     self.next_node_id.load(Ordering::SeqCst)
+  }
+
+  /// Get current WAL size in bytes
+  pub fn wal_bytes(&self) -> u64 {
+    self.wal_offset.load(Ordering::SeqCst)
   }
 
   // ========================================================================
@@ -394,8 +407,13 @@ impl GraphDB {
 
     // Run compaction
     let delta = self.delta.read();
-    let (new_manifest, snapshot_path) =
-      optimize(&self.path, self.snapshot.as_ref(), &delta, manifest, &OptimizeOptions::default())?;
+    let (new_manifest, snapshot_path) = optimize(
+      &self.path,
+      self.snapshot.as_ref(),
+      &delta,
+      manifest,
+      &OptimizeOptions::default(),
+    )?;
     drop(delta);
 
     // Update manifest reference
@@ -414,7 +432,10 @@ impl GraphDB {
     self.wal_offset.store(0, Ordering::SeqCst);
 
     // Reopen WAL file descriptor for new segment
-    let wal_path = self.path.join(WAL_DIR).join(wal_filename(new_manifest.active_wal_seg));
+    let wal_path = self
+      .path
+      .join(WAL_DIR)
+      .join(wal_filename(new_manifest.active_wal_seg));
     let wal_fd = FsOpenOptions::new()
       .create(true)
       .read(true)
@@ -423,6 +444,36 @@ impl GraphDB {
     self.wal_fd = Some(wal_fd);
 
     Ok(())
+  }
+
+  /// Apply pending vector operations to vector stores
+  pub fn apply_pending_vectors(&self) {
+    let mut delta = self.delta.write();
+    let pending: Vec<_> = delta.pending_vectors.drain().collect();
+    drop(delta);
+
+    if pending.is_empty() {
+      return;
+    }
+
+    let mut stores = self.vector_stores.write();
+
+    for ((node_id, prop_key_id), operation) in pending {
+      match operation {
+        Some(vector) => {
+          let store = stores.entry(prop_key_id).or_insert_with(|| {
+            let config = VectorStoreConfig::new(vector.len());
+            create_vector_store(config)
+          });
+          let _ = vector_store_insert(store, node_id, &vector);
+        }
+        None => {
+          if let Some(store) = stores.get_mut(&prop_key_id) {
+            vector_store_delete(store, node_id);
+          }
+        }
+      }
+    }
   }
 }
 
@@ -582,10 +633,11 @@ pub fn open_graph_db<P: AsRef<Path>>(path: P, options: OpenOptions) -> Result<Gr
 
     // Replay committed transactions to delta
     use crate::core::wal::record::{
-      extract_committed_transactions, parse_add_edge_payload, parse_create_node_payload,
-      parse_define_etype_payload, parse_define_label_payload, parse_define_propkey_payload,
-      parse_del_node_prop_payload, parse_delete_edge_payload, parse_delete_node_payload,
-      parse_set_node_prop_payload,
+      extract_committed_transactions, parse_add_edge_payload, parse_add_node_label_payload,
+      parse_create_node_payload, parse_define_etype_payload, parse_define_label_payload,
+      parse_define_propkey_payload, parse_del_node_prop_payload, parse_del_node_vector_payload,
+      parse_delete_edge_payload, parse_delete_node_payload, parse_remove_node_label_payload,
+      parse_set_node_prop_payload, parse_set_node_vector_payload,
     };
     use crate::types::WalRecordType;
 
@@ -638,6 +690,16 @@ pub fn open_graph_db<P: AsRef<Path>>(path: P, options: OpenOptions) -> Result<Gr
               }
             }
           }
+          WalRecordType::AddNodeLabel => {
+            if let Some(data) = parse_add_node_label_payload(&record.payload) {
+              delta.add_node_label(data.node_id, data.label_id);
+            }
+          }
+          WalRecordType::RemoveNodeLabel => {
+            if let Some(data) = parse_remove_node_label_payload(&record.payload) {
+              delta.remove_node_label(data.node_id, data.label_id);
+            }
+          }
           WalRecordType::DefineEtype => {
             if let Some(data) = parse_define_etype_payload(&record.payload) {
               delta.define_etype(data.label_id, &data.name);
@@ -658,9 +720,42 @@ pub fn open_graph_db<P: AsRef<Path>>(path: P, options: OpenOptions) -> Result<Gr
               }
             }
           }
-          _ => {
-            // Other record types (vectors, edge props, etc.) - skip for now
+          WalRecordType::SetNodeVector => {
+            if let Some(data) = parse_set_node_vector_payload(&record.payload) {
+              delta
+                .pending_vectors
+                .insert((data.node_id, data.prop_key_id), Some(data.vector));
+            }
           }
+          WalRecordType::DelNodeVector => {
+            if let Some(data) = parse_del_node_vector_payload(&record.payload) {
+              delta
+                .pending_vectors
+                .insert((data.node_id, data.prop_key_id), None);
+            }
+          }
+          _ => {
+            // Other record types (vectors, edge props, etc.) - handled below
+          }
+        }
+      }
+    }
+  }
+
+  // Apply pending vector operations from WAL replay
+  let mut vector_stores: HashMap<PropKeyId, VectorManifest> = HashMap::new();
+  for ((node_id, prop_key_id), operation) in delta.pending_vectors.drain() {
+    match operation {
+      Some(vector) => {
+        let store = vector_stores.entry(prop_key_id).or_insert_with(|| {
+          let config = VectorStoreConfig::new(vector.len());
+          create_vector_store(config)
+        });
+        let _ = vector_store_insert(store, node_id, &vector);
+      }
+      None => {
+        if let Some(store) = vector_stores.get_mut(&prop_key_id) {
+          vector_store_delete(store, node_id);
         }
       }
     }
@@ -675,6 +770,7 @@ pub fn open_graph_db<P: AsRef<Path>>(path: P, options: OpenOptions) -> Result<Gr
     wal_fd,
     wal_offset: AtomicU64::new(wal_offset),
     delta: RwLock::new(delta),
+    vector_stores: RwLock::new(vector_stores),
     next_node_id: AtomicU64::new(next_node_id),
     next_label_id: AtomicU32::new(next_label_id),
     next_etype_id: AtomicU32::new(next_etype_id),

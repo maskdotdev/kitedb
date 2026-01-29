@@ -1777,8 +1777,8 @@ mod tests {
     let get_neighbors = mock_graph();
 
     // Variable-depth traversal with edge filter in options
-    let options = TraverseOptions::new(TraversalDirection::Out, 2)
-      .with_edge_filter(|edge| edge.etype == 1);
+    let options =
+      TraverseOptions::new(TraversalDirection::Out, 2).with_edge_filter(|edge| edge.etype == 1);
 
     let results: Vec<_> = TraversalBuilder::from_node(1)
       .traverse(Some(1), options)
@@ -1798,8 +1798,8 @@ mod tests {
 
     // Variable-depth traversal with node filter in options
     // Filter only yields nodes with id >= 2 (which is all reachable nodes)
-    let options = TraverseOptions::new(TraversalDirection::Out, 2)
-      .with_node_filter(|node| node.id >= 2);
+    let options =
+      TraverseOptions::new(TraversalDirection::Out, 2).with_node_filter(|node| node.id >= 2);
 
     let results: Vec<_> = TraversalBuilder::from_node(1)
       .traverse(Some(1), options)
@@ -1819,8 +1819,8 @@ mod tests {
 
     // Filter for id >= 3 - this will filter out node 2, so we can't reach node 3
     // because the traversal stops at filtered nodes
-    let options = TraverseOptions::new(TraversalDirection::Out, 3)
-      .with_node_filter(|node| node.id >= 3);
+    let options =
+      TraverseOptions::new(TraversalDirection::Out, 3).with_node_filter(|node| node.id >= 3);
 
     let results: Vec<_> = TraversalBuilder::from_node(1)
       .traverse(Some(1), options)

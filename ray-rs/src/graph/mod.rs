@@ -8,3 +8,4 @@ pub mod iterators;
 pub mod key_index;
 pub mod nodes;
 pub mod tx;
+pub mod vectors;

@@ -14,16 +14,26 @@
 use crate::error::{RayError, Result};
 use crate::graph::db::{close_graph_db, open_graph_db, GraphDB, OpenOptions};
 use crate::graph::edges::{
-  add_edge, del_edge_prop, delete_edge, edge_exists, set_edge_prop,
+  add_edge,
+  del_edge_prop,
+  delete_edge,
+  edge_exists,
   // Direct read functions (no transaction)
-  edge_exists_db, get_edge_prop_db, get_edge_props_db, get_neighbors_in_db, get_neighbors_out_db,
+  edge_exists_db,
+  get_edge_prop_db,
+  get_edge_props_db,
+  get_neighbors_in_db,
+  get_neighbors_out_db,
+  set_edge_prop,
 };
-use crate::graph::iterators::{count_edges, count_nodes, list_edges, list_nodes, FullEdge, ListEdgesOptions};
-use crate::graph::nodes::{
-  create_node, del_node_prop, delete_node, get_node_by_key, get_node_prop, node_exists,
-  set_node_prop, NodeOpts, get_node_by_key_db, get_node_prop_db, node_exists_db,
+use crate::graph::iterators::{
+  count_edges, count_nodes, list_edges, list_nodes, FullEdge, ListEdgesOptions,
 };
 use crate::graph::key_index::get_node_key;
+use crate::graph::nodes::{
+  create_node, del_node_prop, delete_node, get_node_by_key, get_node_by_key_db, get_node_prop,
+  get_node_prop_db, node_exists, node_exists_db, set_node_prop, NodeOpts,
+};
 use crate::graph::tx::{begin_tx, commit, rollback, TxHandle};
 use crate::types::*;
 
@@ -418,18 +428,20 @@ impl Ray {
       // Look up the node's key from snapshot/delta
       let delta = self.db.delta.read();
       let key = get_node_key(self.db.snapshot.as_ref(), &delta, node_id);
-      
+
       // Try to determine node type from key prefix
       let node_type = if let Some(ref k) = key {
         // Find matching node def by key prefix
-        self.nodes.values()
+        self
+          .nodes
+          .values()
           .find(|def| k.starts_with(&def.key_prefix))
           .map(|def| def.name.as_str())
           .unwrap_or("unknown")
       } else {
         "unknown"
       };
-      
+
       Ok(Some(NodeRef::new(node_id, key, node_type)))
     } else {
       Ok(None)
@@ -539,8 +551,8 @@ impl Ray {
       .key(key_suffix);
 
     let mut handle = begin_tx(&self.db)?;
-    let node_id = get_node_by_key(&handle, &full_key)
-      .ok_or_else(|| RayError::KeyNotFound(full_key.clone()))?;
+    let node_id =
+      get_node_by_key(&handle, &full_key).ok_or_else(|| RayError::KeyNotFound(full_key.clone()))?;
     commit(&mut handle)?;
 
     Ok(RayUpdateNodeBuilder {
@@ -1092,7 +1104,12 @@ impl Ray {
   ///
   /// This is more efficient than `shortest_path()` when you only need to
   /// know if a path exists, not the path itself.
-  pub fn has_path(&mut self, source: NodeId, target: NodeId, edge_type: Option<&str>) -> Result<bool> {
+  pub fn has_path(
+    &mut self,
+    source: NodeId,
+    target: NodeId,
+    edge_type: Option<&str>,
+  ) -> Result<bool> {
     let path = self.shortest_path(source, target);
     let path = if let Some(etype) = edge_type {
       path.via(etype)?
@@ -1133,7 +1150,9 @@ impl Ray {
 
     let results = TraversalBuilder::from_node(source)
       .traverse(etype, options)
-      .collect_node_ids(|node_id, dir, etype_filter| self.get_neighbors(node_id, dir, etype_filter));
+      .collect_node_ids(|node_id, dir, etype_filter| {
+        self.get_neighbors(node_id, dir, etype_filter)
+      });
 
     Ok(results)
   }
@@ -1193,7 +1212,10 @@ impl Ray {
           for patch in add_set {
             if etype.is_none() || etype == Some(patch.etype) {
               // Only add if not already in edges (from snapshot)
-              if !edges.iter().any(|e| e.dst == patch.other && e.etype == patch.etype) {
+              if !edges
+                .iter()
+                .any(|e| e.dst == patch.other && e.etype == patch.etype)
+              {
                 edges.push(Edge {
                   src: node_id,
                   etype: patch.etype,
@@ -1246,7 +1268,10 @@ impl Ray {
           for patch in add_set {
             if etype.is_none() || etype == Some(patch.etype) {
               // Only add if not already in edges (from snapshot)
-              if !edges.iter().any(|e| e.src == patch.other && e.etype == patch.etype) {
+              if !edges
+                .iter()
+                .any(|e| e.src == patch.other && e.etype == patch.etype)
+              {
                 edges.push(Edge {
                   src: patch.other,
                   etype: patch.etype,
@@ -1298,7 +1323,7 @@ impl Ray {
 
     let node_count = count_nodes(&self.db);
     let edge_count = count_edges(&self.db, None);
-    
+
     // Get delta statistics
     let delta = self.db.delta.read();
     let delta_nodes_created = delta.created_nodes.len();
@@ -1306,9 +1331,9 @@ impl Ray {
     let delta_edges_added = delta.total_edges_added();
     let delta_edges_deleted = delta.total_edges_deleted();
     drop(delta);
-    
+
     // Get snapshot statistics
-    let (snapshot_gen, snapshot_nodes, snapshot_edges, snapshot_max_node_id) = 
+    let (snapshot_gen, snapshot_nodes, snapshot_edges, snapshot_max_node_id) =
       if let Some(ref snapshot) = self.db.snapshot {
         (
           snapshot.header.generation,
@@ -1319,14 +1344,18 @@ impl Ray {
       } else {
         (0, 0, 0, 0)
       };
-    
+
     // Get WAL segment from manifest
-    let wal_segment = self.db.manifest.as_ref()
+    let wal_segment = self
+      .db
+      .manifest
+      .as_ref()
       .map(|m| m.active_wal_seg)
       .unwrap_or(0);
-    
+
     // Recommend compaction if delta has significant changes
-    let total_changes = delta_nodes_created + delta_nodes_deleted + delta_edges_added + delta_edges_deleted;
+    let total_changes =
+      delta_nodes_created + delta_nodes_deleted + delta_edges_added + delta_edges_deleted;
     let recommend_compact = total_changes > 10_000;
 
     DbStats {
@@ -1367,14 +1396,18 @@ impl Ray {
   pub fn describe(&self) -> String {
     let stats = self.stats();
     let path = self.db.path.display();
-    let format = if self.db.is_single_file { "single-file" } else { "multi-file" };
-    
+    let format = if self.db.is_single_file {
+      "single-file"
+    } else {
+      "multi-file"
+    };
+
     let node_types: Vec<&str> = self.nodes.keys().map(|s| s.as_str()).collect();
     let edge_types: Vec<&str> = self.edges.keys().map(|s| s.as_str()).collect();
-    
+
     let delta_nodes = stats.delta_nodes_created as i64 - stats.delta_nodes_deleted as i64;
     let delta_edges = stats.delta_edges_added as i64 - stats.delta_edges_deleted as i64;
-    
+
     format!(
       "RayDB at {} ({} format)\n\
        Schema:\n  \
@@ -1386,13 +1419,25 @@ impl Ray {
          Recommend compact: {}",
       path,
       format,
-      if node_types.is_empty() { "(none)".to_string() } else { node_types.join(", ") },
-      if edge_types.is_empty() { "(none)".to_string() } else { edge_types.join(", ") },
+      if node_types.is_empty() {
+        "(none)".to_string()
+      } else {
+        node_types.join(", ")
+      },
+      if edge_types.is_empty() {
+        "(none)".to_string()
+      } else {
+        edge_types.join(", ")
+      },
       stats.snapshot_nodes,
-      stats.snapshot_nodes.saturating_sub(stats.delta_nodes_created as u64),
+      stats
+        .snapshot_nodes
+        .saturating_sub(stats.delta_nodes_created as u64),
       delta_nodes,
       stats.snapshot_edges,
-      stats.snapshot_edges.saturating_sub(stats.delta_edges_added as u64),
+      stats
+        .snapshot_edges
+        .saturating_sub(stats.delta_edges_added as u64),
       delta_edges,
       if stats.recommend_compact { "yes" } else { "no" }
     )
@@ -1531,9 +1576,7 @@ impl Ray {
 // Traversal Builder for Ray
 // ============================================================================
 
-use super::traversal::{
-  TraversalBuilder, TraversalDirection, TraversalResult, TraverseOptions,
-};
+use super::traversal::{TraversalBuilder, TraversalDirection, TraversalResult, TraverseOptions};
 
 /// Traversal builder bound to a Ray database
 ///
@@ -1707,7 +1750,7 @@ impl<'a> RayTraversalBuilder<'a> {
 // Path Finding Builder for Ray
 // ============================================================================
 
-use super::pathfinding::{dijkstra, bfs, yen_k_shortest, PathConfig, PathResult};
+use super::pathfinding::{bfs, dijkstra, yen_k_shortest, PathConfig, PathResult};
 
 /// Path finding builder bound to a Ray database
 ///
@@ -1930,9 +1973,10 @@ impl Ray {
           key_suffix,
           props,
         } => {
-          let node_def = self.nodes.get(&node_type).ok_or_else(|| {
-            RayError::InvalidSchema(format!("Unknown node type: {node_type}"))
-          })?;
+          let node_def = self
+            .nodes
+            .get(&node_type)
+            .ok_or_else(|| RayError::InvalidSchema(format!("Unknown node type: {node_type}")))?;
 
           let full_key = node_def.key(&key_suffix);
 
@@ -1963,9 +2007,10 @@ impl Ray {
           edge_type,
           dst,
         } => {
-          let edge_def = self.edges.get(&edge_type).ok_or_else(|| {
-            RayError::InvalidSchema(format!("Unknown edge type: {edge_type}"))
-          })?;
+          let edge_def = self
+            .edges
+            .get(&edge_type)
+            .ok_or_else(|| RayError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
 
           let etype_id = edge_def
             .etype_id
@@ -1980,9 +2025,10 @@ impl Ray {
           edge_type,
           dst,
         } => {
-          let edge_def = self.edges.get(&edge_type).ok_or_else(|| {
-            RayError::InvalidSchema(format!("Unknown edge type: {edge_type}"))
-          })?;
+          let edge_def = self
+            .edges
+            .get(&edge_type)
+            .ok_or_else(|| RayError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
 
           let etype_id = edge_def
             .etype_id
@@ -2004,9 +2050,10 @@ impl Ray {
         }
 
         BatchOp::DelProp { node_id, prop_name } => {
-          let prop_key_id = handle.db.get_propkey_id(&prop_name).ok_or_else(|| {
-            RayError::InvalidSchema(format!("Unknown property: {prop_name}"))
-          })?;
+          let prop_key_id = handle
+            .db
+            .get_propkey_id(&prop_name)
+            .ok_or_else(|| RayError::InvalidSchema(format!("Unknown property: {prop_name}")))?;
           del_node_prop(&mut handle, node_id, prop_key_id)?;
           BatchResult::PropDeleted
         }
@@ -2612,12 +2659,25 @@ impl<'a> RayUpdateEdgeBuilder<'a> {
 
       match value_opt {
         Some(value) => {
-          set_edge_prop(&mut handle, self.src, self.etype_id, self.dst, prop_key_id, value)?;
+          set_edge_prop(
+            &mut handle,
+            self.src,
+            self.etype_id,
+            self.dst,
+            prop_key_id,
+            value,
+          )?;
         }
         None => {
           // Only delete if prop_key exists
           if let Some(existing_key_id) = self.ray.db.get_propkey_id(&prop_name) {
-            del_edge_prop(&mut handle, self.src, self.etype_id, self.dst, existing_key_id)?;
+            del_edge_prop(
+              &mut handle,
+              self.src,
+              self.etype_id,
+              self.dst,
+              existing_key_id,
+            )?;
           }
         }
       }
@@ -2955,7 +3015,11 @@ mod tests {
     ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
 
     // Get first result
-    let first = ray.from(alice.id).out(Some("FOLLOWS")).unwrap().first_node();
+    let first = ray
+      .from(alice.id)
+      .out(Some("FOLLOWS"))
+      .unwrap()
+      .first_node();
     assert_eq!(first, Some(bob.id));
 
     // No results
@@ -3430,7 +3494,9 @@ mod tests {
 
     // Create some data first
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    ray.set_prop(alice.id, "name", PropValue::String("Alice".into())).unwrap();
+    ray
+      .set_prop(alice.id, "name", PropValue::String("Alice".into()))
+      .unwrap();
 
     // Transaction that reads and writes
     let name = ray
@@ -3575,16 +3641,22 @@ mod tests {
     props.insert("weight".to_string(), PropValue::F64(0.8));
     props.insert("since".to_string(), PropValue::String("2024".into()));
 
-    ray.link_with_props(alice.id, "FOLLOWS", bob.id, props).unwrap();
+    ray
+      .link_with_props(alice.id, "FOLLOWS", bob.id, props)
+      .unwrap();
 
     // Verify edge exists
     assert!(ray.has_edge(alice.id, "FOLLOWS", bob.id).unwrap());
 
     // Verify edge properties
-    let weight = ray.get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight").unwrap();
+    let weight = ray
+      .get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
+      .unwrap();
     assert_eq!(weight, Some(PropValue::F64(0.8)));
 
-    let since = ray.get_edge_prop(alice.id, "FOLLOWS", bob.id, "since").unwrap();
+    let since = ray
+      .get_edge_prop(alice.id, "FOLLOWS", bob.id, "since")
+      .unwrap();
     assert_eq!(since, Some(PropValue::String("2024".into())));
 
     ray.close().unwrap();
@@ -3604,15 +3676,23 @@ mod tests {
     ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
 
     // Set edge property
-    ray.set_edge_prop(alice.id, "FOLLOWS", bob.id, "weight", PropValue::F64(0.5)).unwrap();
+    ray
+      .set_edge_prop(alice.id, "FOLLOWS", bob.id, "weight", PropValue::F64(0.5))
+      .unwrap();
 
     // Get edge property
-    let weight = ray.get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight").unwrap();
+    let weight = ray
+      .get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
+      .unwrap();
     assert_eq!(weight, Some(PropValue::F64(0.5)));
 
     // Update edge property
-    ray.set_edge_prop(alice.id, "FOLLOWS", bob.id, "weight", PropValue::F64(0.9)).unwrap();
-    let new_weight = ray.get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight").unwrap();
+    ray
+      .set_edge_prop(alice.id, "FOLLOWS", bob.id, "weight", PropValue::F64(0.9))
+      .unwrap();
+    let new_weight = ray
+      .get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
+      .unwrap();
     assert_eq!(new_weight, Some(PropValue::F64(0.9)));
 
     ray.close().unwrap();
@@ -3632,7 +3712,9 @@ mod tests {
     let mut props = HashMap::new();
     props.insert("weight".to_string(), PropValue::F64(0.7));
     props.insert("type".to_string(), PropValue::String("friend".into()));
-    ray.link_with_props(alice.id, "FOLLOWS", bob.id, props).unwrap();
+    ray
+      .link_with_props(alice.id, "FOLLOWS", bob.id, props)
+      .unwrap();
 
     // Get all properties
     let all_props = ray.get_edge_props(alice.id, "FOLLOWS", bob.id).unwrap();
@@ -3640,7 +3722,10 @@ mod tests {
 
     let all_props = all_props.unwrap();
     assert_eq!(all_props.get("weight"), Some(&PropValue::F64(0.7)));
-    assert_eq!(all_props.get("type"), Some(&PropValue::String("friend".into())));
+    assert_eq!(
+      all_props.get("type"),
+      Some(&PropValue::String("friend".into()))
+    );
 
     ray.close().unwrap();
   }
@@ -3657,17 +3742,25 @@ mod tests {
 
     // Create edge with property
     ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
-    ray.set_edge_prop(alice.id, "FOLLOWS", bob.id, "weight", PropValue::F64(0.5)).unwrap();
+    ray
+      .set_edge_prop(alice.id, "FOLLOWS", bob.id, "weight", PropValue::F64(0.5))
+      .unwrap();
 
     // Verify property exists
-    let weight = ray.get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight").unwrap();
+    let weight = ray
+      .get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
+      .unwrap();
     assert_eq!(weight, Some(PropValue::F64(0.5)));
 
     // Delete property
-    ray.del_edge_prop(alice.id, "FOLLOWS", bob.id, "weight").unwrap();
+    ray
+      .del_edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
+      .unwrap();
 
     // Verify property is gone
-    let weight = ray.get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight").unwrap();
+    let weight = ray
+      .get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
+      .unwrap();
     assert_eq!(weight, None);
 
     ray.close().unwrap();
@@ -3685,7 +3778,9 @@ mod tests {
 
     // Try to get prop on nonexistent edge - should fail gracefully
     // First we need to create the prop key
-    ray.set_edge_prop(alice.id, "FOLLOWS", bob.id, "weight", PropValue::F64(0.5)).ok();
+    ray
+      .set_edge_prop(alice.id, "FOLLOWS", bob.id, "weight", PropValue::F64(0.5))
+      .ok();
 
     // Edge doesn't exist, so getting props should return None
     let props = ray.get_edge_props(alice.id, "FOLLOWS", bob.id).unwrap();
@@ -3712,7 +3807,8 @@ mod tests {
     ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
 
     // Update edge properties using the builder
-    ray.update_edge(alice.id, "FOLLOWS", bob.id)
+    ray
+      .update_edge(alice.id, "FOLLOWS", bob.id)
       .unwrap()
       .set("weight", PropValue::F64(0.9))
       .set("since", PropValue::String("2024".into()))
@@ -3720,14 +3816,19 @@ mod tests {
       .unwrap();
 
     // Verify properties were set
-    let weight = ray.get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight").unwrap();
+    let weight = ray
+      .get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
+      .unwrap();
     assert_eq!(weight, Some(PropValue::F64(0.9)));
 
-    let since = ray.get_edge_prop(alice.id, "FOLLOWS", bob.id, "since").unwrap();
+    let since = ray
+      .get_edge_prop(alice.id, "FOLLOWS", bob.id, "since")
+      .unwrap();
     assert_eq!(since, Some(PropValue::String("2024".into())));
 
     // Update with unset
-    ray.update_edge(alice.id, "FOLLOWS", bob.id)
+    ray
+      .update_edge(alice.id, "FOLLOWS", bob.id)
       .unwrap()
       .set("weight", PropValue::F64(0.5))
       .unset("since")
@@ -3735,10 +3836,14 @@ mod tests {
       .unwrap();
 
     // Verify update and unset
-    let weight = ray.get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight").unwrap();
+    let weight = ray
+      .get_edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
+      .unwrap();
     assert_eq!(weight, Some(PropValue::F64(0.5)));
 
-    let since = ray.get_edge_prop(alice.id, "FOLLOWS", bob.id, "since").unwrap();
+    let since = ray
+      .get_edge_prop(alice.id, "FOLLOWS", bob.id, "since")
+      .unwrap();
     assert_eq!(since, None);
 
     ray.close().unwrap();
@@ -3762,16 +3867,23 @@ mod tests {
     props.insert("weight".to_string(), PropValue::F64(0.8));
     props.insert("type".to_string(), PropValue::String("close_friend".into()));
 
-    ray.update_edge(alice.id, "FOLLOWS", bob.id)
+    ray
+      .update_edge(alice.id, "FOLLOWS", bob.id)
       .unwrap()
       .set_all(props)
       .execute()
       .unwrap();
 
     // Verify
-    let all_props = ray.get_edge_props(alice.id, "FOLLOWS", bob.id).unwrap().unwrap();
+    let all_props = ray
+      .get_edge_props(alice.id, "FOLLOWS", bob.id)
+      .unwrap()
+      .unwrap();
     assert_eq!(all_props.get("weight"), Some(&PropValue::F64(0.8)));
-    assert_eq!(all_props.get("type"), Some(&PropValue::String("close_friend".into())));
+    assert_eq!(
+      all_props.get("type"),
+      Some(&PropValue::String("close_friend".into()))
+    );
 
     ray.close().unwrap();
   }
@@ -3790,7 +3902,8 @@ mod tests {
     ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
 
     // Empty update should succeed (no-op)
-    ray.update_edge(alice.id, "FOLLOWS", bob.id)
+    ray
+      .update_edge(alice.id, "FOLLOWS", bob.id)
       .unwrap()
       .execute()
       .unwrap();
@@ -3810,7 +3923,8 @@ mod tests {
     props.insert("name".to_string(), PropValue::String("Alice".into()));
     props.insert("age".to_string(), PropValue::I64(30));
 
-    let alice = ray.insert("User")
+    let alice = ray
+      .insert("User")
       .unwrap()
       .values("alice", props)
       .unwrap()
@@ -3843,7 +3957,8 @@ mod tests {
     let mut props = HashMap::new();
     props.insert("name".to_string(), PropValue::String("Bob".into()));
 
-    ray.insert("User")
+    ray
+      .insert("User")
       .unwrap()
       .values("bob", props)
       .unwrap()
@@ -3878,7 +3993,8 @@ mod tests {
     let mut charlie_props = HashMap::new();
     charlie_props.insert("name".to_string(), PropValue::String("Charlie".into()));
 
-    let users = ray.insert("User")
+    let users = ray
+      .insert("User")
       .unwrap()
       .values_many(vec![
         ("alice", alice_props),
@@ -3909,7 +4025,8 @@ mod tests {
     let mut ray = Ray::open(temp_dir.path(), options).unwrap();
 
     // Empty insert should succeed
-    let users = ray.insert("User")
+    let users = ray
+      .insert("User")
       .unwrap()
       .values_many(vec![])
       .unwrap()
@@ -3956,7 +4073,11 @@ mod tests {
 
     // Check should pass
     let result = ray.check().unwrap();
-    assert!(result.valid, "Expected valid database, got errors: {:?}", result.errors);
+    assert!(
+      result.valid,
+      "Expected valid database, got errors: {:?}",
+      result.errors
+    );
     assert!(result.errors.is_empty());
 
     ray.close().unwrap();
@@ -3982,11 +4103,17 @@ mod tests {
     // Create edge with properties
     let mut edge_props = HashMap::new();
     edge_props.insert("weight".to_string(), PropValue::F64(0.9));
-    ray.link_with_props(alice.id, "FOLLOWS", bob.id, edge_props).unwrap();
+    ray
+      .link_with_props(alice.id, "FOLLOWS", bob.id, edge_props)
+      .unwrap();
 
     // Check should pass
     let result = ray.check().unwrap();
-    assert!(result.valid, "Expected valid database, got errors: {:?}", result.errors);
+    assert!(
+      result.valid,
+      "Expected valid database, got errors: {:?}",
+      result.errors
+    );
     assert!(result.errors.is_empty());
 
     ray.close().unwrap();
@@ -4006,7 +4133,8 @@ mod tests {
     let alice = ray.create_node("User", "alice", props).unwrap();
 
     // Update by reference
-    ray.update(&alice)
+    ray
+      .update(&alice)
       .unwrap()
       .set("name", PropValue::String("Alice Updated".into()))
       .set("age", PropValue::I64(31))
@@ -4036,7 +4164,8 @@ mod tests {
     ray.create_node("User", "bob", props).unwrap();
 
     // Update by key
-    ray.update_by_key("User", "bob")
+    ray
+      .update_by_key("User", "bob")
       .unwrap()
       .set("name", PropValue::String("Bob Updated".into()))
       .set("age", PropValue::I64(25))
@@ -4067,7 +4196,8 @@ mod tests {
     let charlie = ray.create_node("User", "charlie", props).unwrap();
 
     // Update by ID
-    ray.update_by_id(charlie.id)
+    ray
+      .update_by_id(charlie.id)
       .unwrap()
       .set("name", PropValue::String("Charlie Updated".into()))
       .execute()
@@ -4097,7 +4227,8 @@ mod tests {
     assert!(ray.get_prop(dave.id, "age").is_some());
 
     // Update with unset
-    ray.update(&dave)
+    ray
+      .update(&dave)
       .unwrap()
       .set("name", PropValue::String("Dave Updated".into()))
       .unset("age")
@@ -4129,7 +4260,8 @@ mod tests {
     updates.insert("name".to_string(), PropValue::String("Eve".into()));
     updates.insert("age".to_string(), PropValue::I64(28));
 
-    ray.update(&eve)
+    ray
+      .update(&eve)
       .unwrap()
       .set_all(updates)
       .execute()
@@ -4176,10 +4308,7 @@ mod tests {
     let frank = ray.create_node("User", "frank", props).unwrap();
 
     // Empty update should succeed (no-op)
-    ray.update(&frank)
-      .unwrap()
-      .execute()
-      .unwrap();
+    ray.update(&frank).unwrap().execute().unwrap();
 
     // Verify nothing changed
     let name = ray.get_prop(frank.id, "name");
@@ -4202,14 +4331,14 @@ mod tests {
 
     // Get description
     let desc = ray.describe();
-    
+
     // Should contain path
     assert!(desc.contains("RayDB at"));
     // Should mention format
     assert!(desc.contains("format"));
     // Should list node types
     assert!(desc.contains("User"));
-    // Should list edge types  
+    // Should list edge types
     assert!(desc.contains("FOLLOWS"));
     // Should include stats
     assert!(desc.contains("Nodes:"));
@@ -4232,7 +4361,7 @@ mod tests {
 
     // Get stats
     let stats = ray.stats();
-    
+
     // Should report correct counts
     assert!(stats.snapshot_nodes >= 2);
     assert!(stats.snapshot_edges >= 1);

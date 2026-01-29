@@ -128,10 +128,9 @@ pub fn get_neighbors_out_db(
   // Get from delta additions
   if let Some(add_set) = delta.out_add.get(&src) {
     for patch in add_set {
-      if (etype.is_none() || etype == Some(patch.etype))
-        && !neighbors.contains(&patch.other) {
-          neighbors.push(patch.other);
-        }
+      if (etype.is_none() || etype == Some(patch.etype)) && !neighbors.contains(&patch.other) {
+        neighbors.push(patch.other);
+      }
     }
   }
 
@@ -178,10 +177,9 @@ pub fn get_neighbors_in_db(
   // Get from delta additions
   if let Some(add_set) = delta.in_add.get(&dst) {
     for patch in add_set {
-      if (etype.is_none() || etype == Some(patch.etype))
-        && !neighbors.contains(&patch.other) {
-          neighbors.push(patch.other);
-        }
+      if (etype.is_none() || etype == Some(patch.etype)) && !neighbors.contains(&patch.other) {
+        neighbors.push(patch.other);
+      }
     }
   }
 

@@ -2,8 +2,8 @@
 //!
 //! Exposes IVF and IVF-PQ indexes to Python.
 
-use pyo3::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
+use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use std::sync::RwLock;
 
@@ -346,20 +346,29 @@ impl PyIvfIndex {
   /// Get the number of dimensions
   #[getter]
   fn dimensions(&self) -> PyResult<i32> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     Ok(index.dimensions as i32)
   }
 
   /// Check if the index is trained
   #[getter]
   fn trained(&self) -> PyResult<bool> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     Ok(index.trained)
   }
 
   /// Add training vectors
   fn add_training_vectors(&self, vectors: Vec<f64>, num_vectors: i32) -> PyResult<()> {
-    let mut index = self.inner.write().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let mut index = self
+      .inner
+      .write()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let vectors_f32: Vec<f32> = vectors.iter().map(|&v| v as f32).collect();
     index
       .add_training_vectors(&vectors_f32, num_vectors as usize)
@@ -368,7 +377,10 @@ impl PyIvfIndex {
 
   /// Train the index on added training vectors
   fn train(&self) -> PyResult<()> {
-    let mut index = self.inner.write().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let mut index = self
+      .inner
+      .write()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     index
       .train()
       .map_err(|e| PyRuntimeError::new_err(format!("Failed to train index: {e}")))
@@ -376,7 +388,10 @@ impl PyIvfIndex {
 
   /// Insert a vector into the index
   fn insert(&self, vector_id: i64, vector: Vec<f64>) -> PyResult<()> {
-    let mut index = self.inner.write().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let mut index = self
+      .inner
+      .write()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let vector_f32: Vec<f32> = vector.iter().map(|&v| v as f32).collect();
     index
       .insert(vector_id as u64, &vector_f32)
@@ -385,14 +400,20 @@ impl PyIvfIndex {
 
   /// Delete a vector from the index
   fn delete(&self, vector_id: i64, vector: Vec<f64>) -> PyResult<bool> {
-    let mut index = self.inner.write().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let mut index = self
+      .inner
+      .write()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let vector_f32: Vec<f32> = vector.iter().map(|&v| v as f32).collect();
     Ok(index.delete(vector_id as u64, &vector_f32))
   }
 
   /// Clear all data from the index
   fn clear(&self) -> PyResult<()> {
-    let mut index = self.inner.write().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let mut index = self
+      .inner
+      .write()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     index.clear();
     Ok(())
   }
@@ -406,7 +427,10 @@ impl PyIvfIndex {
     k: i32,
     options: Option<PySearchOptions>,
   ) -> PyResult<Vec<PySearchResult>> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
     let manifest: VectorManifest = serde_json::from_str(&manifest_json)
       .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse manifest: {e}")))?;
@@ -433,7 +457,10 @@ impl PyIvfIndex {
     aggregation: String,
     options: Option<PySearchOptions>,
   ) -> PyResult<Vec<PySearchResult>> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
     let manifest: VectorManifest = serde_json::from_str(&manifest_json)
       .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse manifest: {e}")))?;
@@ -459,7 +486,10 @@ impl PyIvfIndex {
 
   /// Get index statistics
   fn stats(&self) -> PyResult<PyIvfStats> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let s = index.stats();
     Ok(PyIvfStats {
       trained: s.trained,
@@ -474,7 +504,10 @@ impl PyIvfIndex {
 
   /// Serialize the index to bytes
   fn serialize<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let bytes = crate::vector::ivf::serialize::serialize_ivf(&index);
     Ok(PyBytes::new_bound(py, &bytes))
   }
@@ -490,7 +523,10 @@ impl PyIvfIndex {
   }
 
   fn __repr__(&self) -> PyResult<String> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     Ok(format!(
       "IvfIndex(dimensions={}, trained={})",
       index.dimensions, index.trained
@@ -536,20 +572,29 @@ impl PyIvfPqIndex {
   /// Get the number of dimensions
   #[getter]
   fn dimensions(&self) -> PyResult<i32> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     Ok(index.dimensions as i32)
   }
 
   /// Check if the index is trained
   #[getter]
   fn trained(&self) -> PyResult<bool> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     Ok(index.trained)
   }
 
   /// Add training vectors
   fn add_training_vectors(&self, vectors: Vec<f64>, num_vectors: i32) -> PyResult<()> {
-    let mut index = self.inner.write().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let mut index = self
+      .inner
+      .write()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let vectors_f32: Vec<f32> = vectors.iter().map(|&v| v as f32).collect();
     index
       .add_training_vectors(&vectors_f32, num_vectors as usize)
@@ -558,7 +603,10 @@ impl PyIvfPqIndex {
 
   /// Train the index
   fn train(&self) -> PyResult<()> {
-    let mut index = self.inner.write().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let mut index = self
+      .inner
+      .write()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     index
       .train()
       .map_err(|e| PyRuntimeError::new_err(format!("Failed to train index: {e}")))
@@ -566,7 +614,10 @@ impl PyIvfPqIndex {
 
   /// Insert a vector
   fn insert(&self, vector_id: i64, vector: Vec<f64>) -> PyResult<()> {
-    let mut index = self.inner.write().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let mut index = self
+      .inner
+      .write()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let vector_f32: Vec<f32> = vector.iter().map(|&v| v as f32).collect();
     index
       .insert(vector_id as u64, &vector_f32)
@@ -575,14 +626,20 @@ impl PyIvfPqIndex {
 
   /// Delete a vector
   fn delete(&self, vector_id: i64, vector: Vec<f64>) -> PyResult<bool> {
-    let mut index = self.inner.write().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let mut index = self
+      .inner
+      .write()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let vector_f32: Vec<f32> = vector.iter().map(|&v| v as f32).collect();
     Ok(index.delete(vector_id as u64, &vector_f32))
   }
 
   /// Clear the index
   fn clear(&self) -> PyResult<()> {
-    let mut index = self.inner.write().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let mut index = self
+      .inner
+      .write()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     index.clear();
     Ok(())
   }
@@ -596,7 +653,10 @@ impl PyIvfPqIndex {
     k: i32,
     options: Option<PySearchOptions>,
   ) -> PyResult<Vec<PySearchResult>> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
     let manifest: VectorManifest = serde_json::from_str(&manifest_json)
       .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse manifest: {e}")))?;
@@ -623,7 +683,10 @@ impl PyIvfPqIndex {
     aggregation: String,
     options: Option<PySearchOptions>,
   ) -> PyResult<Vec<PySearchResult>> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
 
     let manifest: VectorManifest = serde_json::from_str(&manifest_json)
       .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse manifest: {e}")))?;
@@ -649,7 +712,10 @@ impl PyIvfPqIndex {
 
   /// Get index statistics
   fn stats(&self) -> PyResult<PyIvfStats> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let s = index.stats();
     Ok(PyIvfStats {
       trained: s.trained,
@@ -664,7 +730,10 @@ impl PyIvfPqIndex {
 
   /// Serialize the index to bytes
   fn serialize<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let bytes = crate::vector::ivf_pq::serialize_ivf_pq(&index);
     Ok(PyBytes::new_bound(py, &bytes))
   }
@@ -680,7 +749,10 @@ impl PyIvfPqIndex {
   }
 
   fn __repr__(&self) -> PyResult<String> {
-    let index = self.inner.read().map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    let index = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     Ok(format!(
       "IvfPqIndex(dimensions={}, trained={})",
       index.dimensions, index.trained
@@ -725,7 +797,9 @@ pub fn brute_force_search(
   metric: Option<String>,
 ) -> PyResult<Vec<PyBruteForceResult>> {
   if vectors.len() != node_ids.len() {
-    return Err(PyRuntimeError::new_err("vectors and node_ids must have same length"));
+    return Err(PyRuntimeError::new_err(
+      "vectors and node_ids must have same length",
+    ));
   }
 
   let metric_enum: PyDistanceMetricEnum = metric.as_deref().unwrap_or("cosine").into();

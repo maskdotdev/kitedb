@@ -525,7 +525,12 @@ mod tests {
     let result = dot_product(&a, &b);
     let expected: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
 
-    assert!((result - expected).abs() < 1e-3, "result: {}, expected: {}", result, expected);
+    assert!(
+      (result - expected).abs() < 1e-3,
+      "result: {}, expected: {}",
+      result,
+      expected
+    );
   }
 
   #[test]
@@ -551,7 +556,12 @@ mod tests {
       })
       .sum();
 
-    assert!((result - expected).abs() < 1e-3, "result: {}, expected: {}", result, expected);
+    assert!(
+      (result - expected).abs() < 1e-3,
+      "result: {}, expected: {}",
+      result,
+      expected
+    );
   }
 
   #[test]
@@ -567,7 +577,12 @@ mod tests {
     let result = l2_norm(&v);
     let expected: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
 
-    assert!((result - expected).abs() < 1e-3, "result: {}, expected: {}", result, expected);
+    assert!(
+      (result - expected).abs() < 1e-3,
+      "result: {}, expected: {}",
+      result,
+      expected
+    );
   }
 
   #[test]

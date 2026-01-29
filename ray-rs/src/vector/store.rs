@@ -9,8 +9,7 @@ use crate::types::NodeId;
 
 use super::distance::normalize_in_place;
 use super::types::{
-  Fragment, FragmentState, RowGroup, VectorLocation, VectorManifest,
-  VectorStoreConfig,
+  Fragment, FragmentState, RowGroup, VectorLocation, VectorManifest, VectorStoreConfig,
 };
 
 // ============================================================================
@@ -179,10 +178,7 @@ pub fn vector_store_get(manifest: &VectorManifest, node_id: NodeId) -> Option<&[
 }
 
 /// Get a vector by vector ID
-pub fn vector_store_get_by_id(
-  manifest: &VectorManifest,
-  vector_id: u64,
-) -> Option<&[f32]> {
+pub fn vector_store_get_by_id(manifest: &VectorManifest, vector_id: u64) -> Option<&[f32]> {
   let location = manifest.vector_locations.get(&vector_id)?;
   let fragment = manifest
     .fragments

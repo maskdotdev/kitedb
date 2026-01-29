@@ -8,8 +8,14 @@ import {
   Database,
   JsTraversalDirection,
   PropType,
+  collectMetrics,
+  createBackup,
+  createOfflineBackup,
+  getBackupInfo,
+  healthCheck,
   pathConfig,
   plus100,
+  restoreBackup,
   traversalStep,
 } from '../index'
 
@@ -138,6 +144,51 @@ test('weighted dijkstra uses edge property', (t) => {
   const paths = db.kShortest(config, 2)
   t.is(paths[0].totalWeight, 2)
   t.true(paths.length >= 1)
+
+  db.close()
+})
+
+test('backup/restore APIs', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'raydb-'))
+  const dbPath = path.join(dir, 'source.raydb')
+  const db = Database.open(dbPath)
+  db.begin()
+
+  const nodeId = db.createNode('user:alice')
+  db.commit()
+
+  const backupBase = path.join(dir, 'backup')
+  const backup = createBackup(db, backupBase)
+  t.true(backup.path.endsWith('.raydb'))
+
+  const info = getBackupInfo(backup.path)
+  t.is(info.path, backup.path)
+
+  db.close()
+
+  const restoreBase = path.join(dir, 'restore')
+  const restoredPath = restoreBackup(backup.path, restoreBase)
+  const restored = Database.open(restoredPath)
+  t.true(restored.nodeExists(nodeId))
+  restored.close()
+
+  const offlineBackup = createOfflineBackup(restoredPath, path.join(dir, 'offline'))
+  t.true(offlineBackup.size >= 0)
+})
+
+test('metrics and health APIs', (t) => {
+  const db = Database.open(makeDbPath())
+  db.begin()
+  db.createNode('metrics:test')
+  db.commit()
+
+  const metrics = collectMetrics(db)
+  t.true(metrics.data.nodeCount >= 1)
+  t.is(metrics.readOnly, false)
+
+  const health = healthCheck(db)
+  t.true(health.healthy)
+  t.true(health.checks.some((check) => check.name === 'database_open'))
 
   db.close()
 })

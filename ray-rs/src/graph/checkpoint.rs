@@ -70,14 +70,14 @@ pub fn is_checkpoint_running(_db: &GraphDB) -> bool {
 /// 4. Reset the WAL
 pub fn checkpoint(db: &mut GraphDB) -> Result<CheckpointStats> {
   use std::time::Instant;
-  
+
   let start = Instant::now();
-  
+
   // Use the GraphDB::optimize() method which handles all the checkpoint logic
   db.optimize()?;
-  
+
   let duration_ms = start.elapsed().as_millis() as u64;
-  
+
   // Get stats from the new snapshot
   let (num_nodes, num_edges, snapshot_gen) = if let Some(ref snapshot) = db.snapshot {
     (

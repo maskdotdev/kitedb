@@ -294,10 +294,7 @@ impl std::fmt::Display for TxManagerError {
     match self {
       TxManagerError::TxNotFound(txid) => write!(f, "Transaction {txid} not found"),
       TxManagerError::TxNotActive(txid, status) => {
-        write!(
-          f,
-          "Transaction {txid} is not active (status: {status:?})"
-        )
+        write!(f, "Transaction {txid} is not active (status: {status:?})")
       }
     }
   }

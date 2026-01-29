@@ -167,11 +167,7 @@ impl PropertyCache {
     self.node_cache.set(key, value);
 
     // Track which keys belong to this node for targeted invalidation
-    self
-      .node_key_index
-      .entry(node_id)
-      .or_default()
-      .insert(key);
+    self.node_key_index.entry(node_id).or_default().insert(key);
   }
 
   /// Invalidate all cached properties for a node
