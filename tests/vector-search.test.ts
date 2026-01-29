@@ -703,36 +703,15 @@ describe("Persistent Vector Operations", () => {
     await closeGraphDB(db);
   });
 
-  test("multi-file database vector persistence", async () => {
-    // Create a directory-based (multi-file) database
+  test("rejects multi-file database paths (legacy format)", async () => {
     const dbPath = join(testDir, "multifile");
-    await import("node:fs/promises").then(fs => fs.mkdir(dbPath, { recursive: true }));
-    
-    let embeddingKey: number;
-    let nodeId: number;
-    const vec = new Float32Array([0.5, 0.5, 0.5, 0.5]);
-    
-    // First session
-    {
-      const db = await openGraphDB(dbPath);
-      const tx = beginTx(db);
-      embeddingKey = definePropkey(tx, "embedding");
-      nodeId = createNode(tx);
-      setNodeVector(tx, nodeId, embeddingKey, vec);
-      await commit(tx);
-      await closeGraphDB(db);
-    }
-    
-    // Second session
-    {
-      const db = await openGraphDB(dbPath);
-      const retrieved = getNodeVector(db, nodeId, embeddingKey);
-      expect(retrieved).not.toBeNull();
-      for (let i = 0; i < 4; i++) {
-        expect(retrieved![i]).toBeCloseTo(vec[i]!, 5);
-      }
-      await closeGraphDB(db);
-    }
+    await import("node:fs/promises").then((fs) =>
+      fs.mkdir(dbPath, { recursive: true }),
+    );
+
+    await expect(openGraphDB(dbPath)).rejects.toThrow(
+      /Multi-file .* deprecated/,
+    );
   });
 
   test("cascade delete: node deletion removes vectors", async () => {

@@ -330,9 +330,11 @@ describe("Low-Level Listing API", () => {
 
 describe("High-Level Listing API", () => {
   let testDir: string;
+  let testPath: string;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-listing-hl-test-"));
+    testPath = join(testDir, "db.raydb");
   });
 
   afterEach(async () => {
@@ -341,7 +343,7 @@ describe("High-Level Listing API", () => {
 
   describe("Ray.all()", () => {
     test("lists all nodes of a type", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user, post],
         edges: [follows, likes],
       });
@@ -382,7 +384,7 @@ describe("High-Level Listing API", () => {
     });
 
     test("returns empty for no matching nodes", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user, post],
         edges: [follows],
       });
@@ -404,7 +406,7 @@ describe("High-Level Listing API", () => {
 
   describe("Ray.count()", () => {
     test("counts all nodes without filter", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user, post],
         edges: [follows],
       });
@@ -421,7 +423,7 @@ describe("High-Level Listing API", () => {
     });
 
     test("counts nodes filtered by type", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user, post],
         edges: [follows],
       });
@@ -442,7 +444,7 @@ describe("High-Level Listing API", () => {
 
   describe("Ray.allEdges()", () => {
     test("lists all edges", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [follows, likes],
       });
@@ -466,7 +468,7 @@ describe("High-Level Listing API", () => {
     });
 
     test("filters edges by type", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [follows, likes],
       });
@@ -503,7 +505,7 @@ describe("High-Level Listing API", () => {
     });
 
     test("includes edge properties", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [likes],
       });
@@ -527,7 +529,7 @@ describe("High-Level Listing API", () => {
 
   describe("Ray.countEdges()", () => {
     test("counts all edges", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [follows, likes],
       });
@@ -547,7 +549,7 @@ describe("High-Level Listing API", () => {
     });
 
     test("counts edges filtered by type", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [follows, likes],
       });

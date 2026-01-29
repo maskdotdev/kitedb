@@ -13,9 +13,11 @@ import { defineEdge, defineNode, prop, ray } from "../src/index.ts";
 
 describe("Ray API Integration - Persistence", () => {
   let testDir: string;
+  let testPath: string;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-api-integration-"));
+    testPath = join(testDir, "db.raydb");
   });
 
   afterEach(async () => {
@@ -33,7 +35,7 @@ describe("Ray API Integration - Persistence", () => {
     });
 
     // First open: create DB and insert a file node
-    const db1 = await ray(testDir, {
+    const db1 = await ray(testPath, {
       nodes: [fileNode],
       edges: [],
     });
@@ -60,7 +62,7 @@ describe("Ray API Integration - Persistence", () => {
     await db1.close();
 
     // Second open: same schema, read back by key
-    const db2 = await ray(testDir, {
+    const db2 = await ray(testPath, {
       nodes: [fileNode],
       edges: [],
     });
@@ -99,7 +101,7 @@ describe("Ray API Integration - Persistence", () => {
     });
 
     // First open: create DB, insert file + symbol nodes, and a CALLS edge
-    const db1 = await ray(testDir, {
+    const db1 = await ray(testPath, {
       nodes: [fileNode, symbolNode],
       edges: [callsEdge],
     });
@@ -138,7 +140,7 @@ describe("Ray API Integration - Persistence", () => {
     await db1.close();
 
     // Second open: same schema, verify nodes and edge still exist
-    const db2 = await ray(testDir, {
+    const db2 = await ray(testPath, {
       nodes: [fileNode, symbolNode],
       edges: [callsEdge],
     });
@@ -179,7 +181,7 @@ describe("Ray API Integration - Persistence", () => {
     });
 
     // First open: create and insert
-    let db = await ray(testDir, {
+    let db = await ray(testPath, {
       nodes: [fileNode],
       edges: [],
     });
@@ -196,7 +198,7 @@ describe("Ray API Integration - Persistence", () => {
     await db.close();
 
     // Second open: update hash
-    db = await ray(testDir, {
+    db = await ray(testPath, {
       nodes: [fileNode],
       edges: [],
     });
@@ -210,7 +212,7 @@ describe("Ray API Integration - Persistence", () => {
     await db.close();
 
     // Third open: verify latest value is visible
-    db = await ray(testDir, {
+    db = await ray(testPath, {
       nodes: [fileNode],
       edges: [],
     });

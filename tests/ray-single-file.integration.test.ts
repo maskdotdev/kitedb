@@ -36,15 +36,17 @@ import {
 
 describe("Single-File Ray API Integration", () => {
   let tmpDir: string;
-  let db: GraphDB;
+  let db: GraphDB | null = null;
 
   beforeEach(async () => {
     tmpDir = await mkdtemp(join(tmpdir(), "raydb-single-file-test-"));
+    db = null;
   });
 
   afterEach(async () => {
     if (db) {
       await closeGraphDB(db);
+      db = null;
     }
     await rm(tmpDir, { recursive: true, force: true });
   });
@@ -196,6 +198,7 @@ describe("Single-File Ray API Integration", () => {
       setNodeProp(tx, nodeId, propKeyId, { tag: PropValueTag.STRING, value: "Bob" });
       await commit(tx);
       await closeGraphDB(db);
+      db = null;
       
       // Reopen and verify
       db = await openGraphDB(dbPath);
@@ -224,8 +227,8 @@ describe("Single-File Ray API Integration", () => {
     });
   });
 
-  describe.skip("Existing Directory Detection (legacy multi-file)", () => {
-    test("opens existing directory database as multi-file", async () => {
+  describe("Existing Directory Detection", () => {
+    test("rejects existing directory when legacy multi-file is disabled", async () => {
       // Create a fake multi-file database structure
       const { mkdir, writeFile } = await import("node:fs/promises");
       const dbPath = join(tmpDir, "multi-file-db");
@@ -254,10 +257,8 @@ describe("Single-File Ray API Integration", () => {
       
       await writeFile(join(dbPath, "manifest.gdm"), manifest);
       
-      // Open database - should detect as multi-file
-      db = await openGraphDB(dbPath);
-      expect(db._isSingleFile).toBe(false);
-      expect(db._manifest).not.toBeNull();
+      // Open database - should reject directory unless legacyMultiFile is enabled
+      await expect(openGraphDB(dbPath)).rejects.toThrow();
     });
   });
 

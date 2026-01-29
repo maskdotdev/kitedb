@@ -37,9 +37,11 @@ const knows = defineEdge("knows", {
 
 describe("Path Finding", () => {
   let testDir: string;
+  let testPath: string;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-pathfinding-test-"));
+    testPath = join(testDir, "db.raydb");
   });
 
   afterEach(async () => {
@@ -48,7 +50,7 @@ describe("Path Finding", () => {
 
   describe("Dijkstra's Algorithm", () => {
     test("find shortest path in simple graph", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [city],
         edges: [road],
       });
@@ -92,7 +94,7 @@ describe("Path Finding", () => {
     });
 
     test("no path exists", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [city],
         edges: [road],
       });
@@ -121,7 +123,7 @@ describe("Path Finding", () => {
     });
 
     test("unweighted path (default weight)", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [city],
         edges: [road],
       });
@@ -159,7 +161,7 @@ describe("Path Finding", () => {
     });
 
     test("custom weight function", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [city],
         edges: [knows],
       });
@@ -204,7 +206,7 @@ describe("Path Finding", () => {
     });
 
     test("maxDepth limits search", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [city],
         edges: [road],
       });
@@ -253,7 +255,7 @@ describe("Path Finding", () => {
     });
 
     test("direction: in vs out", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [city],
         edges: [road],
       });
@@ -295,7 +297,7 @@ describe("Path Finding", () => {
     });
 
     test("toAny finds path to any target", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [city],
         edges: [road],
       });
@@ -337,7 +339,7 @@ describe("Path Finding", () => {
 
   describe("A* Algorithm", () => {
     test("find path with heuristic", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [city],
         edges: [road],
       });
@@ -385,7 +387,7 @@ describe("Path Finding", () => {
     });
 
     test("A* finds optimal path", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [city],
         edges: [road],
       });
@@ -435,7 +437,7 @@ describe("Path Finding", () => {
 
   describe("Edge Cases", () => {
     test("source equals target", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [city],
         edges: [road],
       });
@@ -459,7 +461,7 @@ describe("Path Finding", () => {
     });
 
     test("cycle in graph", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [city],
         edges: [road],
       });
@@ -491,7 +493,7 @@ describe("Path Finding", () => {
     });
 
     test("multiple edge types", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [city],
         edges: [road, knows],
       });
