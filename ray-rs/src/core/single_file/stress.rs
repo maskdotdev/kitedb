@@ -18,9 +18,9 @@ fn open_soak_db(path: &std::path::Path) -> SingleFileDB {
     path,
     SingleFileOpenOptions::new()
       .sync_mode(SyncMode::Normal)
-      .wal_size(8 * 1024 * 1024)
+      .wal_size(64 * 1024 * 1024)
       .auto_checkpoint(true)
-      .checkpoint_threshold(0.5)
+      .checkpoint_threshold(0.7)
       .background_checkpoint(false),
   )
   .unwrap()
@@ -84,7 +84,7 @@ fn test_single_file_soak_long_run() {
   let mut expected_keys: HashSet<String> = HashSet::new();
   let mut next_id = 0u64;
 
-  for _cycle in 0..50 {
+  for cycle in 0..50 {
     let db = open_soak_db(&db_path);
 
     for _batch in 0..10 {
@@ -97,6 +97,10 @@ fn test_single_file_soak_long_run() {
         next_id += 1;
       }
       db.commit().unwrap();
+    }
+
+    if cycle % 5 == 4 {
+      db.checkpoint().unwrap();
     }
 
     close_single_file(db).unwrap();

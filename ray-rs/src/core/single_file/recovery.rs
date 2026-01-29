@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use crate::constants::*;
 use crate::core::pager::FilePager;
+use crate::core::snapshot::reader::SnapshotData;
 use crate::core::wal::record::{
   extract_committed_transactions, parse_add_edge_payload, parse_add_node_label_payload,
   parse_create_node_payload, parse_define_etype_payload, parse_define_label_payload,
@@ -121,6 +122,7 @@ pub(crate) fn get_committed_transactions(
 #[allow(clippy::too_many_arguments)]
 pub fn replay_wal_record(
   record: &ParsedWalRecord,
+  snapshot: Option<&SnapshotData>,
   delta: &mut DeltaState,
   next_node_id: &mut u64,
   next_label_id: &mut u32,
@@ -136,7 +138,13 @@ pub fn replay_wal_record(
   match record.record_type {
     WalRecordType::CreateNode => {
       if let Some(data) = parse_create_node_payload(&record.payload) {
-        delta.create_node(data.node_id, data.key.as_deref());
+        if let Some(snap) = snapshot {
+          if snap.get_phys_node(data.node_id).is_none() {
+            delta.create_node(data.node_id, data.key.as_deref());
+          }
+        } else {
+          delta.create_node(data.node_id, data.key.as_deref());
+        }
         if data.node_id >= *next_node_id {
           *next_node_id = data.node_id + 1;
         }

@@ -331,6 +331,7 @@ pub fn open_single_file<P: AsRef<Path>>(
       for record in records {
         replay_wal_record(
           record,
+          snapshot.as_ref(),
           &mut delta,
           &mut next_node_id,
           &mut next_label_id,
