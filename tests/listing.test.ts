@@ -55,9 +55,11 @@ const likes = defineEdge("likes", {
 
 describe("Low-Level Listing API", () => {
   let testDir: string;
+  let testPath: string;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-listing-test-"));
+    testPath = join(testDir, "db.raydb");
   });
 
   afterEach(async () => {
@@ -66,7 +68,7 @@ describe("Low-Level Listing API", () => {
 
   describe("listNodes()", () => {
     test("empty database returns no nodes", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       
       const nodes = [...listNodes(db)];
       expect(nodes).toHaveLength(0);
@@ -75,7 +77,7 @@ describe("Low-Level Listing API", () => {
     });
 
     test("lists nodes created in transaction", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       const tx = beginTx(db);
       
       const node1 = createNode(tx, { key: "node1" });
@@ -94,7 +96,7 @@ describe("Low-Level Listing API", () => {
     });
 
     test("excludes deleted nodes", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       
       // Create nodes
       const tx1 = beginTx(db);
@@ -118,7 +120,7 @@ describe("Low-Level Listing API", () => {
     });
 
     test("works with TxHandle for pending nodes", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       const tx = beginTx(db);
       
       const node1 = createNode(tx, { key: "node1" });
@@ -137,7 +139,7 @@ describe("Low-Level Listing API", () => {
 
   describe("countNodes()", () => {
     test("empty database returns 0", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       
       expect(countNodes(db)).toBe(0);
       
@@ -145,7 +147,7 @@ describe("Low-Level Listing API", () => {
     });
 
     test("counts all nodes", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       const tx = beginTx(db);
       
       createNode(tx, { key: "node1" });
@@ -162,7 +164,7 @@ describe("Low-Level Listing API", () => {
     });
 
     test("accounts for deleted nodes", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       
       // Create nodes
       const tx1 = beginTx(db);
@@ -184,7 +186,7 @@ describe("Low-Level Listing API", () => {
     });
 
     test("counts pending transaction nodes", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       const tx = beginTx(db);
       
       createNode(tx, { key: "node1" });
@@ -200,7 +202,7 @@ describe("Low-Level Listing API", () => {
 
   describe("listEdges()", () => {
     test("empty database returns no edges", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       
       const edges = [...listEdges(db)];
       expect(edges).toHaveLength(0);
@@ -209,7 +211,7 @@ describe("Low-Level Listing API", () => {
     });
 
     test("lists all edges", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       const tx = beginTx(db);
       
       const followsType = defineEtype(tx, "follows");
@@ -235,7 +237,7 @@ describe("Low-Level Listing API", () => {
     });
 
     test("filters by edge type", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       const tx = beginTx(db);
       
       const followsType = defineEtype(tx, "follows");
@@ -270,7 +272,7 @@ describe("Low-Level Listing API", () => {
 
   describe("countEdges()", () => {
     test("empty database returns 0", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       
       expect(countEdges(db)).toBe(0);
       
@@ -278,7 +280,7 @@ describe("Low-Level Listing API", () => {
     });
 
     test("counts all edges", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       const tx = beginTx(db);
       
       const followsType = defineEtype(tx, "follows");
@@ -298,7 +300,7 @@ describe("Low-Level Listing API", () => {
     });
 
     test("counts filtered by edge type", async () => {
-      const db = await openGraphDB(testDir, { createIfMissing: true });
+      const db = await openGraphDB(testPath, { createIfMissing: true });
       const tx = beginTx(db);
       
       const followsType = defineEtype(tx, "follows");

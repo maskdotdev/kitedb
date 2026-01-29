@@ -7,7 +7,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { defineEdge, defineNode, ray, optional, prop } from "../src/index.ts";
+import {
+  defineEdge,
+  defineNode,
+  optional,
+  optimizeSingleFile,
+  prop,
+  ray,
+} from "../src/index.ts";
 
 // ============================================================================
 // Schema Definition
@@ -49,9 +56,11 @@ const follows = defineEdge("follows");
 
 describe("High-Level API", () => {
   let testDir: string;
+  let testPath: string;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-api-test-"));
+    testPath = join(testDir, "db.raydb");
   });
 
   afterEach(async () => {
@@ -60,7 +69,7 @@ describe("High-Level API", () => {
 
   describe("Database Lifecycle", () => {
     test("open and close database", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user, company],
         edges: [knows, worksAt, follows],
       });
@@ -74,7 +83,7 @@ describe("High-Level API", () => {
 
   describe("Node Operations", () => {
     test("insert single node", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -98,7 +107,7 @@ describe("High-Level API", () => {
     });
 
     test("insert multiple nodes", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -119,7 +128,7 @@ describe("High-Level API", () => {
     });
 
     test("get node by key", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -145,7 +154,7 @@ describe("High-Level API", () => {
     });
 
     test("update node by reference", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -169,7 +178,7 @@ describe("High-Level API", () => {
     });
 
     test("delete node by reference", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -198,7 +207,7 @@ describe("High-Level API", () => {
 
   describe("Edge Operations", () => {
     test("link nodes", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -225,7 +234,7 @@ describe("High-Level API", () => {
     });
 
     test("unlink nodes", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -252,7 +261,7 @@ describe("High-Level API", () => {
 
   describe("Traversal", () => {
     test("traverse outgoing edges", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -287,7 +296,7 @@ describe("High-Level API", () => {
     });
 
     test("traverse with take limit", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -317,7 +326,7 @@ describe("High-Level API", () => {
     });
 
     test("count traversal results", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -347,7 +356,7 @@ describe("High-Level API", () => {
     });
 
     test("get first result", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -372,7 +381,7 @@ describe("High-Level API", () => {
     });
 
     test("iterate with for-await", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -401,7 +410,7 @@ describe("High-Level API", () => {
 
   describe("Transactions", () => {
     test("explicit transaction", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -430,7 +439,7 @@ describe("High-Level API", () => {
     });
 
     test("transaction rollback on error", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -462,7 +471,7 @@ describe("High-Level API", () => {
 
   describe("Maintenance", () => {
     test("stats", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -479,7 +488,7 @@ describe("High-Level API", () => {
     });
 
     test("optimize (compaction)", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -489,7 +498,7 @@ describe("High-Level API", () => {
         .values({ key: "alice", name: "Alice", age: 30n, email: "a@ex.com" })
         .returning();
 
-      await db.optimize();
+      await optimizeSingleFile(db.$raw);
 
       const stats = await db.stats();
       expect(stats.snapshotGen).toBe(1n);
@@ -500,7 +509,7 @@ describe("High-Level API", () => {
     });
 
     test("check integrity", async () => {
-      const db = await ray(testDir, {
+      const db = await ray(testPath, {
         nodes: [user],
         edges: [knows],
       });
@@ -510,7 +519,7 @@ describe("High-Level API", () => {
         .values({ key: "alice", name: "Alice", age: 30n, email: "a@ex.com" })
         .returning();
 
-      await db.optimize();
+      await optimizeSingleFile(db.$raw);
 
       const result = await db.check();
       expect(result.valid).toBe(true);

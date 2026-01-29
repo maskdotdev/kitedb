@@ -30,7 +30,7 @@ import {
   getNodeProps,
   nodeExists,
   openGraphDB,
-  optimize,
+  optimizeSingleFile,
   rollback,
   setEdgeProp,
   setNodeProp,
@@ -39,9 +39,11 @@ import {
 
 describe("Database Lifecycle", () => {
   let testDir: string;
+  let testPath: string;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-int-test-"));
+    testPath = join(testDir, "db.raydb");
   });
 
   afterEach(async () => {
@@ -49,7 +51,7 @@ describe("Database Lifecycle", () => {
   });
 
   test("create new database", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     const s = stats(db);
     expect(s.snapshotGen).toBe(0n);
@@ -60,7 +62,7 @@ describe("Database Lifecycle", () => {
 
   test("reopen existing database", async () => {
     // Create and populate
-    const db1 = await openGraphDB(testDir);
+    const db1 = await openGraphDB(testPath);
 
     const tx = beginTx(db1);
     const n1 = createNode(tx, { key: "node1" });
@@ -69,7 +71,7 @@ describe("Database Lifecycle", () => {
     await closeGraphDB(db1);
 
     // Reopen
-    const db2 = await openGraphDB(testDir);
+    const db2 = await openGraphDB(testPath);
 
     // Node should still exist via WAL recovery
     expect(getNodeByKey(db2, "node1")).toBe(n1);
@@ -79,14 +81,14 @@ describe("Database Lifecycle", () => {
 
   test("read-only mode", async () => {
     // Create database
-    const db1 = await openGraphDB(testDir);
+    const db1 = await openGraphDB(testPath);
     const tx = beginTx(db1);
     createNode(tx, { key: "test" });
     await commit(tx);
     await closeGraphDB(db1);
 
     // Open read-only
-    const db2 = await openGraphDB(testDir, { readOnly: true });
+    const db2 = await openGraphDB(testPath, { readOnly: true });
 
     expect(getNodeByKey(db2, "test")).not.toBeNull();
     expect(() => beginTx(db2)).toThrow();
@@ -97,9 +99,11 @@ describe("Database Lifecycle", () => {
 
 describe("Node Operations", () => {
   let testDir: string;
+  let testPath: string;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-node-test-"));
+    testPath = join(testDir, "db.raydb");
   });
 
   afterEach(async () => {
@@ -107,7 +111,7 @@ describe("Node Operations", () => {
   });
 
   test("create nodes with keys", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     const tx = beginTx(db);
     const n1 = createNode(tx, { key: "user:alice" });
@@ -127,7 +131,7 @@ describe("Node Operations", () => {
   });
 
   test("delete node", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     const tx1 = beginTx(db);
     const n1 = createNode(tx1, { key: "to-delete" });
@@ -146,7 +150,7 @@ describe("Node Operations", () => {
   });
 
   test("rollback node creation", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     const tx = beginTx(db);
     const n1 = createNode(tx, { key: "temp" });
@@ -161,9 +165,11 @@ describe("Node Operations", () => {
 
 describe("Edge Operations", () => {
   let testDir: string;
+  let testPath: string;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-edge-test-"));
+    testPath = join(testDir, "db.raydb");
   });
 
   afterEach(async () => {
@@ -171,7 +177,7 @@ describe("Edge Operations", () => {
   });
 
   test("create and traverse edges", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     const tx = beginTx(db);
     const knows = defineEtype(tx, "knows");
@@ -209,7 +215,7 @@ describe("Edge Operations", () => {
   });
 
   test("delete edge", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     const tx1 = beginTx(db);
     const knows = defineEtype(tx1, "knows");
@@ -230,7 +236,7 @@ describe("Edge Operations", () => {
   });
 
   test("edges to deleted nodes are invisible", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     const tx1 = beginTx(db);
     const knows = defineEtype(tx1, "knows");
@@ -255,9 +261,11 @@ describe("Edge Operations", () => {
 
 describe("Properties", () => {
   let testDir: string;
+  let testPath: string;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-prop-test-"));
+    testPath = join(testDir, "db.raydb");
   });
 
   afterEach(async () => {
@@ -265,7 +273,7 @@ describe("Properties", () => {
   });
 
   test("set and get node properties", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     const tx = beginTx(db);
     const nameProp = definePropkey(tx, "name");
@@ -298,7 +306,7 @@ describe("Properties", () => {
 
   test("node properties persist across reopen", async () => {
     // Create and set properties
-    let db = await openGraphDB(testDir);
+    let db = await openGraphDB(testPath);
 
     const tx = beginTx(db);
     const nameProp = definePropkey(tx, "name");
@@ -307,11 +315,11 @@ describe("Properties", () => {
     await commit(tx);
 
     // Compact to write to snapshot
-    await optimize(db);
+    await optimizeSingleFile(db);
     await closeGraphDB(db);
 
     // Reopen and verify
-    db = await openGraphDB(testDir);
+    db = await openGraphDB(testPath);
     const namePropVal = getNodeProp(db, n, nameProp);
     expect(namePropVal).not.toBeNull();
     expect((namePropVal as { tag: 4; value: string }).value).toBe("Bob");
@@ -320,7 +328,7 @@ describe("Properties", () => {
   });
 
   test("delete node property", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     const tx1 = beginTx(db);
     const nameProp = definePropkey(tx1, "name");
@@ -343,7 +351,7 @@ describe("Properties", () => {
   });
 
   test("set and get edge properties", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     const tx = beginTx(db);
     const knows = defineEtype(tx, "knows");
@@ -383,7 +391,7 @@ describe("Properties", () => {
   });
 
   test("edge properties persist through compaction", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     const tx = beginTx(db);
     const knows = defineEtype(tx, "knows");
@@ -400,7 +408,7 @@ describe("Properties", () => {
     await commit(tx);
 
     // Compact
-    await optimize(db);
+    await optimizeSingleFile(db);
 
     // Verify property still exists after compaction
     const weightVal = getEdgeProp(db, a, knows, b, weightProp);
@@ -413,9 +421,11 @@ describe("Properties", () => {
 
 describe("Compaction", () => {
   let testDir: string;
+  let testPath: string;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-compact-test-"));
+    testPath = join(testDir, "db.raydb");
   });
 
   afterEach(async () => {
@@ -423,7 +433,7 @@ describe("Compaction", () => {
   });
 
   test("basic compaction", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     // Create some data
     const tx = beginTx(db);
@@ -445,7 +455,7 @@ describe("Compaction", () => {
     expect(s.deltaNodesCreated).toBe(10);
 
     // Compact
-    await optimize(db);
+    await optimizeSingleFile(db);
 
     s = stats(db);
     expect(s.snapshotGen).toBe(1n);
@@ -470,7 +480,7 @@ describe("Compaction", () => {
   });
 
   test("compaction preserves deletes", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     // Create data
     const tx1 = beginTx(db);
@@ -486,7 +496,7 @@ describe("Compaction", () => {
     await commit(tx2);
 
     // Compact
-    await optimize(db);
+    await optimizeSingleFile(db);
 
     // Deleted node should not be in snapshot
     const s = stats(db);
@@ -500,7 +510,7 @@ describe("Compaction", () => {
   });
 
   test("multiple compactions", async () => {
-    const db = await openGraphDB(testDir);
+    const db = await openGraphDB(testPath);
 
     for (let round = 0; round < 3; round++) {
       const tx = beginTx(db);
@@ -513,7 +523,7 @@ describe("Compaction", () => {
       }
       await commit(tx);
 
-      await optimize(db);
+      await optimizeSingleFile(db);
 
       const s = stats(db);
       expect(s.snapshotGen).toBe(BigInt(round + 1));
@@ -533,9 +543,11 @@ describe("Compaction", () => {
 
 describe("Recovery", () => {
   let testDir: string;
+  let testPath: string;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-recovery-test-"));
+    testPath = join(testDir, "db.raydb");
   });
 
   afterEach(async () => {
@@ -543,7 +555,7 @@ describe("Recovery", () => {
   });
 
   test("recover uncommitted transactions are ignored", async () => {
-    const db1 = await openGraphDB(testDir);
+    const db1 = await openGraphDB(testPath);
 
     // Committed transaction
     const tx1 = beginTx(db1);
@@ -558,7 +570,7 @@ describe("Recovery", () => {
     await closeGraphDB(db1);
 
     // Reopen
-    const db2 = await openGraphDB(testDir);
+    const db2 = await openGraphDB(testPath);
 
     expect(getNodeByKey(db2, "committed")).toBe(n1);
     expect(getNodeByKey(db2, "uncommitted")).toBeNull();
@@ -567,7 +579,7 @@ describe("Recovery", () => {
   });
 
   test("recovery after compaction", async () => {
-    const db1 = await openGraphDB(testDir);
+    const db1 = await openGraphDB(testPath);
 
     const tx1 = beginTx(db1);
     const knows = defineEtype(tx1, "knows");
@@ -576,7 +588,7 @@ describe("Recovery", () => {
     addEdge(tx1, n1, knows, n2);
     await commit(tx1);
 
-    await optimize(db1);
+    await optimizeSingleFile(db1);
 
     const tx2 = beginTx(db1);
     const n3 = createNode(tx2, { key: "after-compact" });
@@ -586,7 +598,7 @@ describe("Recovery", () => {
     await closeGraphDB(db1);
 
     // Reopen - should recover WAL after snapshot
-    const db2 = await openGraphDB(testDir);
+    const db2 = await openGraphDB(testPath);
 
     expect(getNodeByKey(db2, "before-compact")).toBe(n1);
     expect(getNodeByKey(db2, "after-compact")).toBe(n3);

@@ -30,11 +30,13 @@ import type { GraphDB, NodeID } from "../src/types.ts";
 
 describe("Cache Integration", () => {
   let testDir: string;
+  let testPath: string;
   let db: GraphDB;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-cache-test-"));
-    db = await openGraphDB(testDir, {
+    testPath = join(testDir, "db.raydb");
+    db = await openGraphDB(testPath, {
       cache: {
         enabled: true,
         propertyCache: { maxNodeProps: 100, maxEdgeProps: 100 },
@@ -303,7 +305,7 @@ describe("Cache Integration", () => {
     });
 
     test("getCacheStats returns null when cache disabled", async () => {
-      const dbNoCache = await openGraphDB(testDir + "-nocache", {
+      const dbNoCache = await openGraphDB(testPath + "-nocache", {
         cache: { enabled: false },
       });
       const stats = getCacheStats(dbNoCache);
@@ -311,4 +313,3 @@ describe("Cache Integration", () => {
     });
   });
 });
-

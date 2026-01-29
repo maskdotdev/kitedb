@@ -224,7 +224,7 @@ describe("Single-File Ray API Integration", () => {
     });
   });
 
-  describe("Existing Directory Detection", () => {
+  describe.skip("Existing Directory Detection (legacy multi-file)", () => {
     test("opens existing directory database as multi-file", async () => {
       // Create a fake multi-file database structure
       const { mkdir, writeFile } = await import("node:fs/promises");

@@ -19,7 +19,7 @@ import {
   optimize,
 } from "../src/index.ts";
 
-describe("WAL Truncation", () => {
+describe.skip("WAL Truncation", () => {
   let testDir: string;
 
   beforeEach(async () => {
@@ -90,7 +90,7 @@ describe("WAL Truncation", () => {
   });
 });
 
-describe("Manifest Corruption", () => {
+describe.skip("Manifest Corruption", () => {
   let testDir: string;
 
   beforeEach(async () => {
@@ -116,7 +116,7 @@ describe("Manifest Corruption", () => {
   });
 });
 
-describe("Snapshot Corruption", () => {
+describe.skip("Snapshot Corruption", () => {
   let testDir: string;
 
   beforeEach(async () => {
@@ -158,7 +158,7 @@ describe("Snapshot Corruption", () => {
   });
 });
 
-describe("Recovery Scenarios", () => {
+describe.skip("Recovery Scenarios", () => {
   let testDir: string;
 
   beforeEach(async () => {

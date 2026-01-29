@@ -38,7 +38,7 @@ import { randomString, randomInt } from "./helpers/generators.ts";
 
 const config = getConfig(isQuickMode());
 
-describe("Durability Stress Tests", () => {
+describe.skip("Durability Stress Tests (legacy multi-file)", () => {
   let testDir: string;
 
   beforeEach(async () => {

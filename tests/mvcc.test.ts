@@ -673,9 +673,11 @@ describe("MvccManager", () => {
 
 describe("GraphDB MVCC Integration", () => {
   let testDir: string;
+  let testPath: string;
 
   beforeEach(async () => {
     testDir = await mkdtemp(join(tmpdir(), "ray-mvcc-test-"));
+    testPath = join(testDir, "db.raydb");
   });
 
   afterEach(async () => {
@@ -683,13 +685,13 @@ describe("GraphDB MVCC Integration", () => {
   });
 
   test("open database with MVCC enabled", async () => {
-    const db = await openGraphDB(testDir, { mvcc: true });
+    const db = await openGraphDB(testPath, { mvcc: true });
     expect(db._mvcc).toBeDefined();
     await closeGraphDB(db);
   });
 
   test("concurrent transactions allowed in MVCC mode", async () => {
-    const db = await openGraphDB(testDir, { mvcc: true });
+    const db = await openGraphDB(testPath, { mvcc: true });
 
     const tx1 = beginTx(db);
     const tx2 = beginTx(db); // Should not throw
@@ -701,7 +703,7 @@ describe("GraphDB MVCC Integration", () => {
   });
 
   test("transaction operations update version chains", async () => {
-    const db = await openGraphDB(testDir, { mvcc: true });
+    const db = await openGraphDB(testPath, { mvcc: true });
     const mvcc = db._mvcc as MvccManager;
 
     // First transaction creates a node with no concurrent readers
@@ -733,7 +735,7 @@ describe("GraphDB MVCC Integration", () => {
   });
 
   test("transaction rollback cleans up MVCC state", async () => {
-    const db = await openGraphDB(testDir, { mvcc: true });
+    const db = await openGraphDB(testPath, { mvcc: true });
 
     const tx = beginTx(db);
     createNode(tx, { key: "test" });
@@ -748,7 +750,7 @@ describe("GraphDB MVCC Integration", () => {
   });
 
   test("conflict error on concurrent modification", async () => {
-    const db = await openGraphDB(testDir, { mvcc: true });
+    const db = await openGraphDB(testPath, { mvcc: true });
 
     const tx1 = beginTx(db);
     const nodeId1 = createNode(tx1, { key: "node1" });
@@ -774,7 +776,7 @@ describe("GraphDB MVCC Integration", () => {
   });
 
   test("node operations with MVCC", async () => {
-    const db = await openGraphDB(testDir, { mvcc: true });
+    const db = await openGraphDB(testPath, { mvcc: true });
 
     const tx = beginTx(db);
     const nodeId = createNode(tx, { key: "test" });
@@ -795,7 +797,7 @@ describe("GraphDB MVCC Integration", () => {
   });
 
   test("edge operations with MVCC", async () => {
-    const db = await openGraphDB(testDir, { mvcc: true });
+    const db = await openGraphDB(testPath, { mvcc: true });
 
     const tx = beginTx(db);
     const etype = defineEtype(tx, "KNOWS");
@@ -819,7 +821,7 @@ describe("GraphDB MVCC Integration", () => {
   });
 
   test("property operations with MVCC", async () => {
-    const db = await openGraphDB(testDir, { mvcc: true });
+    const db = await openGraphDB(testPath, { mvcc: true });
 
     const tx = beginTx(db);
     const propKey = definePropkey(tx, "name");
@@ -838,7 +840,7 @@ describe("GraphDB MVCC Integration", () => {
   });
 
   test("snapshot isolation: read sees consistent state", async () => {
-    const db = await openGraphDB(testDir, { mvcc: true });
+    const db = await openGraphDB(testPath, { mvcc: true });
 
     // Create initial node
     const tx1 = beginTx(db);
@@ -1030,4 +1032,3 @@ describe("SOA Storage", () => {
     expect(vc.isSoaEnabled()).toBe(false);
   });
 });
-
