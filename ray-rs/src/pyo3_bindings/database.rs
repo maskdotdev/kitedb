@@ -174,6 +174,21 @@ impl PyDatabase {
     Ok(())
   }
 
+  fn __enter__(slf: PyRef<'_, Self>) -> PyResult<PyRef<'_, Self>> {
+    Ok(slf)
+  }
+
+  #[pyo3(signature = (_exc_type=None, _exc_value=None, _traceback=None))]
+  fn __exit__(
+    &self,
+    _exc_type: Option<PyObject>,
+    _exc_value: Option<PyObject>,
+    _traceback: Option<PyObject>,
+  ) -> PyResult<bool> {
+    self.close()?;
+    Ok(false)
+  }
+
   #[getter]
   fn is_open(&self) -> PyResult<bool> {
     Ok(
@@ -1025,6 +1040,71 @@ impl PyDatabase {
         direction.clone()
       )
     )
+  }
+
+  #[pyo3(signature = (source, target, etype=None, max_depth=None, direction=None))]
+  fn has_path(
+    &self,
+    source: i64,
+    target: i64,
+    etype: Option<u32>,
+    max_depth: Option<u32>,
+    direction: Option<String>,
+  ) -> PyResult<bool> {
+    let path = dispatch_ok!(
+      self,
+      |db| graph_traversal::find_path_bfs_single(
+        db,
+        source as NodeId,
+        target as NodeId,
+        etype,
+        max_depth,
+        direction.clone()
+      ),
+      |db| graph_traversal::find_path_bfs_graph(
+        db,
+        source as NodeId,
+        target as NodeId,
+        etype,
+        max_depth,
+        direction.clone()
+      )
+    )?;
+    Ok(path.found)
+  }
+
+  #[pyo3(signature = (source, max_depth, etype=None))]
+  fn reachable_nodes(
+    &self,
+    source: i64,
+    max_depth: u32,
+    etype: Option<u32>,
+  ) -> PyResult<Vec<i64>> {
+    let min_depth = Some(1);
+    let direction = Some("out".to_string());
+    let unique = Some(true);
+    let results = dispatch_ok!(
+      self,
+      |db| graph_traversal::traverse_single(
+        db,
+        source as NodeId,
+        max_depth,
+        etype,
+        min_depth,
+        direction.clone(),
+        unique
+      ),
+      |db| graph_traversal::traverse_graph(
+        db,
+        source as NodeId,
+        max_depth,
+        etype,
+        min_depth,
+        direction.clone(),
+        unique
+      )
+    )?;
+    Ok(results.into_iter().map(|r| r.node_id).collect())
   }
 
   // ==========================================================================
