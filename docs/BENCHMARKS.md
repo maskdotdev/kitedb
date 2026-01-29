@@ -15,40 +15,28 @@ This document summarizes benchmark results comparing RayDB against other graph d
 
 ### RayDB Internal Benchmarks
 
-```bash
-# Main benchmark (RayDB only)
-bun run bench/benchmark.ts
-
-# MVCC performance regression testing
-bun run bench:mvcc:v2
-
-# Single-file format benchmark
-bun run bench/benchmark-single-file.ts
-```
+| Command | Description |
+|---------|-------------|
+| `bun run bench/benchmark.ts` | Main benchmark (RayDB only) |
+| `bun run bench:mvcc:v2` | MVCC performance regression testing |
+| `bun run bench/benchmark-single-file.ts` | Single-file format benchmark |
 
 ### Memgraph Comparison
 
 Requires Docker to be installed.
 
-```bash
-# Default scale (10k nodes, 50k edges)
-bun run bench:memgraph
-
-# Both small (10k/50k) and large (100k/1M) scales
-bun run bench:memgraph:scale
-
-# Custom configuration
-bun run bench/benchmark-memgraph.ts --nodes 50000 --edges 250000 --iterations 5000
-
-# Skip Docker (if Memgraph is already running)
-bun run bench/benchmark-memgraph.ts --skip-docker
-```
+| Command | Description |
+|---------|-------------|
+| `bun run bench:memgraph` | Default scale (10k nodes, 50k edges) |
+| `bun run bench:memgraph:scale` | Both small (10k/50k) and large (100k/1M) scales |
+| `bun run bench/benchmark-memgraph.ts --nodes 50000 --edges 250000 --iterations 5000` | Custom configuration |
+| `bun run bench/benchmark-memgraph.ts --skip-docker` | Skip Docker (if Memgraph is already running) |
 
 ### Batch Write Stress Test
 
-```bash
-bun run bench/memgraph-batch-test.ts
-```
+| Command | Description |
+|---------|-------------|
+| `bun run bench/memgraph-batch-test.ts` | Run batch write stress test |
 
 ---
 
@@ -64,44 +52,78 @@ bun run bench/memgraph-batch-test.ts
 
 ### Results: Small Scale (10k nodes, 50k edges)
 
-| Category | RayDB p50 | Memgraph p50 | Speedup |
-|----------|-----------|--------------|---------|
-| **Key Lookups** |
-| Uniform random | 1.23us | 125us | 101x |
-| Sequential | 0.89us | 98us | 110x |
-| Missing keys | 0.45us | 89us | 198x |
-| **1-Hop Traversals** |
-| Out neighbors | 2.34us | 156us | 67x |
-| In neighbors | 2.45us | 162us | 66x |
-| Filtered (by type) | 1.89us | 134us | 71x |
-| **Edge Existence** |
-| Random check | 0.67us | 112us | 167x |
-| **Multi-Hop** |
-| 2-hop traversal | 12.3us | 890us | 72x |
-| 3-hop traversal | 45.7us | 2340us | 51x |
-| **Writes** |
+#### Key Lookups
+
+| Operation | RayDB p50 | Memgraph p50 | Speedup |
+|-----------|-----------|--------------|---------|
+| Uniform random | 1.23μs | 125μs | 101x |
+| Sequential | 0.89μs | 98μs | 110x |
+| Missing keys | 0.45μs | 89μs | 198x |
+
+#### 1-Hop Traversals
+
+| Operation | RayDB p50 | Memgraph p50 | Speedup |
+|-----------|-----------|--------------|---------|
+| Out neighbors | 2.34μs | 156μs | 67x |
+| In neighbors | 2.45μs | 162μs | 66x |
+| Filtered (by type) | 1.89μs | 134μs | 71x |
+
+#### Edge Existence
+
+| Operation | RayDB p50 | Memgraph p50 | Speedup |
+|-----------|-----------|--------------|---------|
+| Random check | 0.67μs | 112μs | 167x |
+
+#### Multi-Hop
+
+| Operation | RayDB p50 | Memgraph p50 | Speedup |
+|-----------|-----------|--------------|---------|
+| 2-hop traversal | 12.3μs | 890μs | 72x |
+| 3-hop traversal | 45.7μs | 2340μs | 51x |
+
+#### Writes
+
+| Operation | RayDB p50 | Memgraph p50 | Speedup |
+|-----------|-----------|--------------|---------|
 | Batch insert (5k) | 23.5ms | 456ms | 19x |
 
 **Overall: ~150x faster**
 
 ### Results: Large Scale (100k nodes, 1M edges)
 
-| Category | RayDB p50 | Memgraph p50 | Speedup |
-|----------|-----------|--------------|---------|
-| **Key Lookups** |
-| Uniform random | 750ns | 306us | 408x |
-| Sequential | 333ns | 254us | 763x |
-| Missing keys | 375ns | 292us | 780x |
-| **1-Hop Traversals** |
-| Out neighbors | 5.75us | 277us | 48x |
-| In neighbors | 3.96us | 202us | 51x |
-| Filtered (by type) | 2.67us | 152us | 57x |
-| **Edge Existence** |
-| Random check | 916ns | 150us | 164x |
-| **Multi-Hop** |
-| 2-hop traversal | 5.54us | 482us | 87x |
-| 3-hop traversal | 27.3us | 19.9ms | 730x |
-| **Writes** |
+#### Key Lookups
+
+| Operation | RayDB p50 | Memgraph p50 | Speedup |
+|-----------|-----------|--------------|---------|
+| Uniform random | 750ns | 306μs | 408x |
+| Sequential | 333ns | 254μs | 763x |
+| Missing keys | 375ns | 292μs | 780x |
+
+#### 1-Hop Traversals
+
+| Operation | RayDB p50 | Memgraph p50 | Speedup |
+|-----------|-----------|--------------|---------|
+| Out neighbors | 5.75μs | 277μs | 48x |
+| In neighbors | 3.96μs | 202μs | 51x |
+| Filtered (by type) | 2.67μs | 152μs | 57x |
+
+#### Edge Existence
+
+| Operation | RayDB p50 | Memgraph p50 | Speedup |
+|-----------|-----------|--------------|---------|
+| Random check | 916ns | 150μs | 164x |
+
+#### Multi-Hop
+
+| Operation | RayDB p50 | Memgraph p50 | Speedup |
+|-----------|-----------|--------------|---------|
+| 2-hop traversal | 5.54μs | 482μs | 87x |
+| 3-hop traversal | 27.3μs | 19.9ms | 730x |
+
+#### Writes
+
+| Operation | RayDB p50 | Memgraph p50 | Speedup |
+|-----------|-----------|--------------|---------|
 | Batch insert (10k) | 35.1ms | 51.1ms | 1.5x |
 
 **Overall: ~118x faster**
@@ -182,21 +204,21 @@ Testing optimal batch sizes for writes (100k nodes total):
 
 ### Memory Access Patterns
 
-**RayDB (CSR format):**
-```
-offsets:      [0, 2, 3, 4, 4]     ← Sequential read
-destinations: [B, C, D, A]        ← Sequential read
-              ↑
-          CPU prefetcher works perfectly
-```
+#### RayDB (CSR format)
 
-**Traditional adjacency lists:**
-```
-A → [B] → [C] → null    ← Pointer chasing
-    ↓       ↓
-  Random  Random        ← Cache misses
-  memory  memory
-```
+| Array | Contents | Access Pattern |
+|-------|----------|----------------|
+| `offsets` | `[0, 2, 3, 4, 4]` | Sequential read |
+| `destinations` | `[B, C, D, A]` | Sequential read |
+
+CPU prefetcher works perfectly with contiguous memory layout.
+
+#### Traditional adjacency lists
+
+| Structure | Access Pattern | Result |
+|-----------|----------------|--------|
+| `A → [B] → [C] → null` | Pointer chasing | Random memory access |
+| Each pointer dereference | Cache miss likely | Poor cache utilization |
 
 ### When to Use Each
 
@@ -224,22 +246,17 @@ A → [B] → [C] → null    ← Pointer chasing
 
 ### Running Full Benchmark Suite
 
-```bash
-# Install dependencies
-bun install
+| Command | Description |
+|---------|-------------|
+| `bun install` | Install dependencies |
+| `bun run bench:memgraph:scale` | Run comparison at both scales |
 
-# Run comparison at both scales
-bun run bench:memgraph:scale
-
-# Results are saved to bench/results/benchmark-memgraph-<timestamp>.txt
-```
+Results are saved to `bench/results/benchmark-memgraph-<timestamp>.txt`
 
 ### Environment Variables
 
-```bash
-# Skip Docker management (use existing Memgraph instance)
-bun run bench/benchmark-memgraph.ts --skip-docker
+| Command | Description |
+|---------|-------------|
+| `bun run bench/benchmark-memgraph.ts --skip-docker` | Skip Docker management (use existing Memgraph instance) |
 
-# Custom Memgraph URI (if running externally)
-# Edit bench/memgraph/docker.ts: MEMGRAPH_URI constant
-```
+To use a custom Memgraph URI, edit `bench/memgraph/docker.ts` and modify the `MEMGRAPH_URI` constant.

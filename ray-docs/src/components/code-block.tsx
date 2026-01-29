@@ -10,6 +10,8 @@ interface CodeBlockProps {
 	class?: string;
 	showLineNumbers?: boolean;
 	showHeader?: boolean;
+	/** Minimal inline style - just highlighted code with subtle background */
+	inline?: boolean;
 }
 
 export const CodeBlock: Component<CodeBlockProps> = (props) => {
@@ -28,8 +30,8 @@ export const CodeBlock: Component<CodeBlockProps> = (props) => {
 
 	// Calculate line numbers
 	const lineCount = createMemo(() => props.code.split('\n').length);
-	const showLines = () => props.showLineNumbers ?? true; // Default to true
-	const showHeader = () => props.showHeader ?? true; // Default to true
+	const showLines = () => props.showLineNumbers ?? !props.inline; // Default to true unless inline
+	const showHeader = () => props.showHeader ?? !props.inline; // Default to true unless inline
 
 	const copyToClipboard = async () => {
 		try {
@@ -40,6 +42,39 @@ export const CodeBlock: Component<CodeBlockProps> = (props) => {
 			console.error("Failed to copy:", err);
 		}
 	};
+
+	// Inline mode - minimal styling with just Shiki highlighting
+	if (props.inline) {
+		return (
+			<div class={`group relative ${props.class ?? ""}`}>
+				<Suspense
+					fallback={
+						<pre class="text-sm leading-relaxed p-4 rounded-lg bg-[#0d1117] overflow-x-auto">
+							<code class="font-mono text-slate-300 whitespace-pre">
+								{props.code}
+							</code>
+						</pre>
+					}
+				>
+					<Show
+						when={highlightedHtml()}
+						fallback={
+							<pre class="text-sm leading-relaxed p-4 rounded-lg bg-[#0d1117] overflow-x-auto">
+								<code class="font-mono text-slate-300 whitespace-pre">
+									{props.code}
+								</code>
+							</pre>
+						}
+					>
+						<div
+							class="shiki-wrapper [&_pre]:text-sm [&_pre]:leading-relaxed [&_pre]:p-4 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_code]:font-mono"
+							innerHTML={highlightedHtml() ?? undefined}
+						/>
+					</Show>
+				</Suspense>
+			</div>
+		);
+	}
 
 	return (
 		<div

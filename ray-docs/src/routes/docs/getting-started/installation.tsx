@@ -10,43 +10,36 @@ function InstallationPage() {
   return (
     <DocPage slug="getting-started/installation">
       <p>
-        RayDB is available on npm and works with Bun, Node.js, and any TypeScript project.
+        RayDB is available for JavaScript/TypeScript, Rust, and Python.
       </p>
+
+      <h2 id="javascript">JavaScript / TypeScript</h2>
+      <CodeBlock
+        code={`bun add @ray-db/ray
+npm install @ray-db/ray
+pnpm add @ray-db/ray
+yarn add @ray-db/ray`}
+        language="bash"
+        inline
+      />
+
+      <h2 id="rust">Rust</h2>
+      <CodeBlock code="cargo add raydb" language="bash" inline />
+
+      <h2 id="python">Python</h2>
+      <CodeBlock
+        code={`pip install raydb
+uv add raydb`}
+        language="bash"
+        inline
+      />
 
       <h2 id="requirements">Requirements</h2>
       <ul>
-        <li><strong>Bun</strong> 1.0+ (recommended) or <strong>Node.js</strong> 18+</li>
-        <li><strong>TypeScript</strong> 5.0+</li>
+        <li><strong>JavaScript/TypeScript:</strong> Bun 1.0+, Node.js 18+, or Deno</li>
+        <li><strong>Rust:</strong> Rust 1.70+</li>
+        <li><strong>Python:</strong> Python 3.9+</li>
       </ul>
-
-      <h2 id="install-bun">Install with Bun</h2>
-      <CodeBlock code="bun add @ray-db/ray" language="bash" />
-
-      <h2 id="install-npm">Install with npm</h2>
-      <CodeBlock code="npm install @ray-db/ray" language="bash" />
-
-      <h2 id="install-pnpm">Install with pnpm</h2>
-      <CodeBlock code="pnpm add @ray-db/ray" language="bash" />
-
-      <h2 id="install-yarn">Install with Yarn</h2>
-      <CodeBlock code="yarn add @ray-db/ray" language="bash" />
-
-      <h2 id="typescript">TypeScript Configuration</h2>
-      <p>
-        RayDB is written in TypeScript and includes type definitions. For the best experience, ensure your <code>tsconfig.json</code> has:
-      </p>
-      <CodeBlock
-        code={`{
-  "compilerOptions": {
-    "strict": true,
-    "moduleResolution": "bundler",
-    "target": "ES2022",
-    "module": "ESNext"
-  }
-}`}
-        language="json"
-        filename="tsconfig.json"
-      />
 
       <h2 id="verify">Verify Installation</h2>
       <p>Create a simple test file:</p>
@@ -74,9 +67,9 @@ await db.close();`}
       <p>Run it:</p>
       <CodeBlock
         code={`bun run test.ts
-# or
 npx tsx test.ts`}
         language="bash"
+        inline
       />
 
       <h2 id="next-steps">Next Steps</h2>
