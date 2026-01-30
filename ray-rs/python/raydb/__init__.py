@@ -9,10 +9,10 @@ A Python interface to the RayDB graph database, providing:
 - Graph traversal and pathfinding (BFS, Dijkstra, A*)
 
 Fluent API (Recommended):
-    >>> from raydb import ray, define_node, define_edge, prop, optional
+    >>> from raydb import ray, node, edge, prop, optional
     >>> 
     >>> # Define schema
-    >>> user = define_node("user",
+    >>> user = node("user",
     ...     key=lambda id: f"user:{id}",
     ...     props={
     ...         "name": prop.string("name"),
@@ -21,7 +21,7 @@ Fluent API (Recommended):
     ...     }
     ... )
     >>> 
-    >>> knows = define_edge("knows", {"since": prop.int("since")})
+    >>> knows = edge("knows", {"since": prop.int("since")})
     >>> 
     >>> # Open database and use fluent API
     >>> with ray("./my-graph", nodes=[user], edges=[knows]) as db:
@@ -117,9 +117,11 @@ from raydb.schema import (
     PropBuilder,
     optional,
     NodeDef,
-    define_node,
+    node,
+    define_node,  # backwards compat
     EdgeDef,
-    define_edge,
+    edge,
+    define_edge,  # backwards compat
     PropsSchema,
 )
 
@@ -173,8 +175,10 @@ __all__ = [
     "create_vector_index",
     
     # Schema builders
-    "define_node",
-    "define_edge",
+    "node",
+    "edge",
+    "define_node",  # backwards compat alias
+    "define_edge",  # backwards compat alias
     "prop",
     "optional",
     "PropDef",
