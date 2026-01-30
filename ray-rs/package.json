@@ -137,9 +137,9 @@
   },
   "packageManager": "bun@1.2.4",
   "optionalDependencies": {
-    "@ray-db/core-darwin-arm64": "0.1.7",
-    "@ray-db/core-darwin-x64": "0.1.7",
-    "@ray-db/core-linux-x64-gnu": "0.1.7",
-    "@ray-db/core-win32-x64-msvc": "0.1.7"
+    "@ray-db/core-darwin-arm64": "0.2.1",
+    "@ray-db/core-darwin-x64": "0.2.1",
+    "@ray-db/core-linux-x64-gnu": "0.2.1",
+    "@ray-db/core-win32-x64-msvc": "0.2.1"
   }
 }
