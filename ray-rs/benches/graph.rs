@@ -6,9 +6,9 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use std::collections::HashMap;
 use tempfile::tempdir;
 
-extern crate raydb_core;
-use raydb_core::api::ray::{BatchOp, EdgeDef, NodeDef, PropDef, Ray, RayOptions};
-use raydb_core::types::PropValue;
+extern crate raydb;
+use raydb::api::ray::{BatchOp, EdgeDef, NodeDef, PropDef, Ray, RayOptions};
+use raydb::types::PropValue;
 
 fn create_test_schema() -> RayOptions {
   let user = NodeDef::new("User", "user:")
@@ -31,23 +31,27 @@ fn bench_create_node(c: &mut Criterion) {
   for count in [100, 500, 1000].iter() {
     group.throughput(Throughput::Elements(*count as u64));
 
-    group.bench_with_input(BenchmarkId::new("count", count), count, |bencher, &count| {
-      bencher.iter_with_setup(
-        || {
-          let temp_dir = tempdir().unwrap();
-          let ray = Ray::open(temp_dir.path(), create_test_schema()).unwrap();
-          (temp_dir, ray)
-        },
-        |(_temp_dir, mut ray)| {
-          for i in 0..count {
-            let mut props = HashMap::new();
-            props.insert("name".to_string(), PropValue::String(format!("User{i}")));
-            props.insert("age".to_string(), PropValue::I64(i as i64));
-            let _ = black_box(ray.create_node("User", &format!("user{i}"), props));
-          }
-        },
-      );
-    });
+    group.bench_with_input(
+      BenchmarkId::new("count", count),
+      count,
+      |bencher, &count| {
+        bencher.iter_with_setup(
+          || {
+            let temp_dir = tempdir().unwrap();
+            let ray = Ray::open(temp_dir.path(), create_test_schema()).unwrap();
+            (temp_dir, ray)
+          },
+          |(_temp_dir, mut ray)| {
+            for i in 0..count {
+              let mut props = HashMap::new();
+              props.insert("name".to_string(), PropValue::String(format!("User{i}")));
+              props.insert("age".to_string(), PropValue::I64(i as i64));
+              let _ = black_box(ray.create_node("User", &format!("user{i}"), props));
+            }
+          },
+        );
+      },
+    );
   }
 
   group.finish();
@@ -277,11 +281,7 @@ fn bench_multi_hop_traversal(c: &mut Criterion) {
   // Benchmark single hop repeatedly (simulating multi-hop with manual iteration)
   group.bench_function("single_hop", |bencher| {
     bencher.iter(|| {
-      let result = ray
-        .from(node_ids[0])
-        .out(Some("FOLLOWS"))
-        .unwrap()
-        .to_vec();
+      let result = ray.from(node_ids[0]).out(Some("FOLLOWS")).unwrap().to_vec();
       black_box(result)
     });
   });
@@ -370,18 +370,12 @@ fn bench_set_prop(c: &mut Criterion) {
       || {
         let temp_dir = tempdir().unwrap();
         let mut ray = Ray::open(temp_dir.path(), create_test_schema()).unwrap();
-        let node = ray
-          .create_node("User", "testuser", HashMap::new())
-          .unwrap();
+        let node = ray.create_node("User", "testuser", HashMap::new()).unwrap();
         (temp_dir, ray, node.id)
       },
       |(_temp_dir, mut ray, node_id)| {
         for i in 0..100 {
-          let _ = black_box(ray.set_prop(
-            node_id,
-            "name",
-            PropValue::String(format!("Name{i}")),
-          ));
+          let _ = black_box(ray.set_prop(node_id, "name", PropValue::String(format!("Name{i}"))));
         }
       },
     );
@@ -391,7 +385,7 @@ fn bench_set_prop(c: &mut Criterion) {
 }
 
 // =============================================================================
-// Pathfinding Benchmarks  
+// Pathfinding Benchmarks
 // =============================================================================
 
 fn bench_shortest_path(c: &mut Criterion) {
@@ -416,7 +410,9 @@ fn bench_shortest_path(c: &mut Criterion) {
       let idx = row * grid_size + col;
       // Right neighbor
       if col < grid_size - 1 {
-        ray.link(node_ids[idx], "FOLLOWS", node_ids[idx + 1]).unwrap();
+        ray
+          .link(node_ids[idx], "FOLLOWS", node_ids[idx + 1])
+          .unwrap();
       }
       // Down neighbor
       if row < grid_size - 1 {
@@ -433,7 +429,8 @@ fn bench_shortest_path(c: &mut Criterion) {
 
   group.bench_function("bfs_10x10_grid", |bencher| {
     bencher.iter(|| {
-      let result = ray.shortest_path(start, end)
+      let result = ray
+        .shortest_path(start, end)
         .via("FOLLOWS")
         .unwrap()
         .find_bfs();
@@ -489,25 +486,29 @@ fn bench_batch_create_node(c: &mut Criterion) {
   for count in [10, 100, 1000].iter() {
     group.throughput(Throughput::Elements(*count as u64));
 
-    group.bench_with_input(BenchmarkId::new("count", count), count, |bencher, &count| {
-      let temp_dir = tempdir().unwrap();
-      let mut ray = Ray::open(temp_dir.path(), create_test_schema()).unwrap();
-      let mut batch_num = 0;
+    group.bench_with_input(
+      BenchmarkId::new("count", count),
+      count,
+      |bencher, &count| {
+        let temp_dir = tempdir().unwrap();
+        let mut ray = Ray::open(temp_dir.path(), create_test_schema()).unwrap();
+        let mut batch_num = 0;
 
-      bencher.iter(|| {
-        let ops: Vec<BatchOp> = (0..count)
-          .map(|i| BatchOp::CreateNode {
-            node_type: "User".to_string(),
-            key_suffix: format!("batch{batch_num}_{i}"),
-            props: HashMap::new(),
-          })
-          .collect();
-        batch_num += 1;
-        let _ = black_box(ray.batch(ops));
-      });
+        bencher.iter(|| {
+          let ops: Vec<BatchOp> = (0..count)
+            .map(|i| BatchOp::CreateNode {
+              node_type: "User".to_string(),
+              key_suffix: format!("batch{batch_num}_{i}"),
+              props: HashMap::new(),
+            })
+            .collect();
+          batch_num += 1;
+          let _ = black_box(ray.batch(ops));
+        });
 
-      ray.close().unwrap();
-    });
+        ray.close().unwrap();
+      },
+    );
   }
 
   group.finish();
