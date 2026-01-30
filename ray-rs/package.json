@@ -1,21 +1,27 @@
 {
   "name": "@ray-db/core",
   "version": "0.1.7",
-  "description": "RayDB is a fast, lightweight, and embedded graph database for Rust Python and TS",
+  "description": "RayDB - A fast, lightweight, embedded graph database for Node.js",
+  "author": "mask <mask@mask.dev>",
+  "homepage": "https://github.com/maskdotdev/ray",
   "main": "index.js",
   "repository": {
     "type": "git",
     "url": "https://github.com/maskdotdev/ray"
   },
+  "bugs": {
+    "url": "https://github.com/maskdotdev/ray/issues"
+  },
   "license": "MIT",
   "browser": "browser.js",
   "keywords": [
-    "napi-rs",
-    "NAPI",
-    "N-API",
-    "Rust",
-    "node-addon",
-    "node-addon-api"
+    "raydb",
+    "graph-database",
+    "embedded-database",
+    "database",
+    "graph",
+    "rust",
+    "napi-rs"
   ],
   "files": [
     "index.d.ts",
