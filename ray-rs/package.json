@@ -28,14 +28,8 @@
       "x86_64-pc-windows-msvc",
       "x86_64-apple-darwin",
       "x86_64-unknown-linux-gnu",
-      "aarch64-apple-darwin",
-      "wasm32-wasip1-threads"
-    ],
-    "wasm": {
-      "browser": {
-        "fs": true
-      }
-    }
+      "aarch64-apple-darwin"
+    ]
   },
   "engines": {
     "node": ">= 12.22.0 < 13 || >= 14.17.0 < 15 || >= 15.12.0 < 16 || >= 16.0.0"
@@ -120,7 +114,6 @@
     "@ray-db/core-win32-x64-msvc": "0.1.7",
     "@ray-db/core-darwin-x64": "0.1.7",
     "@ray-db/core-linux-x64-gnu": "0.1.7",
-    "@ray-db/core-darwin-arm64": "0.1.7",
-    "@ray-db/core-wasm32-wasi": "0.1.7"
+    "@ray-db/core-darwin-arm64": "0.1.7"
   }
 }
