@@ -440,6 +440,8 @@ export type InferEdge<E extends EdgeDef> =
 /**
  * Define a node type with properties
  *
+ * @deprecated Since 0.2.0. Use `node()` instead.
+ *
  * Creates a node definition that can be used for all node operations
  * (insert, update, delete, query). Provides full type inference for
  * insert values and return types.
@@ -454,7 +456,8 @@ export type InferEdge<E extends EdgeDef> =
  *
  * @example
  * ```ts
- * const user = defineNode('user', {
+ * // Use node() instead:
+ * const user = node('user', {
  *   key: (id: string) => `user:${id}`,
  *   props: {
  *     name: prop.string('name'),
@@ -462,10 +465,6 @@ export type InferEdge<E extends EdgeDef> =
  *     age: optional(prop.int('age')),
  *   },
  * });
- *
- * // Type inference:
- * // InferNodeInsert<typeof user> = { key: string; name: string; email: string; age?: bigint; }
- * // InferNode<typeof user> = { $id: number; $key: string; name: string; email: string; age?: bigint; }
  * ```
  */
 export function defineNode<
@@ -484,6 +483,8 @@ export function defineNode<
 /**
  * Define an edge type with properties
  *
+ * @deprecated Since 0.2.0. Use `edge()` instead.
+ *
  * Creates an edge definition that can be used for all edge operations
  * (link, unlink, query). Edges are directional and can have properties.
  *
@@ -496,18 +497,13 @@ export function defineNode<
  *
  * @example
  * ```ts
- * // Edge with properties
- * const knows = defineEdge('knows', {
+ * // Use edge() instead:
+ * const knows = edge('knows', {
  *   since: prop.int('since'),
  *   weight: optional(prop.float('weight')),
  * });
  *
- * // Edge without properties
- * const follows = defineEdge('follows');
- *
- * // Type inference:
- * // InferEdgeProps<typeof knows> = { since: bigint; weight?: number; }
- * // InferEdge<typeof knows> = { $src: number; $dst: number; since: bigint; weight?: number; }
+ * const follows = edge('follows');
  * ```
  */
 export function defineEdge<Name extends string, P extends EdgePropsSchema>(
@@ -531,6 +527,83 @@ export function defineEdge<Name extends string, P extends EdgePropsSchema>(
     name,
     props: props ?? ({} as EmptyEdgeProps),
   };
+}
+
+// ============================================================================
+// New API (0.2.0+): node() and edge()
+// ============================================================================
+
+/**
+ * Define a node type (recommended API)
+ *
+ * Creates a type-safe node definition with key generation and properties.
+ * This is the preferred way to define nodes in 0.2.0+.
+ *
+ * @typeParam Name - The node type name (must be unique per schema)
+ * @typeParam KeyArg - The argument type for key generation (usually string or number)
+ * @typeParam P - The properties schema
+ *
+ * @param name - The node type name (must be unique)
+ * @param config - Configuration with key function and properties
+ * @returns A NodeDef that can be used with the database API
+ *
+ * @example
+ * ```ts
+ * const user = node('user', {
+ *   key: (id: string) => `user:${id}`,
+ *   props: {
+ *     name: prop.string('name'),
+ *     email: prop.string('email'),
+ *     age: optional(prop.int('age')),
+ *   },
+ * });
+ * ```
+ */
+export function node<
+  Name extends string,
+  KeyArg extends string | number,
+  P extends PropsSchema,
+>(name: Name, config: NodeConfig<KeyArg, P>): NodeDef<Name, KeyArg, P> {
+  return defineNode(name, config);
+}
+
+/**
+ * Define an edge type with properties (recommended API)
+ *
+ * Creates an edge definition that can be used for all edge operations.
+ * This is the preferred way to define edges in 0.2.0+.
+ *
+ * @example
+ * ```ts
+ * const knows = edge('knows', {
+ *   since: prop.int('since'),
+ *   weight: optional(prop.float('weight')),
+ * });
+ *
+ * const follows = edge('follows');
+ * ```
+ */
+export function edge<Name extends string, P extends EdgePropsSchema>(
+  name: Name,
+  props: P,
+): EdgeDef<Name, P>;
+
+/**
+ * Define an edge type with no properties
+ */
+export function edge<Name extends string>(
+  name: Name,
+): EdgeDef<Name, EmptyEdgeProps>;
+
+export function edge<Name extends string, P extends EdgePropsSchema>(
+  name: Name,
+  props?: P,
+): EdgeDef<Name, P | EmptyEdgeProps> {
+  return {
+    _tag: "edge",
+    name,
+    props: props ?? ({} as EmptyEdgeProps),
+  } as EdgeDef<Name, P | EmptyEdgeProps>;
 }
 
 // ============================================================================

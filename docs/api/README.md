@@ -16,36 +16,36 @@ The API consists of five main modules:
 
 ### Schema-First Design
 
-Define your graph structure upfront using `defineNode()` and `defineEdge()`:
+Define your graph structure upfront using `node()` and `edge()`:
 
 ```typescript
-import { defineNode, defineEdge, prop, optional } from '@ray-db/ray';
+import { node, edge, prop, optional } from "@ray-db/ray";
 
 // Define node types
-const user = defineNode('user', {
+const user = node("user", {
   key: (id: string) => `user:${id}`,
   props: {
-    name: prop.string('name'),
-    email: prop.string('email'),
-    age: optional(prop.int('age')),
+    name: prop.string("name"),
+    email: prop.string("email"),
+    age: optional(prop.int("age")),
   },
 });
 
-const company = defineNode('company', {
+const company = node("company", {
   key: (id: string) => `company:${id}`,
   props: {
-    name: prop.string('name'),
+    name: prop.string("name"),
   },
 });
 
 // Define edge types
-const knows = defineEdge('knows', {
-  since: prop.int('since'),
-  strength: prop.float('strength').optional(),
+const knows = edge("knows", {
+  since: prop.int("since"),
+  strength: prop.float("strength").optional(),
 });
 
-const worksAt = defineEdge('worksAt', {
-  startDate: prop.int('startDate'),
+const worksAt = edge("worksAt", {
+  startDate: prop.int("startDate"),
 });
 ```
 
@@ -74,6 +74,7 @@ type ReturnedUser = InferNode<typeof user>;
 Opens or creates a database with the given schema.
 
 **Parameters:**
+
 - `path: string` - Directory path for database files
 - `options: RayOptions` - Schema and database options
   - `nodes: NodeDef[]` - Node type definitions
@@ -83,8 +84,9 @@ Opens or creates a database with the given schema.
   - `lockFile?: boolean` - Use file locking (default: true)
 
 **Example:**
+
 ```typescript
-const db = await ray('./my-graph', {
+const db = await ray("./my-graph", {
   nodes: [user, company],
   edges: [knows, worksAt],
 });
@@ -149,44 +151,45 @@ prop.bool(name: string): PropBuilder<"bool">
 All property builders support `.optional()` or `optional(prop)` helper:
 
 ```typescript
-const email = optional(prop.string('email'));
+const email = optional(prop.string("email"));
 // or
-const email = prop.string('email').optional();
+const email = prop.string("email").optional();
 ```
 
-#### `defineNode<Name, KeyArg, Props>(name, config): NodeDef`
+#### `node<Name, KeyArg, Props>(name, config): NodeDef`
 
 Defines a node type with schema.
 
 **Parameters:**
+
 - `name: string` - Node type name
 - `config: NodeConfig<KeyArg, Props>`
   - `key: (id: KeyArg) => string` - Key generation function
   - `props: PropsSchema` - Property definitions
 
 ```typescript
-const user = defineNode('user', {
+const user = node("user", {
   key: (id: string) => `user:${id}`,
   props: {
-    name: prop.string('name'),
-    email: prop.string('email'),
+    name: prop.string("name"),
+    email: prop.string("email"),
   },
 });
 ```
 
-#### `defineEdge<Name, Props>(name, props?): EdgeDef`
+#### `edge<Name, Props>(name, props?): EdgeDef`
 
 Defines an edge type with optional properties.
 
 ```typescript
 // Edge with properties
-const knows = defineEdge('knows', {
-  since: prop.int('since'),
-  weight: optional(prop.float('weight')),
+const knows = edge("knows", {
+  since: prop.int("since"),
+  weight: optional(prop.float("weight")),
 });
 
 // Edge without properties
-const follows = defineEdge('follows');
+const follows = edge("follows");
 ```
 
 ### `builders.ts` - Query Builders
@@ -197,22 +200,22 @@ const follows = defineEdge('follows');
 // Single insert
 const alice = await db
   .insert(user)
-  .values({ key: 'alice', name: 'Alice', email: 'alice@example.com' })
+  .values({ key: "alice", name: "Alice", email: "alice@example.com" })
   .returning();
 
 // Bulk insert
 const [bob, charlie] = await db
   .insert(user)
   .values([
-    { key: 'bob', name: 'Bob', email: 'bob@example.com' },
-    { key: 'charlie', name: 'Charlie', email: 'charlie@example.com' },
+    { key: "bob", name: "Bob", email: "bob@example.com" },
+    { key: "charlie", name: "Charlie", email: "charlie@example.com" },
   ])
   .returning();
 
 // Insert without returning
 await db
   .insert(user)
-  .values({ key: 'dave', name: 'Dave', email: 'dave@example.com' })
+  .values({ key: "dave", name: "Dave", email: "dave@example.com" })
   .execute();
 ```
 
@@ -221,42 +224,36 @@ await db
 ```typescript
 await db
   .update(user)
-  .set({ name: 'Alice Updated', email: 'newemail@example.com' })
-  .where({ $key: 'user:alice' })
+  .set({ name: "Alice Updated", email: "newemail@example.com" })
+  .where({ $key: "user:alice" })
   .execute();
 ```
 
 #### Update by Reference
 
 ```typescript
-const alice = await db.get(user, 'alice');
-await db
-  .update(alice)
-  .set({ name: 'Alice V2' })
-  .execute();
+const alice = await db.get(user, "alice");
+await db.update(alice).set({ name: "Alice V2" }).execute();
 ```
 
 #### Delete by Definition
 
 ```typescript
-const deleted = await db
-  .delete(user)
-  .where({ $key: 'user:alice' })
-  .execute();
+const deleted = await db.delete(user).where({ $key: "user:alice" }).execute();
 ```
 
 #### Delete by Reference
 
 ```typescript
-const alice = await db.get(user, 'alice');
+const alice = await db.get(user, "alice");
 const success = await db.delete(alice);
 ```
 
 #### Link (Create Edge)
 
 ```typescript
-const alice = await db.get(user, 'alice');
-const bob = await db.get(user, 'bob');
+const alice = await db.get(user, "alice");
+const bob = await db.get(user, "bob");
 
 await db.link(alice, knows, bob, { since: 2020 });
 ```
@@ -281,34 +278,21 @@ await edge.set({ weight: 0.95 }).execute();
 Start traversal from a node and chain operations:
 
 ```typescript
-const alice = await db.get(user, 'alice');
+const alice = await db.get(user, "alice");
 
 // Get all friends of Alice
-const friends = await db
-  .from(alice)
-  .out(knows)
-  .nodes()
-  .toArray();
+const friends = await db.from(alice).out(knows).nodes().toArray();
 
 // Get friends' friends (depth 2)
-const foaf = await db
-  .from(alice)
-  .out(knows)
-  .out(knows)
-  .nodes()
-  .toArray();
+const foaf = await db.from(alice).out(knows).out(knows).nodes().toArray();
 
 // Multi-directional traversal
-const connections = await db
-  .from(alice)
-  .both(knows)
-  .nodes()
-  .toArray();
+const connections = await db.from(alice).both(knows).nodes().toArray();
 
 // Variable-depth traversal with limits
 const nearby = await db
   .from(alice)
-  .traverse(knows, { direction: 'out', maxDepth: 3, unique: true })
+  .traverse(knows, { direction: "out", maxDepth: 3, unique: true })
   .nodes()
   .toArray();
 ```
@@ -320,7 +304,7 @@ const nearby = await db
 await db
   .from(alice)
   .out(knows)
-  .whereEdge(edge => edge.since < 2020)
+  .whereEdge((edge) => edge.since < 2020)
   .nodes()
   .toArray();
 
@@ -328,7 +312,7 @@ await db
 await db
   .from(alice)
   .out(knows)
-  .whereNode(node => node.age > 25)
+  .whereNode((node) => node.age > 25)
   .nodes()
   .toArray();
 ```
@@ -356,11 +340,7 @@ const count = await results.count();
 Get edges instead of nodes:
 
 ```typescript
-const edges = await db
-  .from(alice)
-  .out(knows)
-  .edges()
-  .toArray();
+const edges = await db.from(alice).out(knows).edges().toArray();
 
 // Each edge has: $src, $dst, $etype, and properties
 for (const edge of edges) {
@@ -410,11 +390,17 @@ Execute multiple operations atomically:
 ```typescript
 const result = await db.transaction(async (ctx) => {
   // All operations in this callback are in a single transaction
-  const alice = await ctx.insert(user).values({ key: 'alice', name: 'Alice' }).returning();
-  const bob = await ctx.insert(user).values({ key: 'bob', name: 'Bob' }).returning();
-  
+  const alice = await ctx
+    .insert(user)
+    .values({ key: "alice", name: "Alice" })
+    .returning();
+  const bob = await ctx
+    .insert(user)
+    .values({ key: "bob", name: "Bob" })
+    .returning();
+
   await ctx.link(alice, knows, bob);
-  
+
   return { alice, bob };
 });
 ```
@@ -425,9 +411,9 @@ Combine multiple operations into one transaction:
 
 ```typescript
 const [result1, result2, result3] = await db.batch([
-  db.insert(user).values({ key: 'user1', name: 'User 1' }),
-  db.insert(user).values({ key: 'user2', name: 'User 2' }),
-  db.insert(company).values({ key: 'acme', name: 'ACME Corp' }),
+  db.insert(user).values({ key: "user1", name: "User 1" }),
+  db.insert(user).values({ key: "user2", name: "User 2" }),
+  db.insert(company).values({ key: "acme", name: "ACME Corp" }),
 ]);
 ```
 
@@ -437,13 +423,13 @@ Keys are the primary way to look up nodes:
 
 ```typescript
 // Define key schema
-const user = defineNode('user', {
+const user = node("user", {
   key: (id: string) => `user:${id}`,
   // ...
 });
 
 // Later, look up by key
-const alice = await db.get(user, 'alice'); // Uses key 'user:alice' internally
+const alice = await db.get(user, "alice"); // Uses key 'user:alice' internally
 ```
 
 ### Property Type Conversion
@@ -456,19 +442,22 @@ Properties are stored with type tags and converted automatically:
 - **bool** → `boolean`
 
 ```typescript
-const user = defineNode('user', {
+const user = node("user", {
   key: (id: string) => `user:${id}`,
   props: {
-    age: prop.int('age'), // Stored as bigint, passed as number
-    score: prop.float('score'), // Stored as f64
+    age: prop.int("age"), // Stored as bigint, passed as number
+    score: prop.float("score"), // Stored as f64
   },
 });
 
-const alice = await db.insert(user).values({
-  key: 'alice',
-  age: 30, // OK: number → bigint
-  score: 95.5,
-}).returning();
+const alice = await db
+  .insert(user)
+  .values({
+    key: "alice",
+    age: 30, // OK: number → bigint
+    score: 95.5,
+  })
+  .returning();
 
 console.log(typeof alice.age); // 'bigint'
 console.log(typeof alice.score); // 'number'
@@ -485,8 +474,13 @@ Most operations throw on error. Key error cases:
 ```typescript
 try {
   await db.transaction(async (ctx) => {
-    const user = await ctx.insert(user).values({ /* ... */ }).returning();
-    throw new Error('Oops!');
+    const user = await ctx
+      .insert(user)
+      .values({
+        /* ... */
+      })
+      .returning();
+    throw new Error("Oops!");
   });
 } catch (e) {
   // Transaction is automatically rolled back
@@ -506,12 +500,12 @@ try {
 
 The high-level API (`src/api/`) is built on top of the lower-level database API (`src/db/`):
 
-| Task | Low-Level | High-Level |
-|------|-----------|-----------|
-| Define types | Manual IDs | `defineNode`, `defineEdge` |
-| Type safety | Manual | Full TypeScript inference |
-| Insert nodes | `createNode()` + `setNodeProp()` | `insert().values()` |
-| Query nodes | Raw ID lookups | `get()`, `traversals` |
+| Task         | Low-Level                             | High-Level                 |
+| ------------ | ------------------------------------- | -------------------------- |
+| Define types | Manual IDs                            | `node`, `edge`             |
+| Type safety  | Manual                                | Full TypeScript inference  |
+| Insert nodes | `createNode()` + `setNodeProp()`      | `insert().values()`        |
+| Query nodes  | Raw ID lookups                        | `get()`, `traversals`      |
 | Transactions | `beginTx()`, `commit()`, `rollback()` | `transaction()`, `batch()` |
 
 The low-level API is useful when you need escape-hatch access via `db.$raw`.

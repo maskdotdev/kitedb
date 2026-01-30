@@ -9,14 +9,14 @@
  *
  * @example
  * ```ts
- * import { ray, defineNode, defineEdge, prop } from './src/api';
+ * import { ray, node, edge, prop } from './src/api';
  *
- * const user = defineNode('user', {
+ * const user = node('user', {
  *   key: (id: string) => `user:${id}`,
  *   props: { name: prop.string('name') },
  * });
  *
- * const knows = defineEdge('knows');
+ * const knows = edge('knows');
  *
  * const db = await ray('./my-db', {
  *   nodes: [user],
@@ -56,13 +56,18 @@ export { Ray, type RayOptions, ray, type TransactionContext } from "./ray.js";
 /**
  * Schema definition builders
  * Define node and edge types with properties and type inference
- * @see {@link defineNode}
- * @see {@link defineEdge}
+ * @see {@link node}
+ * @see {@link edge}
  * @see {@link prop}
  */
 export {
+  // New API (0.2.0+)
+  node,
+  edge,
+  // Legacy aliases (deprecated)
   defineEdge,
   defineNode,
+  // Types
   type EdgeDef,
   type EdgePropsSchema,
   type InferEdge,

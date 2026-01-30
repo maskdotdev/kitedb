@@ -1,10 +1,23 @@
 {
   "name": "@ray-db/core",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "RayDB - A fast, lightweight, embedded graph database for Node.js",
   "author": "mask <mask@mask.dev>",
   "homepage": "https://github.com/maskdotdev/ray",
-  "main": "index.js",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./native": {
+      "types": "./index.d.ts",
+      "require": "./index.js"
+    }
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/maskdotdev/ray"
@@ -26,7 +39,8 @@
   "files": [
     "index.d.ts",
     "index.js",
-    "browser.js"
+    "browser.js",
+    "dist"
   ],
   "napi": {
     "binaryName": "core",
@@ -47,8 +61,10 @@
   "scripts": {
     "artifacts": "napi artifacts",
     "bench": "node --import @oxc-node/core/register benchmark/bench.ts",
-    "build": "napi build --platform --release",
-    "build:debug": "napi build --platform",
+    "build": "napi build --platform --release && yarn build:ts",
+    "build:native": "napi build --platform --release",
+    "build:ts": "tsc -p ts/tsconfig.json",
+    "build:debug": "napi build --platform && yarn build:ts",
     "build:wasm": "napi build --target wasm32-wasip1-threads --release && node scripts/rename-wasm.mjs",
     "build:wasm:debug": "napi build --target wasm32-wasip1-threads && node scripts/rename-wasm.mjs",
     "format": "run-p format:prettier format:rs format:toml",
@@ -59,7 +75,7 @@
     "prepublishOnly": "napi prepublish -t npm",
     "test": "ava",
     "test:wasm": "node scripts/wasm-smoke.mjs",
-    "preversion": "napi build --platform && git add .",
+    "preversion": "napi build --platform && yarn build:ts && git add .",
     "version": "napi version",
     "prepare": "husky"
   },
@@ -71,6 +87,7 @@
     "@emnapi/runtime": "^1.5.0",
     "@napi-rs/cli": "^3.2.0",
     "@oxc-node/core": "^0.0.35",
+    "@oxc-node/core-darwin-arm64": "0.0.35",
     "@taplo/cli": "^0.7.0",
     "@tybys/wasm-util": "^0.10.0",
     "ava": "^6.4.1",
@@ -117,9 +134,9 @@
   },
   "packageManager": "yarn@4.12.0",
   "optionalDependencies": {
-    "@ray-db/core-win32-x64-msvc": "0.1.7",
+    "@ray-db/core-darwin-arm64": "0.1.7",
     "@ray-db/core-darwin-x64": "0.1.7",
     "@ray-db/core-linux-x64-gnu": "0.1.7",
-    "@ray-db/core-darwin-arm64": "0.1.7"
+    "@ray-db/core-win32-x64-msvc": "0.1.7"
   }
 }

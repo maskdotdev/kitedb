@@ -47,13 +47,13 @@ export { openGraphDB, closeGraphDB } from "./ray/graph-db/index.js";
 /**
  * Check if proper OS-level file locking is available.
  * Uses native flock() via Bun FFI - no external dependencies required.
- * 
+ *
  * @example
  * ```ts
  * if (!isProperLockingAvailable()) {
  *   console.warn("File locking not available on this platform");
  * }
- * 
+ *
  * const db = await openGraphDB("./mydb", {
  *   requireLocking: true, // Throws if locking unavailable
  * });
@@ -185,7 +185,11 @@ export {
 // Schema definitions
 // ============================================================================
 
-export { defineLabel, defineEtype, definePropkey } from "./ray/graph-db/index.js";
+export {
+  defineLabel,
+  defineEtype,
+  definePropkey,
+} from "./ray/graph-db/index.js";
 
 // ============================================================================
 // Maintenance
@@ -237,7 +241,11 @@ export { WalBufferFullError } from "./types.js";
 // Deprecated exports for backwards compatibility
 // Use openGraphDB/closeGraphDB instead - they auto-detect format
 /** @deprecated Use openGraphDB instead - it auto-detects format */
-export { openSingleFileDB, closeSingleFileDB, isSingleFilePath } from "./ray/graph-db/single-file.js";
+export {
+  openSingleFileDB,
+  closeSingleFileDB,
+  isSingleFilePath,
+} from "./ray/graph-db/single-file.js";
 /** @deprecated SingleFileDB is now just an alias for GraphDB */
 export type { SingleFileDB, SingleFileOpenOptions } from "./types.js";
 
@@ -267,7 +275,10 @@ export {
   Ray,
   type RayOptions,
   type TransactionContext,
-  // Schema builders
+  // Schema builders (new API 0.2.0+)
+  node,
+  edge,
+  // Schema builders (legacy, deprecated)
   defineNode,
   defineEdge,
   prop,
