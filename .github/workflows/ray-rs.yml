@@ -1,25 +1,22 @@
-name: CI
+name: ray-rs
 env:
   DEBUG: napi:*
   APP_NAME: core
-  MACOSX_DEPLOYMENT_TARGET: '10.13'
-  CARGO_INCREMENTAL: '1'
-'on':
+  MACOSX_DEPLOYMENT_TARGET: "10.13"
+  CARGO_INCREMENTAL: "1"
+on:
   push:
     branches:
       - main
-    tags-ignore:
-      - '**'
-    paths-ignore:
-      - '**/*.md'
-      - LICENSE
-      - '**/*.gitignore'
-      - .editorconfig
-      - docs/**
-  pull_request: null
+    paths:
+      - "ray-rs/**"
+  workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+defaults:
+  run:
+    working-directory: ray-rs
 jobs:
   build:
     strategy:
@@ -41,7 +38,7 @@ jobs:
     name: Build ${{ matrix.settings.target }}
     runs-on: ${{ matrix.settings.host }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Setup bun
         uses: oven-sh/setup-bun@v2
       - name: Install Rust
@@ -49,7 +46,7 @@ jobs:
         with:
           targets: ${{ matrix.settings.target }}
       - name: Cache cargo
-        uses: actions/cache@v5
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry/index/
@@ -57,7 +54,7 @@ jobs:
             ~/.cargo/git/db/
             ~/.napi-rs
             .cargo-cache
-            target/
+            ray-rs/target/
           key: ${{ matrix.settings.target }}-cargo-${{ matrix.settings.host }}
       - name: Install dependencies
         run: bun install
@@ -65,12 +62,12 @@ jobs:
         run: ${{ matrix.settings.build }}
         shell: bash
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: bindings-${{ matrix.settings.target }}
           path: |
-            ${{ env.APP_NAME }}.*.node
-            ${{ env.APP_NAME }}.*.wasm
+            ray-rs/${{ env.APP_NAME }}.*.node
+            ray-rs/${{ env.APP_NAME }}.*.wasm
           if-no-files-found: error
   publish:
     name: Publish
@@ -81,27 +78,31 @@ jobs:
     needs:
       - build
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
       - name: Setup node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
       - name: Setup bun
         uses: oven-sh/setup-bun@v2
       - name: Install dependencies
         run: bun install
+        working-directory: ray-rs
       - name: Create npm dirs
         run: bun run napi create-npm-dirs
+        working-directory: ray-rs
       - name: Download all artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: ray-rs/artifacts
       - name: Move artifacts
         run: bun run artifacts
+        working-directory: ray-rs
       - name: List packages
         run: ls -R ./npm
-        shell: bash
+        working-directory: ray-rs
       - name: Publish
+        working-directory: ray-rs
         run: |
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
           npm config set provenance true
