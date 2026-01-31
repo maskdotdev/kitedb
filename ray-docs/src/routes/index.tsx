@@ -464,7 +464,7 @@ db.link(doc, discusses, topic, relevance=0.95)
 
 								{/* Mobile logo */}
 								<div class="sm:hidden text-center">
-									<h1 class="text-4xl font-black electric-text">RAYDB</h1>
+									<h1 class="text-4xl font-black electric-text">KITEDB</h1>
 								</div>
 
 								{/* Version info */}
