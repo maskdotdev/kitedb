@@ -1284,8 +1284,14 @@ export declare const enum PropValueTag {
   VectorF32 = 5
 }
 
-/** Ray entrypoint (TS parity) */
-export declare function ray(path: string, options: JsRayOptions): Ray
+/**
+ * Ray entrypoint - async version (recommended)
+ * Opens the database on a background thread to avoid blocking the event loop
+ */
+export declare function ray(path: string, options: JsRayOptions): Promise<unknown>
+
+/** Ray entrypoint - sync version (for backwards compatibility) */
+export declare function raySync(path: string, options: JsRayOptions): Ray
 
 /** Restore a backup into a target path */
 export declare function restoreBackup(backupPath: string, restorePath: string, options?: RestoreOptions | undefined | null): string
