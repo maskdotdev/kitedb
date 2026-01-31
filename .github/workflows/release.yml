@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, blacksmith-4vcpu-windows-2025, macos-latest]
 
     steps:
       - name: Checkout repository
@@ -35,7 +35,7 @@ jobs:
   publish:
     name: Publish to NPM
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: read
       id-token: write

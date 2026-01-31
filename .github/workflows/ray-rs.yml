@@ -75,7 +75,7 @@ jobs:
           if-no-files-found: error
   publish:
     name: Publish
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     permissions:
       contents: write
       id-token: write
@@ -136,9 +136,9 @@ jobs:
       fail-fast: false
       matrix:
         platform:
-          - runner: ubuntu-latest
+          - runner: blacksmith-4vcpu-ubuntu-2404
             target: x86_64
-          - runner: ubuntu-latest
+          - runner: blacksmith-4vcpu-ubuntu-2404
             target: aarch64
     steps:
       - uses: actions/checkout@v4
@@ -188,7 +188,7 @@ jobs:
 
   build-python-windows:
     name: Build Python - Windows x86_64
-    runs-on: windows-latest
+    runs-on: blacksmith-4vcpu-windows-2025
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -208,7 +208,7 @@ jobs:
 
   build-python-sdist:
     name: Build Python - Source Distribution
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - name: Build sdist
@@ -225,7 +225,7 @@ jobs:
 
   publish-python:
     name: Publish Python
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs:
       - build-python-linux
       - build-python-macos
@@ -262,7 +262,7 @@ jobs:
   # ===========================================
   publish-cargo:
     name: Publish Cargo
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
