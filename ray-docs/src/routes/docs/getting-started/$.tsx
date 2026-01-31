@@ -65,7 +65,7 @@ function DocPageContent(props: { slug: string }) {
           social network with users and follow relationships.
         </p>
         <MultiLangCode
-          typescript={`import { ray } from 'kitedb';
+          typescript={`import { ray } from '@kitedb/core';
 
 // Define schema inline when opening the database
 const db = ray('./social.kitedb', {

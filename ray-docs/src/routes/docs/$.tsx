@@ -114,7 +114,7 @@ function DocPageContent(props: { slug: string }) {
 
         <h2 id="quick-example">Quick Example</h2>
         <CodeBlock
-          code={`import { ray, defineNode, defineEdge, prop } from 'kitedb';
+          code={`import { ray, defineNode, defineEdge, prop } from '@kitedb/core';
 
 const user = defineNode('user', {
   key: (id: string) => \`user:\${id}\`,

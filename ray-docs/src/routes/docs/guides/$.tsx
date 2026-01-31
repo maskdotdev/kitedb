@@ -65,7 +65,7 @@ function DocPageContent(props: { slug: string }) {
           and can have typed properties.
         </p>
         <MultiLangCode
-          typescript={`import { ray } from 'kitedb';
+          typescript={`import { ray } from '@kitedb/core';
 
 const db = ray('./blog.kitedb', {
   nodes: [
@@ -531,7 +531,7 @@ top_connections = (db
 
         <h2 id="creating-index">Creating a Vector Index</h2>
         <MultiLangCode
-          typescript={`import { createVectorIndex } from 'kitedb';
+          typescript={`import { createVectorIndex } from '@kitedb/core';
 
 // Create an index for 1536-dimensional vectors (OpenAI embeddings)
 const index = createVectorIndex({
@@ -687,7 +687,7 @@ print(f"Total vectors: {stats.total_vectors}")`}
 
         <h2 id="basic-transactions">Basic Transactions</h2>
         <MultiLangCode
-          typescript={`import { Database } from 'kitedb';
+          typescript={`import { Database } from '@kitedb/core';
 
 const db = Database.open('./my.kitedb');
 

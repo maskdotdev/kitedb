@@ -14,8 +14,8 @@ const INSTALL_COMMANDS: InstallCommand[] = [
   {
     id: 'typescript',
     label: 'TypeScript',
-    command: 'bun add kitedb',
-    secondary: 'npm install kitedb',
+    command: 'bun add @kitedb/core',
+    secondary: 'npm install @kitedb/core',
   },
   {
     id: 'rust',

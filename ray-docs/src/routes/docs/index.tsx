@@ -109,7 +109,7 @@ function DocsIndex() {
           {/* Quick command hint */}
           <div class="mt-6 flex items-center gap-4 text-xs font-mono">
             <span class="text-slate-500">Try:</span>
-            <code class="px-2 py-1 rounded bg-[#1a2a42] text-[#28c840]">bun add kitedb</code>
+            <code class="px-2 py-1 rounded bg-[#1a2a42] text-[#28c840]">bun add @kitedb/core</code>
           </div>
         </div>
       </div>

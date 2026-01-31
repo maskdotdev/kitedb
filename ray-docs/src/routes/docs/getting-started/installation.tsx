@@ -28,7 +28,7 @@ function InstallationPage() {
       <h2 id="verify">Verify Installation</h2>
       <p>Create a simple test file to verify the installation works:</p>
       <MultiLangCode
-        typescript={`import { ray } from 'kitedb';
+        typescript={`import { ray } from '@kitedb/core';
 
 // Open database with a simple schema
 const db = ray('./test.kitedb', {

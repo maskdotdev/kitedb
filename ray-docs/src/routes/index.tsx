@@ -102,7 +102,7 @@ function HomePage() {
 
 	// Schema code examples for each language
 	const schemaCode = {
-		typescript: `import { ray } from 'kitedb';
+		typescript: `import { ray } from '@kitedb/core';
 
 // Open database with schema
 const db = ray('./knowledge.kitedb', {
