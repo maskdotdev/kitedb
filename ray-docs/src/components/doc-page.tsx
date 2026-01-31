@@ -55,7 +55,7 @@ export const DocPage: Component<DocPageProps> = (props) => {
       {/* Edit link */}
       <div class="mt-12 pt-6 border-t border-[#1a2a42]">
         <a
-          href={`https://github.com/maskdotdev/ray/edit/main/docs-site/src/content/docs/${props.slug || 'index'}.md`}
+          href={`https://github.com/mask-software/kitedb/edit/main/docs-site/src/content/docs/${props.slug || 'index'}.md`}
           target="_blank"
           rel="noopener noreferrer"
           class="inline-flex items-center gap-2 text-sm font-mono text-slate-500 hover:text-[#00d4ff] transition-colors duration-150"

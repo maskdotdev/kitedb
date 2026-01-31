@@ -2,7 +2,7 @@
 
 KiteDB native bindings for Node.js (and WASI/browser builds), powered by Rust + N-API.
 
-Docs: https://ray-kwaf.vercel.app/docs
+Docs: https://kitedb.vercel.com/docs
 
 ## Install
 
@@ -165,7 +165,7 @@ This is implemented using a read-write lock (RwLock) internally, providing good 
 
 The Node bindings expose both low-level graph primitives (`Database`) and higher-level APIs (Ray) for schema-driven workflows, plus metrics, backups, traversal, and vector search. For full API details and guides, see the docs:
 
-https://ray-kwaf.vercel.app/docs
+https://kitedb.vercel.com/docs
 
 ## License
 

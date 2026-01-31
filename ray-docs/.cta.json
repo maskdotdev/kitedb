@@ -1,5 +1,5 @@
 {
-  "projectName": "ray-docs",
+  "projectName": "kitedb-docs",
   "mode": "file-router",
   "typescript": true,
   "packageManager": "pnpm",

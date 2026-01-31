@@ -5,7 +5,7 @@ Benchmarks vector index operations via the Python bindings.
 Intended for comparison with NAPI and Rust vector benchmarks.
 
 Prerequisites:
-  cd ray-rs && maturin develop --features python
+  maturin develop --features python
 
 Usage:
   python benchmark_vector.py [options]
@@ -44,7 +44,7 @@ try:
   )
 except ImportError:
   print("Error: kitedb module not found. Build the Python bindings first:")
-  print("  cd ray-rs && maturin develop --features python")
+  print("  maturin develop --features python")
   sys.exit(1)
 
 

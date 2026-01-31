@@ -397,7 +397,7 @@ db.link(doc, discusses, topic, relevance=0.95)
 							</button>
 							<LanguageSwitcher />
 							<a
-								href="https://github.com/maskdotdev/ray"
+								href="https://github.com/mask-software/kitedb"
 								target="_blank"
 								rel="noopener noreferrer"
 								class="flex items-center gap-2 px-3 py-1.5 rounded-md text-slate-400 hover:text-white bg-[#0a1628] border border-[#1a2a42] hover:border-[#00d4ff]/50 transition-colors duration-150 font-mono text-sm"
@@ -512,7 +512,7 @@ db.link(doc, discusses, topic, relevance=0.95)
 										/>
 									</Link>
 									<a
-										href="https://github.com/maskdotdev/ray"
+										href="https://github.com/mask-software/kitedb"
 										target="_blank"
 										rel="noopener noreferrer"
 										class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 font-mono text-slate-300 bg-[#0a1628] border border-[#1a2a42] rounded-lg hover:border-[#00d4ff]/50 hover:text-[#00d4ff] transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00d4ff] focus-visible:ring-offset-2 focus-visible:ring-offset-[#030712]"
@@ -1036,7 +1036,7 @@ db.link(doc, discusses, topic, relevance=0.95)
 						</p>
 
 						<a
-							href="https://github.com/maskdotdev/ray"
+							href="https://github.com/mask-software/kitedb"
 							target="_blank"
 							rel="noopener noreferrer"
 							class="text-slate-500 hover:text-[#00d4ff] transition-colors"

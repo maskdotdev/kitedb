@@ -88,7 +88,7 @@ std::thread::spawn(move || {
 ## Documentation
 
 ```text
-https://ray-kwaf.vercel.app/docs
+https://kitedb.vercel.com/docs
 ```
 
 ## License

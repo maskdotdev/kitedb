@@ -7,14 +7,13 @@ This demo runs the WASI build in the browser using Vite.
 1) Build the WASM bundle:
 
 ```bash
-cd ray-rs
 npm run build:wasm
 ```
 
 2) Install demo deps:
 
 ```bash
-cd ray-rs/examples/browser
+cd examples/browser
 npm install
 ```
 

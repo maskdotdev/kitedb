@@ -6,7 +6,7 @@ Benchmarks low-level GraphDB operations via the Python bindings.
 Intended for apples-to-apples comparison with bench/benchmark-single-file-raw.ts.
 
 Prerequisites:
-  cd ray-rs && maturin develop --features python
+  maturin develop --features python
 
 Usage:
   python benchmark_single_file_raw.py [options]
@@ -45,7 +45,7 @@ try:
   from kitedb import Database, OpenOptions
 except ImportError:
   print("Error: kitedb module not found. Build the Python bindings first:")
-  print("  cd ray-rs && maturin develop --features python")
+  print("  maturin develop --features python")
   sys.exit(1)
 
 
@@ -366,7 +366,7 @@ def run_benchmarks(config: BenchConfig):
   logger.log(f"Reopen read-only: {config.reopen_readonly}")
   logger.log("=" * 120)
 
-  tmp_dir = tempfile.mkdtemp(prefix="ray-python-raw-")
+  tmp_dir = tempfile.mkdtemp(prefix="kitedb-python-raw-")
   db_path = os.path.join(tmp_dir, "benchmark.kitedb")
 
   db: Optional[Database] = None

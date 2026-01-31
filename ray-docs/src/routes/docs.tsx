@@ -152,7 +152,7 @@ function DocsLayout() {
           {/* Sidebar footer */}
           <div class="p-4 border-t border-[#1a2a42]">
             <a
-              href="https://github.com/maskdotdev/ray"
+              href="https://github.com/mask-software/kitedb"
               target="_blank"
               rel="noopener noreferrer"
               class="flex items-center gap-2 px-3 py-2 text-sm font-mono text-slate-500 hover:text-[#00d4ff] rounded-lg hover:bg-[#1a2a42]/50 transition-colors duration-150"
@@ -203,7 +203,7 @@ function DocsLayout() {
             <LanguageSwitcher />
 
             <a
-              href="https://github.com/maskdotdev/ray"
+              href="https://github.com/mask-software/kitedb"
               target="_blank"
               rel="noopener noreferrer"
               class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-mono text-sm text-slate-500 hover:text-[#00d4ff] bg-[#0a1628] border border-[#1a2a42] hover:border-[#00d4ff]/50 transition-colors duration-150"

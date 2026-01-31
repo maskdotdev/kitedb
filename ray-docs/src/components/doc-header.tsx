@@ -49,7 +49,7 @@ export const DocHeader: Component<DocHeaderProps> = (props) => {
         <LanguageSwitcher />
 
         <a
-          href="https://github.com/maskdotdev/ray"
+          href="https://github.com/mask-software/kitedb"
           target="_blank"
           rel="noopener noreferrer"
           class="p-2 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white transition-colors"

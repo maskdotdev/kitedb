@@ -54,7 +54,7 @@ works_at = define_edge("worksAt", {
 
 def main():
     # Create a temporary directory for the database
-    dir = tempfile.mkdtemp(prefix="ray-example-")
+    dir = tempfile.mkdtemp(prefix="kitedb-example-")
     db_path = f"{dir}/example.kitedb"
     
     try:

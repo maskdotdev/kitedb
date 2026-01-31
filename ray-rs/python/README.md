@@ -27,7 +27,6 @@ pip install kitedb
 python -m pip install -U maturin
 
 # Build and install in development mode
-cd ray-rs
 maturin develop --features python
 
 # Or build a wheel
@@ -174,7 +173,7 @@ for result in results:
 ## Documentation
 
 ```text
-https://ray-kwaf.vercel.app/docs
+https://kitedb.vercel.com/docs
 ```
 
 ## License

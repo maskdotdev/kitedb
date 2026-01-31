@@ -35,7 +35,7 @@ try:
     from kitedb import Database, PropValue
 except ImportError:
     print("Error: kitedb module not found. Make sure to build the Python bindings first:")
-    print("  cd ray-rs && maturin develop --features python")
+    print("  maturin develop --features python")
     sys.exit(1)
 
 
@@ -787,7 +787,7 @@ def run_benchmarks(config: BenchConfig):
     logger.log("=" * 120)
     
     # Create temporary database file
-    tmp_dir = tempfile.mkdtemp(prefix="ray-python-bench-")
+    tmp_dir = tempfile.mkdtemp(prefix="kitedb-python-bench-")
     db_path = os.path.join(tmp_dir, "benchmark.kitedb")
     
     try:

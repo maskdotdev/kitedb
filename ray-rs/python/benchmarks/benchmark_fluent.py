@@ -37,7 +37,7 @@ try:
     from kitedb import ray, define_node, define_edge, prop, optional
 except ImportError as e:
     print(f"Error: kitedb module not found ({e}). Make sure to build the Python bindings first:")
-    print("  cd ray-rs && maturin develop --features python")
+    print("  maturin develop --features python")
     sys.exit(1)
 
 
@@ -331,8 +331,8 @@ def run_benchmarks(config: BenchConfig):
     print("=" * 100)
     
     # Create temporary directories for both databases
-    low_level_dir = tempfile.mkdtemp(prefix="ray-low-level-")
-    fluent_dir = tempfile.mkdtemp(prefix="ray-fluent-")
+    low_level_dir = tempfile.mkdtemp(prefix="kitedb-low-level-")
+    fluent_dir = tempfile.mkdtemp(prefix="kitedb-fluent-")
     
     try:
         # =================================================================

@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "@ray-db/core",
+      "name": "@kitedb/core",
       "dependencies": {
         "@napi-rs/wasm-runtime": "^1.1.1",
       },
