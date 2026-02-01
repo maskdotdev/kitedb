@@ -122,6 +122,10 @@ db = kite("./blog.kitedb", nodes=[article], edges=[])`}
           <li><code>bool</code> – Boolean values</li>
           <li><code>vector</code> – Float32 embedding vectors</li>
         </ul>
+        <p>
+          TypeScript builders are available as top-level exports (e.g. <code>string()</code>) or
+          under <code>prop</code> (e.g. <code>prop.string()</code>).
+        </p>
 
         <h2 id="defining-edges">Defining Edges</h2>
         <p>

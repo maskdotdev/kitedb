@@ -23,20 +23,21 @@ The schema layer defines the structure of your graph:
 
 **Property Types:**
 ```typescript
-prop.string('name')     // UTF-8 strings
-prop.int('age')         // 64-bit integers (bigint)
-prop.float('score')     // 64-bit floats
-prop.bool('active')     // Booleans
+string('name')     // UTF-8 strings
+int('age')         // 64-bit integers (bigint)
+float('score')     // 64-bit floats
+bool('active')     // Booleans
 ```
+Builders are also available under `prop` if you prefer namespacing (e.g. `prop.string('name')`).
 
 **Node Definitions:**
 ```typescript
 const user = defineNode('user', {
   key: (id: string) => `user:${id}`,  // Key generation
   props: {
-    name: prop.string('name'),
-    email: prop.string('email'),
-    age: optional(prop.int('age')),   // Optional property
+    name: string('name'),
+    email: string('email'),
+    age: optional(int('age')),   // Optional property
   },
 });
 ```
@@ -44,8 +45,8 @@ const user = defineNode('user', {
 **Edge Definitions:**
 ```typescript
 const knows = defineEdge('knows', {
-  since: prop.int('since'),
-  confidence: optional(prop.float('confidence')),
+  since: int('since'),
+  confidence: optional(float('confidence')),
 });
 
 const follows = defineEdge('follows');  // Edge without properties
@@ -203,10 +204,10 @@ createTraversalBuilder() sets up execution state
 ```
 Kite Type           TypeScript Type    Storage        Tag
 ─────────────────────────────────────────────────────────
-prop.string()      string             String         4
-prop.int()         bigint             i64            2
-prop.float()       number             f64            3
-prop.bool()        boolean            bool           1
+string()      string             String         4
+int()         bigint             i64            2
+float()       number             f64            3
+bool()        boolean            bool           1
 ```
 
 When inserting:

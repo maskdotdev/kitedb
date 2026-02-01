@@ -1,17 +1,17 @@
-import { kite, node, edge, prop, optional } from "@kitedb/core";
+import { kite, node, edge, string, int, optional } from "@kitedb/core";
 
 // Define your schema
 const User = node("user", {
   key: (id: string) => `user:${id}`,
   props: {
-    name: prop.string("name"),
-    email: prop.string("email"),
-    age: optional(prop.int("age")),
+    name: string("name"),
+    email: string("email"),
+    age: optional(int("age")),
   },
 });
 
 const Knows = edge("knows", {
-  since: prop.int("since"),
+  since: int("since"),
 });
 
 // Open database (async)

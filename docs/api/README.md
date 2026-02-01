@@ -19,33 +19,33 @@ The API consists of five main modules:
 Define your graph structure upfront using `node()` and `edge()`:
 
 ```typescript
-import { node, edge, prop, optional } from "@kitedb/core";
+import { node, edge, string, int, float, bool, optional } from "@kitedb/core";
 
 // Define node types
 const user = node("user", {
   key: (id: string) => `user:${id}`,
   props: {
-    name: prop.string("name"),
-    email: prop.string("email"),
-    age: optional(prop.int("age")),
+    name: string("name"),
+    email: string("email"),
+    age: optional(int("age")),
   },
 });
 
 const company = node("company", {
   key: (id: string) => `company:${id}`,
   props: {
-    name: prop.string("name"),
+    name: string("name"),
   },
 });
 
 // Define edge types
 const knows = edge("knows", {
-  since: prop.int("since"),
-  strength: prop.float("strength").optional(),
+  since: int("since"),
+  strength: float("strength").optional(),
 });
 
 const worksAt = edge("worksAt", {
-  startDate: prop.int("startDate"),
+  startDate: int("startDate"),
 });
 ```
 
@@ -145,18 +145,19 @@ The main database context with methods for CRUD operations, transactions, and ma
 #### Property Types
 
 ```typescript
-prop.string(name: string): PropBuilder<"string">
-prop.int(name: string): PropBuilder<"int">       // Stored as bigint
-prop.float(name: string): PropBuilder<"float">   // f64
-prop.bool(name: string): PropBuilder<"bool">
+string(name: string): PropBuilder<"string">
+int(name: string): PropBuilder<"int">       // Stored as bigint
+float(name: string): PropBuilder<"float">   // f64
+bool(name: string): PropBuilder<"bool">
 ```
 
-All property builders support `.optional()` or `optional(prop)` helper:
+Property builders are available as top-level exports or under `prop` (e.g. `string()` / `prop.string()`).
+All property builders support `.optional()` or the `optional(...)` helper:
 
 ```typescript
-const email = optional(prop.string("email"));
+const email = optional(string("email"));
 // or
-const email = prop.string("email").optional();
+const email = string("email").optional();
 ```
 
 #### `node<Name, KeyArg, Props>(name, config): NodeDef`
@@ -174,8 +175,8 @@ Defines a node type with schema.
 const user = node("user", {
   key: (id: string) => `user:${id}`,
   props: {
-    name: prop.string("name"),
-    email: prop.string("email"),
+    name: string("name"),
+    email: string("email"),
   },
 });
 ```
@@ -187,8 +188,8 @@ Defines an edge type with optional properties.
 ```typescript
 // Edge with properties
 const knows = edge("knows", {
-  since: prop.int("since"),
-  weight: optional(prop.float("weight")),
+  since: int("since"),
+  weight: optional(float("weight")),
 });
 
 // Edge without properties
@@ -463,8 +464,8 @@ Properties are stored with type tags and converted automatically:
 const user = node("user", {
   key: (id: string) => `user:${id}`,
   props: {
-    age: prop.int("age"), // Stored as bigint, passed as number
-    score: prop.float("score"), // Stored as f64
+    age: int("age"), // Stored as bigint, passed as number
+    score: float("score"), // Stored as f64
   },
 });
 

@@ -5,19 +5,19 @@
  *
  * @example
  * ```typescript
- * import { node, edge, prop, optional } from 'kitedb-core'
+ * import { node, edge, string, int, optional } from 'kitedb-core'
  *
  * const User = node('user', {
  *   key: (id: string) => `user:${id}`,
  *   props: {
- *     name: prop.string('name'),
- *     email: prop.string('email'),
- *     age: optional(prop.int('age')),
+ *     name: string('name'),
+ *     email: string('email'),
+ *     age: optional(int('age')),
  *   },
  * })
  *
  * const knows = edge('knows', {
- *   since: prop.int('since'),
+ *   since: int('since'),
  * })
  * ```
  */
@@ -50,11 +50,11 @@ export interface PropSpec<T extends PropType = PropType> {
  *
  * @example
  * ```typescript
- * const name = prop.string('name')        // required string
- * const age = optional(prop.int('age'))   // optional int
- * const score = prop.float('score')       // required float
- * const active = prop.bool('active')      // required bool
- * const embedding = prop.vector('embedding', 1536)  // vector with dimensions
+ * const name = string('name')        // required string
+ * const age = optional(int('age'))   // optional int
+ * const score = float('score')       // required float
+ * const active = bool('active')      // required bool
+ * const embedding = vector('embedding', 1536)  // vector with dimensions
  * ```
  */
 export const prop = {
@@ -97,12 +97,20 @@ export const prop = {
   any: (_name: string): PropSpec<'any'> => ({ type: 'any' }),
 }
 
+// Top-level property builders (sugar over prop.*)
+export const string = prop.string
+export const int = prop.int
+export const float = prop.float
+export const bool = prop.bool
+export const vector = prop.vector
+export const any = prop.any
+
 /**
  * Mark a property as optional.
  *
  * @example
  * ```typescript
- * const age = optional(prop.int('age'))
+ * const age = optional(int('age'))
  * ```
  */
 export function optional<T extends PropSpec>(spec: T): T & { optional: true } {
@@ -114,7 +122,7 @@ export function optional<T extends PropSpec>(spec: T): T & { optional: true } {
  *
  * @example
  * ```typescript
- * const status = withDefault(prop.string('status'), 'active')
+ * const status = withDefault(string('status'), 'active')
  * ```
  */
 export function withDefault<T extends PropSpec>(spec: T, value: unknown): T {
@@ -196,9 +204,9 @@ export interface NodeConfig<
  * const User = node('user', {
  *   key: (id: string) => `user:${id}`,
  *   props: {
- *     name: prop.string('name'),
- *     email: prop.string('email'),
- *     age: optional(prop.int('age')),
+ *     name: string('name'),
+ *     email: string('email'),
+ *     age: optional(int('age')),
  *   },
  * })
  *
@@ -206,7 +214,7 @@ export interface NodeConfig<
  * const OrgUser = node('org_user', {
  *   key: { kind: 'template', template: 'org:{org}:user:{id}' },
  *   props: {
- *     name: prop.string('name'),
+ *     name: string('name'),
  *   },
  * })
  * ```
@@ -271,8 +279,8 @@ export interface EdgeSpec<
  * ```typescript
  * // Edge with properties
  * const knows = edge('knows', {
- *   since: prop.int('since'),
- *   weight: optional(prop.float('weight')),
+ *   since: int('since'),
+ *   weight: optional(float('weight')),
  * })
  *
  * // Edge without properties

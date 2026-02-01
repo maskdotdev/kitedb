@@ -142,8 +142,8 @@ High-level overview of the entire Kite project.
 ## Quick Reference
 
 ### Schema Definition
-- Property types: `prop.string()`, `prop.int()`, `prop.float()`, `prop.bool()`
-- Optional: `optional(prop.X())` or `.optional()`
+- Property types: `string()`, `int()`, `float()`, `bool()` (aliases: `prop.string()`, `prop.int()`, ...)
+- Optional: `optional(X())` (or `optional(prop.X())`) or `.optional()`
 - Nodes: `defineNode(name, { key, props })`
 - Edges: `defineEdge(name, props?)`
 

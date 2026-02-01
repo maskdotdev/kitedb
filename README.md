@@ -365,20 +365,20 @@ console.log('Cache misses:', cacheStats.misses);
 The fluent API provides a type-safe, ergonomic interface for graph operations with schema definitions:
 
 ```typescript
-import { kite, defineNode, defineEdge, prop, optional } from '@kitedb/core';
+import { kite, defineNode, defineEdge, string, int, optional } from '@kitedb/core';
 
 // Define schema
 const user = defineNode('user', {
   key: (id: string) => `user:${id}`,
   props: {
-    name: prop.string('name'),
-    email: prop.string('email'),
-    age: optional(prop.int('age')),
+    name: string('name'),
+    email: string('email'),
+    age: optional(int('age')),
   },
 });
 
 const knows = defineEdge('knows', {
-  since: prop.int('since'),
+  since: int('since'),
 });
 
 // Initialize database with schema

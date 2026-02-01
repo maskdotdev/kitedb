@@ -162,13 +162,13 @@ for await (const { key, value } of storage.iterator({
 
         <h2 id="vector-property">Defining Vector Properties</h2>
         <CodeBlock
-          code={`import { prop } from '@kitedb/core';
+          code={`import { vector } from '@kitedb/core';
 
 // Define with dimensions
-embedding: prop.vector('embedding', 1536)
+embedding: vector('embedding', 1536)
 
 // With custom distance metric
-embedding: prop.vector('embedding', 1536, {
+embedding: vector('embedding', 1536, {
   metric: 'cosine' | 'euclidean' | 'dot'
 })`}
           language="typescript"

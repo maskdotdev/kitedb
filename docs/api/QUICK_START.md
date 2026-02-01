@@ -13,27 +13,27 @@ npm add @kitedb/core
 ## Basic Setup
 
 ```typescript
-import { kite, defineNode, defineEdge, prop, optional } from '@kitedb/core';
+import { kite, defineNode, defineEdge, string, int, float, bool, optional } from '@kitedb/core';
 
 // 1. Define your schema
 const user = defineNode('user', {
   key: (id: string) => `user:${id}`,
   props: {
-    name: prop.string('name'),
-    email: prop.string('email'),
-    age: optional(prop.int('age')),
+    name: string('name'),
+    email: string('email'),
+    age: optional(int('age')),
   },
 });
 
 const company = defineNode('company', {
   key: (id: string) => `company:${id}`,
   props: {
-    name: prop.string('name'),
+    name: string('name'),
   },
 });
 
 const knows = defineEdge('knows', {
-  since: prop.int('since'),
+  since: int('since'),
 });
 
 const worksAt = defineEdge('worksAt');
@@ -300,17 +300,19 @@ const [result1, result2, result3] = await db.batch([
 
 ### Property Types
 
-- `prop.string()` → `string`
-- `prop.int()` → `bigint` (64-bit signed)
-- `prop.float()` → `number` (f64)
-- `prop.bool()` → `boolean`
+Property builders are available as top-level exports or under `prop`:
+
+- `string()` / `prop.string()` → `string`
+- `int()` / `prop.int()` → `bigint` (64-bit signed)
+- `float()` / `prop.float()` → `number` (f64)
+- `bool()` / `prop.bool()` → `boolean`
 
 Optional properties:
 
 ```typescript
-const age = optional(prop.int('age'));
+const age = optional(int('age'));
 // or
-const age = prop.int('age').optional();
+const age = int('age').optional();
 ```
 
 ### Keys
@@ -370,17 +372,17 @@ await db.close();
 ```typescript
 const person = defineNode('person', {
   key: (id: string) => `person:${id}`,
-  props: { name: prop.string('name') },
+  props: { name: string('name') },
 });
 
 const project = defineNode('project', {
   key: (id: string) => `project:${id}`,
-  props: { title: prop.string('title') },
+  props: { title: string('title') },
 });
 
 const contributesTo = defineEdge('contributesTo', {
-  role: prop.string('role'),
-  hours: prop.float('hours'),
+  role: string('role'),
+  hours: float('hours'),
 });
 
 // Create relationships
@@ -409,7 +411,7 @@ const contributorCount = await db
 ```typescript
 const category = defineNode('category', {
   key: (id: string) => `category:${id}`,
-  props: { name: prop.string('name') },
+  props: { name: string('name') },
 });
 
 const parentOf = defineEdge('parentOf');
@@ -426,7 +428,7 @@ const allDescendants = await db
 
 ```typescript
 const event = defineEdge('event', {
-  timestamp: prop.int('timestamp'),
+  timestamp: int('timestamp'),
 });
 
 const recentEvents = await db
@@ -479,8 +481,8 @@ The API automatically infers correct types:
 const user = defineNode('user', {
   key: (id: string) => `user:${id}`,
   props: {
-    name: prop.string('name'),
-    age: optional(prop.int('age')),
+    name: string('name'),
+    age: optional(int('age')),
   },
 });
 
@@ -493,7 +495,7 @@ type User = InferNode<typeof user>;
 // { id: bigint; key: string; name: string; age?: bigint; }
 
 // Edge props
-const knows = defineEdge('knows', { since: prop.int('since') });
+const knows = defineEdge('knows', { since: int('since') });
 type KnowsProps = InferEdgeProps<typeof knows>;
 // { since: bigint; }
 ```

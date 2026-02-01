@@ -475,11 +475,11 @@ getNodeProp(db, nodeId, keyId) → PropValue | null
 // Schema definition
 const user = defineNode('user', {
   key: (id: string) => `user:${id}`,
-  props: { name: prop.string('name'), age: prop.int('age') },
+  props: { name: string('name'), age: int('age') },
 });
 
 const follows = defineEdge('follows', {
-  props: { since: prop.int('since') },
+  props: { since: int('since') },
 });
 
 // Database instance

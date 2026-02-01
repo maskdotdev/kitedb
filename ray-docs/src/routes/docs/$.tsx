@@ -114,13 +114,13 @@ function DocPageContent(props: { slug: string }) {
 
         <h2 id="quick-example">Quick Example</h2>
         <CodeBlock
-          code={`import { kite, defineNode, defineEdge, prop } from '@kitedb/core';
+          code={`import { kite, defineNode, defineEdge, string, vector } from '@kitedb/core';
 
 const user = defineNode('user', {
   key: (id: string) => \`user:\${id}\`,
   props: {
-    name: prop.string('name'),
-    embedding: prop.vector('embedding', 1536),
+    name: string('name'),
+    embedding: vector('embedding', 1536),
   },
 });
 

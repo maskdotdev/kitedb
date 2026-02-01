@@ -3,19 +3,19 @@
  *
  * @example
  * ```typescript
- * import { kite, defineNode, defineEdge, prop, optional } from 'kitedb-core'
+ * import { kite, defineNode, defineEdge, string, int, optional } from 'kitedb-core'
  *
  * // Define schema
  * const User = defineNode('user', {
  *   key: (id: string) => `user:${id}`,
  *   props: {
- *     name: prop.string('name'),
- *     email: prop.string('email'),
+ *     name: string('name'),
+ *     email: string('email'),
  *   },
  * })
  *
  * const knows = defineEdge('knows', {
- *   since: prop.int('since'),
+ *   since: int('since'),
  * })
  *
  * // Open database
@@ -38,7 +38,21 @@
 // Schema Builders (clean API)
 // =============================================================================
 
-export { node, edge, prop, optional, withDefault, defineNode, defineEdge } from './schema'
+export {
+  node,
+  edge,
+  prop,
+  string,
+  int,
+  float,
+  bool,
+  vector,
+  any,
+  optional,
+  withDefault,
+  defineNode,
+  defineEdge,
+} from './schema'
 export type {
   PropType,
   PropSpec,

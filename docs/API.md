@@ -86,7 +86,7 @@ Features:
 ```typescript
 const user = node("user", {
   key: (id: string) => `user:${id}`,
-  props: { name: prop.string("name") },
+  props: { name: string("name") },
 });
 
 const db = await kite("./db", { nodes: [user], edges: [] });
@@ -289,15 +289,15 @@ const raw: GraphDB = db.$raw;
 const user = node("user", {
   key: (id: string) => `user:${id}`,
   props: {
-    name: prop.string("name"),
-    email: prop.string("email"),
-    created: prop.int("created"),
+    name: string("name"),
+    email: string("email"),
+    created: int("created"),
   },
 });
 
 const knows = edge("knows", {
-  since: prop.int("since"),
-  confidence: optional(prop.float("confidence")),
+  since: int("since"),
+  confidence: optional(float("confidence")),
 });
 ```
 
@@ -368,8 +368,8 @@ The API uses TypeScript's advanced type system for full inference:
 const user = node("user", {
   key: (id: string) => `user:${id}`,
   props: {
-    name: prop.string("name"),
-    age: optional(prop.int("age")),
+    name: string("name"),
+    age: optional(int("age")),
   },
 });
 
@@ -382,19 +382,21 @@ type User = InferNode<typeof user>;
 // { id: bigint; key: string; name: string; age?: bigint; }
 
 // Inferred edge props
-const knows = edge("knows", { since: prop.int("since") });
+const knows = edge("knows", { since: int("since") });
 type KnowsProps = InferEdgeProps<typeof knows>;
 // { since: bigint; }
 ```
 
 ## Property Types
 
+Property builders are available as top-level exports or under `prop` (e.g. `string()` / `prop.string()`).
+
 | Type            | TypeScript | Storage | Notes            |
 | --------------- | ---------- | ------- | ---------------- |
-| `prop.string()` | `string`   | UTF-8   | Interned strings |
-| `prop.int()`    | `bigint`   | i64     | 64-bit signed    |
-| `prop.float()`  | `number`   | f64     | IEEE 754         |
-| `prop.bool()`   | `boolean`  | bool    | True/false       |
+| `string()` | `string`   | UTF-8   | Interned strings |
+| `int()`    | `bigint`   | i64     | 64-bit signed    |
+| `float()`  | `number`   | f64     | IEEE 754         |
+| `bool()`   | `boolean`  | bool    | True/false       |
 
 Optional properties can be omitted or set to `undefined`.
 
