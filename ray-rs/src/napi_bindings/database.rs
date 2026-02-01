@@ -19,7 +19,8 @@ use crate::backup as core_backup;
 use crate::core::single_file::{
   close_single_file, is_single_file_path, open_single_file, SingleFileDB as RustSingleFileDB,
   SingleFileOpenOptions as RustOpenOptions,
-  SingleFileOptimizeOptions as RustSingleFileOptimizeOptions, SyncMode as RustSyncMode,
+  SingleFileOptimizeOptions as RustSingleFileOptimizeOptions,
+  SnapshotParseMode as RustSnapshotParseMode, SyncMode as RustSyncMode,
   VacuumOptions as RustVacuumOptions,
 };
 use crate::export as ray_export;
@@ -94,6 +95,25 @@ impl From<JsSyncMode> for RustSyncMode {
   }
 }
 
+/// Snapshot parse behavior for single-file databases
+#[napi(string_enum)]
+#[derive(Debug)]
+pub enum JsSnapshotParseMode {
+  /// Treat snapshot parse errors as fatal
+  Strict,
+  /// Ignore snapshot parse errors and recover from WAL only
+  Salvage,
+}
+
+impl From<JsSnapshotParseMode> for RustSnapshotParseMode {
+  fn from(mode: JsSnapshotParseMode) -> Self {
+    match mode {
+      JsSnapshotParseMode::Strict => RustSnapshotParseMode::Strict,
+      JsSnapshotParseMode::Salvage => RustSnapshotParseMode::Salvage,
+    }
+  }
+}
+
 // ============================================================================
 // Open Options
 // ============================================================================
@@ -144,6 +164,8 @@ pub struct OpenOptions {
   pub cache_query_ttl_ms: Option<i64>,
   /// Sync mode: "Full", "Normal", or "Off" (default: "Full")
   pub sync_mode: Option<JsSyncMode>,
+  /// Snapshot parse mode: "Strict" or "Salvage" (single-file only)
+  pub snapshot_parse_mode: Option<JsSnapshotParseMode>,
 }
 
 impl From<OpenOptions> for RustOpenOptions {
@@ -204,6 +226,11 @@ impl From<OpenOptions> for RustOpenOptions {
     // Sync mode
     if let Some(mode) = opts.sync_mode {
       rust_opts = rust_opts.sync_mode(mode.into());
+    }
+
+    // Snapshot parse mode
+    if let Some(mode) = opts.snapshot_parse_mode {
+      rust_opts = rust_opts.snapshot_parse_mode(mode.into());
     }
 
     rust_opts

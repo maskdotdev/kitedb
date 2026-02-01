@@ -2,7 +2,8 @@
 
 use super::maintenance::CompressionOptions;
 use crate::core::single_file::{
-  SingleFileOpenOptions as RustOpenOptions, SyncMode as RustSyncMode,
+  SingleFileOpenOptions as RustOpenOptions, SnapshotParseMode as RustSnapshotParseMode,
+  SyncMode as RustSyncMode,
 };
 use crate::graph::db::OpenOptions as GraphOpenOptions;
 use crate::types::{CacheOptions, PropertyCacheConfig, QueryCacheConfig, TraversalCacheConfig};
@@ -52,6 +53,42 @@ impl SyncMode {
       RustSyncMode::Full => "SyncMode.full()".to_string(),
       RustSyncMode::Normal => "SyncMode.normal()".to_string(),
       RustSyncMode::Off => "SyncMode.off()".to_string(),
+    }
+  }
+}
+
+/// Snapshot parse behavior for single-file databases
+///
+/// - "strict": Fail open if snapshot parsing fails
+/// - "salvage": Ignore snapshot parse errors and recover from WAL only
+#[pyclass(name = "SnapshotParseMode")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SnapshotParseMode {
+  pub(crate) mode: RustSnapshotParseMode,
+}
+
+#[pymethods]
+impl SnapshotParseMode {
+  /// Strict: snapshot parse errors are fatal
+  #[staticmethod]
+  fn strict() -> Self {
+    Self {
+      mode: RustSnapshotParseMode::Strict,
+    }
+  }
+
+  /// Salvage: ignore snapshot parse errors and recover from WAL only
+  #[staticmethod]
+  fn salvage() -> Self {
+    Self {
+      mode: RustSnapshotParseMode::Salvage,
+    }
+  }
+
+  fn __repr__(&self) -> String {
+    match self.mode {
+      RustSnapshotParseMode::Strict => "SnapshotParseMode.strict()".to_string(),
+      RustSnapshotParseMode::Salvage => "SnapshotParseMode.salvage()".to_string(),
     }
   }
 }
@@ -125,6 +162,9 @@ pub struct OpenOptions {
   pub cache_query_ttl_ms: Option<i64>,
   /// Sync mode: "full", "normal", or "off"
   pub sync_mode: Option<SyncMode>,
+  /// Snapshot parse mode: "strict" or "salvage" (single-file only)
+  #[pyo3(get, set)]
+  pub snapshot_parse_mode: Option<SnapshotParseMode>,
 }
 
 #[pymethods]
@@ -152,7 +192,8 @@ impl OpenOptions {
         cache_max_traversal_entries=None,
         cache_max_query_entries=None,
         cache_query_ttl_ms=None,
-        sync_mode=None
+        sync_mode=None,
+        snapshot_parse_mode=None
     ))]
   #[allow(clippy::too_many_arguments)]
   fn new(
@@ -178,6 +219,7 @@ impl OpenOptions {
     cache_max_query_entries: Option<i64>,
     cache_query_ttl_ms: Option<i64>,
     sync_mode: Option<SyncMode>,
+    snapshot_parse_mode: Option<SnapshotParseMode>,
   ) -> Self {
     Self {
       read_only,
@@ -202,6 +244,7 @@ impl OpenOptions {
       cache_max_query_entries,
       cache_query_ttl_ms,
       sync_mode,
+      snapshot_parse_mode,
     }
   }
 
@@ -213,9 +256,11 @@ impl OpenOptions {
   }
 }
 
-impl From<OpenOptions> for RustOpenOptions {
-  fn from(opts: OpenOptions) -> Self {
-    opts.to_single_file_options().expect("Invalid OpenOptions")
+impl TryFrom<OpenOptions> for RustOpenOptions {
+  type Error = PyErr;
+
+  fn try_from(opts: OpenOptions) -> Result<Self, Self::Error> {
+    opts.to_single_file_options()
   }
 }
 
@@ -276,6 +321,9 @@ impl OpenOptions {
     // Sync mode
     if let Some(sync) = self.sync_mode {
       rust_opts = rust_opts.sync_mode(sync.mode);
+    }
+    if let Some(mode) = self.snapshot_parse_mode {
+      rust_opts = rust_opts.snapshot_parse_mode(mode.mode);
     }
 
     Ok(rust_opts)
@@ -350,7 +398,7 @@ mod tests {
       page_size: Some(8192),
       ..Default::default()
     };
-    let rust_opts: RustOpenOptions = opts.into();
+    let rust_opts: RustOpenOptions = opts.try_into().unwrap();
     assert!(rust_opts.read_only);
     assert!(!rust_opts.create_if_missing);
   }

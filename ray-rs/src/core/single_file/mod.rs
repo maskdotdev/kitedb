@@ -39,7 +39,9 @@ mod stress;
 // Re-export everything for backward compatibility
 pub use compactor::{SingleFileOptimizeOptions, VacuumOptions};
 pub use iter::*;
-pub use open::{close_single_file, open_single_file, SingleFileOpenOptions, SyncMode};
+pub use open::{
+  close_single_file, open_single_file, SingleFileOpenOptions, SnapshotParseMode, SyncMode,
+};
 
 // Also re-export recovery items that are used externally
 pub use recovery::replay_wal_record;
@@ -90,7 +92,7 @@ pub struct SingleFileDB {
   pub pager: Mutex<FilePager>,
   /// Database header
   pub header: RwLock<DbHeaderV1>,
-  /// WAL circular buffer manager
+  /// WAL buffer manager
   pub wal_buffer: Mutex<WalBuffer>,
   /// Memory-mapped snapshot data (if exists)
   pub snapshot: RwLock<Option<SnapshotData>>,

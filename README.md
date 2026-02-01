@@ -538,7 +538,7 @@ await closeSingleFileDB(db);
 
 The single-file format contains:
 - **Header (page 0)**: Magic, version, page size, snapshot/WAL locations
-- **WAL Area**: Circular buffer for write-ahead log records
+- **WAL Area**: Linear buffer for write-ahead log records (checkpoint to reclaim space)
 - **Snapshot Area**: CSR snapshot data (mmap-friendly)
 
 ### Multi-File Format (directory) - Deprecated (Legacy)

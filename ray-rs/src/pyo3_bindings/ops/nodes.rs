@@ -141,8 +141,7 @@ pub fn upsert_node_by_id_single(
   props: &[(PropKeyId, Option<PropValue>)],
 ) -> PyResult<i64> {
   if !db.node_exists(node_id) {
-    db
-      .create_node_with_id(node_id, None)
+    db.create_node_with_id(node_id, None)
       .map_err(|e| PyRuntimeError::new_err(format!("Failed to create node: {e}")))?;
   }
 

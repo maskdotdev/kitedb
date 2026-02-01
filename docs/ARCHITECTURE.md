@@ -26,7 +26,7 @@ RayDB is a high-performance embedded graph database written in TypeScript for th
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
 │  │   Snapshot   │    │    Delta     │    │    WAL Buffer    │  │
-│  │   (mmap'd)   │    │  (in-memory) │    │   (circular)     │  │
+│  │   (mmap'd)   │    │  (in-memory) │    │    (linear)      │  │
 │  │              │    │              │    │                  │  │
 │  │  CSR Format  │ +  │  Pending     │ →  │  Durability      │  │
 │  │  Zero-copy   │    │  Changes     │    │  Crash Recovery  │  │
@@ -47,7 +47,7 @@ RayDB is a high-performance embedded graph database written in TypeScript for th
    - Merged with snapshot on read
 
 3. **WAL**: Write-ahead log for durability
-   - Circular buffer in single-file format
+   - Linear buffer in single-file format (checkpoint to reclaim space)
    - Dual-region design for background checkpointing
 
 ---
@@ -71,7 +71,7 @@ src/
 │   ├── snapshot-writer.ts    # CSR snapshot building
 │   ├── delta.ts              # In-memory delta overlay
 │   ├── wal.ts                # Multi-file WAL format
-│   ├── wal-buffer.ts         # Single-file circular WAL buffer
+│   ├── wal-buffer.ts         # Single-file linear WAL buffer
 │   ├── header.ts             # Single-file header management
 │   ├── pager.ts              # Page-based I/O abstraction
 │   ├── manifest.ts           # Multi-file manifest management
@@ -228,7 +228,7 @@ database/
 │           Header (4KB)                 │  ← Atomic updates, checksummed
 ├────────────────────────────────────────┤
 │                                        │
-│        WAL Area (~64MB)                │  ← Circular buffer
+│        WAL Area (~64MB)                │  ← Linear buffer
 │   ┌─────────────────────────────┐     │
 │   │  Primary Region (75%)       │     │  ← Normal writes
 │   ├─────────────────────────────┤     │
@@ -303,13 +303,13 @@ padding             - Align to 8 bytes
 
 Record types: `BEGIN`, `COMMIT`, `ROLLBACK`, `CREATE_NODE`, `DELETE_NODE`, `ADD_EDGE`, `DELETE_EDGE`, `SET_NODE_PROP`, `DEL_NODE_PROP`, etc.
 
-### Circular WAL Buffer (Single-File)
+### Linear WAL Buffer (Single-File)
 
 - **Dual-region design** for background checkpointing:
   - Primary region (75%): Normal writes
   - Secondary region (25%): Writes during checkpoint
 - Page-level write batching to reduce I/O amplification
-- Skip markers for wrap-around handling
+- No wrap-around; checkpoints reset the WAL to reclaim space
 
 ---
 
@@ -423,7 +423,7 @@ interface TxState {
 2. **Build WAL records**: BEGIN, data records, COMMIT
 3. **Write to WAL**: 
    - Multi-file: Append to WAL file
-   - Single-file: Write to circular buffer, update header
+   - Single-file: Append to linear WAL buffer, update header
 4. **Apply to delta**: Merge transaction state into global delta
 5. **Create version chains**: If MVCC enabled and there are active readers
 6. **Invalidate caches**: Clear affected nodes/edges from cache

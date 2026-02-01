@@ -534,7 +534,7 @@ format is legacy and deprecated for new deployments.
 ```
 mydb.raydb
   Header (page 0)
-  WAL Area (circular buffer)
+  WAL Area (linear buffer; checkpoint to reclaim space)
   Snapshot Area (CSR)
 ```
 

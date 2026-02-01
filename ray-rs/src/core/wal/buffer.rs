@@ -1,10 +1,10 @@
-//! Circular WAL buffer for single-file format with dual-region support
+//! Linear WAL buffer for single-file format with dual-region support
 //!
 //! Ported from src/core/wal-buffer.ts
 //!
-//! The WAL uses a circular buffer design within the database file.
-//! Records wrap around when reaching the end of the WAL area.
-//! Checkpoint advances the tail pointer to reclaim space.
+//! The WAL uses a linear buffer design within the database file.
+//! Records append until the active region is full, then require a checkpoint
+//! to reclaim space.
 //!
 //! Dual-Region Mode (for background checkpointing):
 //! - Primary region: 75% of WAL space (normal writes)
@@ -41,7 +41,7 @@ pub struct WalBuffer {
   head: u64,
   /// Current tail position (oldest valid record, relative to base)
   tail: u64,
-  /// Whether buffer has wrapped around
+  /// Whether buffer has wrapped around (legacy WALs only)
   wrapped: bool,
   /// Page size for batching
   page_size: usize,
@@ -204,14 +204,12 @@ impl WalBuffer {
   pub fn free(&self) -> u64 {
     if self.active_region == 0 {
       // Primary region available space
-      self
-        .primary_region_size
-        .saturating_sub(self.primary_head + 1)
+      self.primary_region_size.saturating_sub(self.primary_head)
     } else {
       // Secondary region available space
       self
         .secondary_region_size
-        .saturating_sub(self.secondary_head - self.secondary_region_start + 1)
+        .saturating_sub(self.secondary_head - self.secondary_region_start)
     }
   }
 
@@ -230,7 +228,7 @@ impl WalBuffer {
     aligned_size <= self.free()
   }
 
-  /// Check if writing would require wrap-around (only relevant for primary region)
+  /// Check if writing would exceed the primary region (wrap disabled)
   pub fn would_wrap(&self, size: usize) -> bool {
     if self.active_region == 1 {
       // Secondary region doesn't wrap
@@ -422,21 +420,12 @@ impl WalBuffer {
     }
 
     if self.active_region == 0 {
-      // Primary region
+      // Primary region (linear, no wrap)
       let write_pos = self.primary_head;
-
-      // Check if we need to wrap
       if self.primary_head + aligned_size > self.primary_region_size {
-        // Need to wrap around
-        if self.tail <= aligned_size {
-          // Can't fit even at the start
-          return None;
-        }
-        self.primary_head = aligned_size;
-        self.wrapped = true;
-      } else {
-        self.primary_head += aligned_size;
+        return None;
       }
+      self.primary_head += aligned_size;
       self.head = self.primary_head;
       Some(write_pos)
     } else {
@@ -467,11 +456,9 @@ impl WalBuffer {
     }
 
     if self.active_region == 0 {
-      // Primary region
-      if self.would_wrap(aligned_size) {
-        // Write a skip marker at current position and wrap to start
-        self.write_skip_marker(pager)?;
-        self.primary_head = 0;
+      // Primary region (linear, no wrap)
+      if self.primary_head + aligned_size as u64 > self.primary_region_size {
+        return Err(KiteError::WalBufferFull);
       }
 
       // Calculate file offset
@@ -496,19 +483,6 @@ impl WalBuffer {
     }
 
     Ok(self.head)
-  }
-
-  /// Write a skip marker to indicate end of valid data before wrap
-  fn write_skip_marker(&mut self, pager: &mut FilePager) -> Result<()> {
-    // A skip marker is: recLen = 0 (4 bytes) + magic = 0xFFFFFFFF (4 bytes)
-    let mut marker = [0u8; 8];
-    write_u32(&mut marker, 0, 0); // recLen = 0 means skip
-    write_u32(&mut marker, 4, SKIP_MARKER_MAGIC);
-
-    let file_offset = self.file_offset(self.head);
-    self.buffer_write(file_offset, &marker, pager)?;
-
-    Ok(())
   }
 
   /// Buffer a write for later flushing (page-level batching)

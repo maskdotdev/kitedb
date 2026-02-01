@@ -183,7 +183,8 @@ impl KiteInsertExecutorMany {
     )?;
     let mut out = Vec::with_capacity(results.len());
     for ((full_key, _), (node_id, props)) in self.entries.iter().zip(results.into_iter()) {
-      let props = props.expect("props loaded");
+      let props =
+        props.ok_or_else(|| Error::from_reason("Insert returning=true did not yield props"))?;
       out.push(node_to_js(
         &env,
         node_id,
@@ -533,7 +534,8 @@ impl KiteUpsertExecutorMany {
     )?;
     let mut out = Vec::with_capacity(results.len());
     for ((full_key, _), (node_id, props)) in self.entries.iter().zip(results.into_iter()) {
-      let props = props.expect("props loaded");
+      let props =
+        props.ok_or_else(|| Error::from_reason("Upsert returning=true did not yield props"))?;
       out.push(node_to_js(
         &env,
         node_id,

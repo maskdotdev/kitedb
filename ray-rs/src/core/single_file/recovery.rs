@@ -18,7 +18,7 @@ use crate::core::wal::record::{
 use crate::error::Result;
 use crate::types::*;
 
-/// Scan WAL records from the circular buffer
+/// Scan WAL records from the WAL area (linear; legacy wrap supported)
 pub(crate) fn scan_wal_records(
   pager: &mut FilePager,
   header: &DbHeaderV1,
@@ -30,6 +30,7 @@ pub(crate) fn scan_wal_records(
 
   let mut pos = header.wal_tail;
   let head = header.wal_head;
+  let wrapped = head < header.wal_tail;
 
   // If tail == head, WAL is empty
   if pos == head {
@@ -41,14 +42,16 @@ pub(crate) fn scan_wal_records(
   let wal_data = read_wal_area(pager, header)?;
 
   while pos != head {
-    // Handle wrap-around
-    let actual_pos = pos % wal_size;
+    let actual_pos = if wrapped { pos % wal_size } else { pos };
 
-    // Check for skip marker
+    // Check for skip marker (legacy wrap-around)
     if actual_pos + 8 > wal_size {
-      // Not enough space for header, wrap to start
-      pos = 0;
-      continue;
+      if wrapped {
+        // Not enough space for header, wrap to start
+        pos = 0;
+        continue;
+      }
+      break;
     }
 
     let offset = actual_pos as usize;
@@ -73,9 +76,12 @@ pub(crate) fn scan_wal_records(
           wal_data[offset + 7],
         ]);
         if marker == 0xFFFFFFFF {
-          // Skip to start
-          pos = 0;
-          continue;
+          if wrapped {
+            // Skip to start (legacy wrap)
+            pos = 0;
+            continue;
+          }
+          break;
         }
       }
       break; // Invalid record
@@ -84,7 +90,11 @@ pub(crate) fn scan_wal_records(
     // Parse the record
     if let Some(record) = parse_wal_record(&wal_data, offset) {
       let aligned_size = crate::util::binary::align_up(rec_len, WAL_RECORD_ALIGNMENT);
-      pos = (actual_pos + aligned_size as u64) % wal_size;
+      pos = if wrapped {
+        (actual_pos + aligned_size as u64) % wal_size
+      } else {
+        actual_pos + aligned_size as u64
+      };
       records.push(record);
     } else {
       break; // Invalid record

@@ -56,6 +56,7 @@ pub fn kitedb(m: &Bound<'_, PyModule>) -> PyResult<()> {
   // Options classes
   m.add_class::<options::OpenOptions>()?;
   m.add_class::<options::SyncMode>()?;
+  m.add_class::<options::SnapshotParseMode>()?;
   m.add_class::<options::CompressionOptions>()?;
   m.add_class::<options::SingleFileOptimizeOptions>()?;
   m.add_class::<options::VacuumOptions>()?;

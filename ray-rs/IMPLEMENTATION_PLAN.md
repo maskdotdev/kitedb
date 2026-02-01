@@ -29,7 +29,7 @@ KiteDB uses a **Snapshot + Delta + WAL** architecture:
 ├─────────────────────────────────────────────────────────────────┤
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────────┐  │
 │  │   Snapshot   │    │    Delta     │    │    WAL Buffer    │  │
-│  │   (mmap'd)   │    │  (in-memory) │    │   (circular)     │  │
+│  │   (mmap'd)   │    │  (in-memory) │    │    (linear)      │  │
 │  │              │    │              │    │                  │  │
 │  │  CSR Format  │ +  │  Pending     │ →  │  Durability      │  │
 │  │  Zero-copy   │    │  Changes     │    │  Crash Recovery  │  │
@@ -72,7 +72,7 @@ ray-rs/
 │   │   │   ├── record.rs      # WAL record types
 │   │   │   ├── writer.rs      # WAL writing
 │   │   │   ├── reader.rs      # WAL parsing/recovery
-│   │   │   └── buffer.rs      # Circular WAL buffer
+│   │   │   └── buffer.rs      # Linear WAL buffer
 │   │   ├── header.rs          # Single-file header
 │   │   ├── pager.rs           # Page-based I/O
 │   │   ├── manifest.rs        # Multi-file manifest

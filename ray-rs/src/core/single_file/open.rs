@@ -49,6 +49,16 @@ pub enum SyncMode {
   Off,
 }
 
+/// Snapshot parse behavior when opening single-file databases
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SnapshotParseMode {
+  /// Treat snapshot parse errors as fatal
+  #[default]
+  Strict,
+  /// Ignore snapshot parse errors and recover from WAL only
+  Salvage,
+}
+
 /// Options for opening a single-file database
 #[derive(Debug, Clone)]
 pub struct SingleFileOpenOptions {
@@ -72,6 +82,8 @@ pub struct SingleFileOpenOptions {
   pub checkpoint_compression: Option<CompressionOptions>,
   /// Synchronization mode for WAL writes (default: Full)
   pub sync_mode: SyncMode,
+  /// Snapshot parse behavior (default: Strict)
+  pub snapshot_parse_mode: SnapshotParseMode,
 }
 
 impl Default for SingleFileOpenOptions {
@@ -90,6 +102,7 @@ impl Default for SingleFileOpenOptions {
         ..Default::default()
       }),
       sync_mode: SyncMode::Full,
+      snapshot_parse_mode: SnapshotParseMode::Strict,
     }
   }
 }
@@ -173,6 +186,12 @@ impl SingleFileOpenOptions {
   /// Only for testing or ephemeral data. Data may be lost on any crash.
   pub fn sync_off(mut self) -> Self {
     self.sync_mode = SyncMode::Off;
+    self
+  }
+
+  /// Set snapshot parse mode (Strict or Salvage)
+  pub fn snapshot_parse_mode(mut self, mode: SnapshotParseMode) -> Self {
+    self.snapshot_parse_mode = mode;
     self
   }
 }
@@ -291,14 +310,21 @@ pub fn open_single_file<P: AsRef<Path>>(
     // Calculate snapshot offset in bytes
     let snapshot_offset = (header.snapshot_start_page * header.page_size as u64) as usize;
 
-    match SnapshotData::parse_at_offset(
+    let mut parse_options = crate::core::snapshot::reader::ParseSnapshotOptions::default();
+    if matches!(options.snapshot_parse_mode, SnapshotParseMode::Salvage) {
+      parse_options.skip_crc_validation = true;
+    }
+
+    let parse_result = SnapshotData::parse_at_offset(
       std::sync::Arc::new({
         // Safety handled inside map_file (native mmap) or in-memory read (wasm).
         map_file(pager.file())?
       }),
       snapshot_offset,
-      &crate::core::snapshot::reader::ParseSnapshotOptions::default(),
-    ) {
+      &parse_options,
+    );
+
+    match parse_result {
       Ok(snap) => {
         // Load schema from snapshot
         for i in 1..=snap.header.num_labels as u32 {
@@ -328,10 +354,13 @@ pub fn open_single_file<P: AsRef<Path>>(
 
         Some(snap)
       }
-      Err(e) => {
-        eprintln!("Warning: Failed to parse snapshot: {e}");
-        None
-      }
+      Err(e) => match options.snapshot_parse_mode {
+        SnapshotParseMode::Strict => return Err(e),
+        SnapshotParseMode::Salvage => {
+          eprintln!("Warning: Failed to parse snapshot: {e}");
+          None
+        }
+      },
     }
   } else {
     None
@@ -339,7 +368,7 @@ pub fn open_single_file<P: AsRef<Path>>(
 
   // Replay WAL for recovery (if not a new database)
   if !is_new && header.wal_head > 0 {
-    // Read WAL records from the circular buffer
+    // Read WAL records from the WAL area
     let wal_records = scan_wal_records(&mut pager, &header)?;
     let committed = get_committed_transactions(&wal_records);
 
