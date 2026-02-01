@@ -30,9 +30,9 @@
 export type PropType = 'string' | 'int' | 'float' | 'bool' | 'vector' | 'any'
 
 /** Property specification */
-export interface PropSpec {
+export interface PropSpec<T extends PropType = PropType> {
   /** Property type */
-  type: PropType
+  type: T
   /** Whether this property is optional */
   optional?: boolean
   /** Default value for this property */
@@ -62,24 +62,24 @@ export const prop = {
    * String property.
    * Stored as UTF-8 strings.
    */
-  string: (_name: string): PropSpec => ({ type: 'string' }),
+  string: (_name: string): PropSpec<'string'> => ({ type: 'string' }),
 
   /**
    * Integer property.
    * Stored as 64-bit signed integers.
    */
-  int: (_name: string): PropSpec => ({ type: 'int' }),
+  int: (_name: string): PropSpec<'int'> => ({ type: 'int' }),
 
   /**
    * Float property.
    * Stored as 64-bit IEEE 754 floats.
    */
-  float: (_name: string): PropSpec => ({ type: 'float' }),
+  float: (_name: string): PropSpec<'float'> => ({ type: 'float' }),
 
   /**
    * Boolean property.
    */
-  bool: (_name: string): PropSpec => ({ type: 'bool' }),
+  bool: (_name: string): PropSpec<'bool'> => ({ type: 'bool' }),
 
   /**
    * Vector property for embeddings.
@@ -88,13 +88,13 @@ export const prop = {
    * @param _name - Property name
    * @param _dimensions - Vector dimensions (for documentation/validation)
    */
-  vector: (_name: string, _dimensions?: number): PropSpec => ({ type: 'vector' }),
+  vector: (_name: string, _dimensions?: number): PropSpec<'vector'> => ({ type: 'vector' }),
 
   /**
    * Any property (schema-less).
    * Accepts any value type.
    */
-  any: (_name: string): PropSpec => ({ type: 'any' }),
+  any: (_name: string): PropSpec<'any'> => ({ type: 'any' }),
 }
 
 /**
@@ -105,7 +105,7 @@ export const prop = {
  * const age = optional(prop.int('age'))
  * ```
  */
-export function optional<T extends PropSpec>(spec: T): T {
+export function optional<T extends PropSpec>(spec: T): T & { optional: true } {
   return { ...spec, optional: true }
 }
 
@@ -144,17 +144,22 @@ export interface KeySpec {
 // =============================================================================
 
 /** Node type specification */
-export interface NodeSpec {
+export interface NodeSpec<
+  P extends Record<string, PropSpec> | undefined = Record<string, PropSpec> | undefined,
+> {
   /** Node type name (must be unique per database) */
   name: string
   /** Key generation specification */
   key?: KeySpec
   /** Property definitions */
-  props?: Record<string, PropSpec>
+  props?: P
 }
 
 /** Configuration for node() */
-export interface NodeConfig<K extends string = string> {
+export interface NodeConfig<
+  K extends string = string,
+  P extends Record<string, PropSpec> | undefined = Record<string, PropSpec> | undefined,
+> {
   /**
    * Key generator function or key specification.
    *
@@ -173,7 +178,7 @@ export interface NodeConfig<K extends string = string> {
    */
   key?: ((arg: K) => string) | KeySpec
   /** Property definitions */
-  props?: Record<string, PropSpec>
+  props?: P
 }
 
 /**
@@ -206,7 +211,10 @@ export interface NodeConfig<K extends string = string> {
  * })
  * ```
  */
-export function node<K extends string = string>(name: string, config?: NodeConfig<K>): NodeSpec {
+export function node<
+  K extends string = string,
+  P extends Record<string, PropSpec> | undefined = Record<string, PropSpec> | undefined,
+>(name: string, config?: NodeConfig<K, P>): NodeSpec<P> {
   if (!config) {
     return { name }
   }
@@ -240,11 +248,13 @@ export function node<K extends string = string>(name: string, config?: NodeConfi
 // =============================================================================
 
 /** Edge type specification */
-export interface EdgeSpec {
+export interface EdgeSpec<
+  P extends Record<string, PropSpec> | undefined = Record<string, PropSpec> | undefined,
+> {
   /** Edge type name (must be unique per database) */
   name: string
   /** Property definitions */
-  props?: Record<string, PropSpec>
+  props?: P
 }
 
 /**
@@ -269,7 +279,9 @@ export interface EdgeSpec {
  * const follows = edge('follows')
  * ```
  */
-export function edge(name: string, props?: Record<string, PropSpec>): EdgeSpec {
+export function edge<
+  P extends Record<string, PropSpec> | undefined = Record<string, PropSpec> | undefined,
+>(name: string, props?: P): EdgeSpec<P> {
   return { name, props }
 }
 
@@ -282,3 +294,51 @@ export const defineNode = node
 
 /** @deprecated Use `edge()` instead */
 export const defineEdge = edge
+
+// =============================================================================
+// Type Inference Helpers
+// =============================================================================
+
+type PropValue<S extends PropSpec> = S['type'] extends 'string'
+  ? string
+  : S['type'] extends 'int'
+    ? number
+    : S['type'] extends 'float'
+      ? number
+      : S['type'] extends 'bool'
+        ? boolean
+        : S['type'] extends 'vector'
+          ? Array<number>
+          : unknown
+
+type OptionalKeys<P extends Record<string, PropSpec>> = {
+  [K in keyof P]: P[K] extends { optional: true } ? K : never
+}[keyof P]
+
+type RequiredKeys<P extends Record<string, PropSpec>> = Exclude<keyof P, OptionalKeys<P>>
+
+type PropsFromSpec<P extends Record<string, PropSpec> | undefined> = P extends Record<string, PropSpec>
+  ? {
+      [K in RequiredKeys<P>]: PropValue<P[K]>
+    } & {
+      [K in OptionalKeys<P>]?: PropValue<P[K]>
+    }
+  : Record<string, never>
+
+export type NodeRef<N extends NodeSpec = NodeSpec> = {
+  id: number
+  key: string
+  type: N['name']
+}
+
+export type InferNodeInsert<N extends NodeSpec> = {
+  key: string
+} & PropsFromSpec<N['props']>
+
+export type InferNodeUpsert<N extends NodeSpec> = {
+  key: string
+} & Partial<PropsFromSpec<N['props']>>
+
+export type InferNode<N extends NodeSpec> = NodeRef<N> & PropsFromSpec<N['props']>
+
+export type InferEdgeProps<E extends EdgeSpec> = PropsFromSpec<E['props']>

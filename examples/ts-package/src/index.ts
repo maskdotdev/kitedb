@@ -1,6 +1,7 @@
-import { edge, node, ray, optional, prop } from "@kitedb/core";
+import { kite, node, edge, prop, optional } from "@kitedb/core";
 
-const user = node("user", {
+// Define your schema
+const User = node("user", {
   key: (id: string) => `user:${id}`,
   props: {
     name: prop.string("name"),
@@ -9,32 +10,33 @@ const user = node("user", {
   },
 });
 
-const follows = edge("follows", {
+const Knows = edge("knows", {
   since: prop.int("since"),
 });
 
-async function main(): Promise<void> {
-  const db = await ray("./social.kitedb", {
-    nodes: [user],
-    edges: [follows],
-  });
-
-  const alice = db
-    .insert(user)
-    .values({
-      key: "alice",
-      name: "Alice",
-      email: "alice@example.com",
-      age: 30,
-    })
-    .returning();
-
-  console.log("Inserted:", alice);
-
-  await db.close();
-}
-
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
+// Open database (async)
+const db = await kite("./social.kitedb", {
+  nodes: [User],
+  edges: [Knows],
 });
+
+// Insert nodes
+const alice = db
+  .insert(User)
+  .values({ key: "alice", name: "Alice", email: "alice@example.com" })
+  .returning();
+const bob = db
+  .insert(User)
+  .values({ key: "bob", name: "Bob", email: "bob@example.com" })
+  .returning();
+
+// Create edges
+db.link(alice, Knows, bob, { since: 2024 });
+
+// Traverse
+const friends = db.from(alice).out(Knows).toArray();
+
+// Pathfinding
+const path = db.shortestPath(alice).via(Knows).to(bob).dijkstra();
+
+db.close();

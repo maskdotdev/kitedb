@@ -3,8 +3,8 @@
 Sources
 - TypeScript API docs: `docs/api/README.md`
 - TypeScript exports: `src/index.ts`
-- NAPI surface: `ray-rs/index.d.ts`
-- Python bindings: `ray-rs/python/raydb/__init__.py`, `ray-rs/src/pyo3_bindings/*.rs`
+- NAPI surface: `index.d.ts` in the Rust bindings package
+- Python bindings: `python/<bindings>/__init__.py`, `src/pyo3_bindings/*.rs`
 
 Legend
 - Full: Parity with TS feature and behavior

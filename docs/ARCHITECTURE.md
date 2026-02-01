@@ -61,7 +61,7 @@ src/
 ├── constants.ts          # Magic numbers, file extensions, thresholds
 ├── api/                  # High-level Drizzle-style API
 │   ├── index.ts          # API exports
-│   ├── ray.ts            # Main Kite class
+│   ├── kite.ts           # Main Kite class
 │   ├── schema.ts         # Schema definition (defineNode, defineEdge, prop)
 │   ├── builders.ts       # Query builders (insert, update, delete)
 │   ├── traversal.ts      # Graph traversal builders
@@ -77,7 +77,7 @@ src/
 │   ├── manifest.ts           # Multi-file manifest management
 │   ├── compactor.ts          # Multi-file compaction
 │   └── single-file-compactor.ts  # Single-file checkpoint/compaction
-├── ray/                  # Graph database operations
+├── graph-db/             # Graph database operations
 │   ├── graph-db/
 │   │   ├── index.ts          # Re-exports all graph operations
 │   │   ├── lifecycle.ts      # openGraphDB, closeGraphDB

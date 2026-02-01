@@ -118,7 +118,7 @@ class PropertyCache {
 
 ### 3. WAL Records Built Twice
 
-**Location:** `src/ray/graph-db/checkpoint.ts:27-39`
+**Location:** `graph-db/checkpoint.ts:27-39`
 
 **Problem:** `buildWalRecord()` allocates memory and computes CRC just to estimate size:
 
@@ -211,7 +211,7 @@ class WalBuffer {
 
 ### 5. getSnapshot() Call Overhead
 
-**Location:** `src/ray/graph-db/snapshot-helper.ts:15-38`
+**Location:** `graph-db/snapshot-helper.ts:15-38`
 
 **Problem:** Every read operation calls `getSnapshot()` which has branch checks:
 
@@ -240,7 +240,7 @@ export function getSnapshot(db: GraphDB): SnapshotData | null {
 
 ### 6. Linear Scan in Delta Edge Lookup
 
-**Location:** `src/ray/iterators.ts:188-195`
+**Location:** `iterators.ts:188-195`
 
 **Problem:** `hasEdgeMerged()` linearly scans delta patches:
 
@@ -317,7 +317,7 @@ export function* iterateOutEdges(
 
 ### 8. Snapshot Cache Timing After Checkpoint
 
-**Location:** `src/ray/graph-db/checkpoint.ts`
+**Location:** `graph-db/checkpoint.ts`
 
 **Problem:** Cache is invalidated after checkpoint, then next read must re-parse:
 

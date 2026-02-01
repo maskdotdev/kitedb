@@ -6,7 +6,7 @@ The `api` module provides a **Drizzle-style, type-safe API** for Kite, a high-pe
 
 The API consists of five main modules:
 
-- **`ray.ts`** - Main entry point and database context
+- **`kite.ts`** - Main entry point and database context
 - **`schema.ts`** - Schema definition with property and relation types
 - **`builders.ts`** - Query builders for insert, update, delete operations
 - **`traversal.ts`** - Graph traversal with filtering and aggregation
@@ -19,7 +19,7 @@ The API consists of five main modules:
 Define your graph structure upfront using `node()` and `edge()`:
 
 ```typescript
-import { node, edge, prop, optional } from "@ray-db/ray";
+import { node, edge, prop, optional } from "@kitedb/core";
 
 // Define node types
 const user = node("user", {
@@ -68,7 +68,7 @@ type ReturnedUser = InferNode<typeof user>;
 
 ## Module Reference
 
-### `ray.ts` - Main Database API
+### `kite.ts` - Main Database API
 
 #### `kite(path, options): Promise<Kite>`
 

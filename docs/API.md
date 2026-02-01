@@ -19,7 +19,7 @@ Kite is organized into several key layers:
 └──────────────────┬──────────────────────┘
                    │
 ┌──────────────────▼──────────────────────┐
-│  Core Database (src/ray/graph-db/)      │
+│  Core Database (graph-db/)              │
 │  - Low-level CRUD operations            │
 │  - Transaction management               │
 │  - Node/edge IDs                        │
@@ -74,7 +74,7 @@ Features:
 
 **Modules:**
 
-- `ray.ts` - Main database context
+- `kite.ts` - Main database context
 - `schema.ts` - Schema builders
 - `builders.ts` - Query builders
 - `traversal.ts` - Graph traversal
@@ -96,7 +96,7 @@ const alice = await db
   .returning();
 ```
 
-### 2. Low-Level API (`src/ray/graph-db/`)
+### 2. Low-Level API (`graph-db/`)
 
 **For advanced users and framework builders** - Direct database access.
 
@@ -194,14 +194,14 @@ Components:
 src/
 ├── api/                    # High-level API
 │   ├── README.md          # API documentation
-│   ├── ray.ts             # Main database context
+│   ├── kite.ts            # Main database context
 │   ├── schema.ts          # Schema definitions
 │   ├── builders.ts        # Query builders
 │   ├── traversal.ts       # Graph traversal
 │   ├── pathfinding.ts     # Shortest path algorithms
 │   └── index.ts           # Exports
 │
-├── ray/graph-db/          # Low-level database
+├── graph-db/              # Low-level database
 │   ├── nodes.ts           # Node operations
 │   ├── edges.ts           # Edge operations
 │   ├── tx.ts              # Transaction management
@@ -261,7 +261,7 @@ src/
 import { kite, node, edge, prop } from "./src/api";
 ```
 
-### Use Low-Level API (`src/ray/graph-db/`)
+### Use Low-Level API (`graph-db/`)
 
 ✅ You're building a framework or tool
 ✅ You need maximum control
@@ -271,7 +271,7 @@ import { kite, node, edge, prop } from "./src/api";
 ✅ You need MVCC transaction control
 
 ```typescript
-import { openGraphDB, createNode, addEdge } from "./src/ray/graph-db";
+import { openGraphDB, createNode, addEdge } from "./src/graph-db";
 ```
 
 ### Use Raw Database via Escape Hatch

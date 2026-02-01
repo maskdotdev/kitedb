@@ -59,6 +59,26 @@ const path = db.shortestPath(alice).via(Knows).to(bob).dijkstra()
 db.close()
 ```
 
+Note: The example uses top-level await (ESM). If your project is CommonJS or can’t enable top-level await, wrap it:
+
+```ts
+async function main() {
+  const db = await kite('./social.kitedb', { nodes: [User], edges: [Knows] })
+  // ...
+  db.close()
+}
+
+main().catch(console.error)
+```
+
+Or use the sync open:
+
+```ts
+const db = kiteSync('./social.kitedb', { nodes: [User], edges: [Knows] })
+// ...
+db.close()
+```
+
 ## Quickstart (low-level API)
 
 For direct control, use the low-level `Database` class:

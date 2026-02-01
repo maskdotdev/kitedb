@@ -67,7 +67,7 @@ type User = InferNode<typeof user>;
 // Result: { id: bigint; key: string; name: string; email: string; age?: bigint; }
 ```
 
-### 2. Database Context (`ray.ts`)
+### 2. Database Context (`kite.ts`)
 
 The `Kite` class is the main interface for all operations:
 

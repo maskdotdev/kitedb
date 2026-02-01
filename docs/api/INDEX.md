@@ -34,7 +34,7 @@ The most comprehensive documentation of the API.
 
 **Sections:**
 - **Module Reference** - Detailed docs for each module
-  - `ray.ts` - Database and operations
+  - `kite.ts` - Database and operations
   - `schema.ts` - Schema definition
   - `builders.ts` - Query builders
   - `traversal.ts` - Graph traversal
@@ -237,7 +237,7 @@ Examples for:
 ## Related Files
 
 **Source Code:**
-- `ray.ts` - Main database class
+- `kite.ts` - Main database class
 - `schema.ts` - Schema builders
 - `builders.ts` - Query builders
 - `traversal.ts` - Traversal implementation

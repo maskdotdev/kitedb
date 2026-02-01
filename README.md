@@ -27,33 +27,31 @@ A high-performance embedded graph database for Bun/TypeScript with:
 ## Installation
 
 ```bash
-bun add @ray-db/ray
+bun add @kitedb/core
 ```
 
 Or for development:
 
 ```bash
 git clone <repo>
-cd ray
+cd raydb
 bun install
 ```
 
 ## Browser (WASM) prototype
 
-KiteDB can run in the browser via the WASI build of the core (`@ray-db/core`).
+KiteDB can run in the browser via the WASI build of the core (`@kitedb/core`).
 This uses an in-memory filesystem by default (ephemeral per page load).
 
 Build the WASM bundle locally:
 
 ```bash
-cd ray-rs
 npm run build:wasm
 ```
 
-Then import `@ray-db/core` in your browser bundler (it uses the `browser` entry),
-or import `@ray-db/core-wasm32-wasi` directly. Persistence in the browser
-requires wiring WASI to a persistent FS (e.g. OPFS/IndexedDB).
-See `ray-rs/examples/browser` for a minimal demo (OPFS first, IndexedDB fallback).
+Then import `@kitedb/core` in your browser bundler (it uses the `browser` entry).
+Persistence in the browser requires wiring WASI to a persistent FS (e.g. OPFS/IndexedDB).
+See the browser example in the Rust bindings package for a minimal demo (OPFS first, IndexedDB fallback).
 
 ## Quick Start
 
@@ -367,7 +365,7 @@ console.log('Cache misses:', cacheStats.misses);
 The fluent API provides a type-safe, ergonomic interface for graph operations with schema definitions:
 
 ```typescript
-import { kite, defineNode, defineEdge, prop, optional } from '@ray-db/ray';
+import { kite, defineNode, defineEdge, prop, optional } from '@kitedb/core';
 
 // Define schema
 const user = defineNode('user', {
@@ -522,7 +520,7 @@ import {
   closeSingleFileDB,
   optimizeSingleFile,
   vacuumSingleFile,
-} from '@ray-db/ray';
+} from '@kitedb/core';
 
 // Open or create a single-file database
 const db = await openSingleFileDB('./my-graph.raydb', {

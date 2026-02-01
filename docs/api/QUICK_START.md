@@ -5,15 +5,15 @@ Get up and running with Kite in 5 minutes.
 ## Installation
 
 ```bash
-bun add @ray-db/ray
+bun add @kitedb/core
 # or
-npm add @ray-db/ray
+npm add @kitedb/core
 ```
 
 ## Basic Setup
 
 ```typescript
-import { kite, defineNode, defineEdge, prop, optional } from '@ray-db/ray';
+import { kite, defineNode, defineEdge, prop, optional } from '@kitedb/core';
 
 // 1. Define your schema
 const user = defineNode('user', {
@@ -79,6 +79,32 @@ console.log('Alice knows:', friends.map(f => f.name));
 
 // 6. Close database
 await db.close();
+```
+
+Note: This snippet uses top-level await (ESM). If your project is CommonJS or can’t enable top-level await, wrap it:
+
+```typescript
+async function main() {
+  const db = await kite('./my-database', {
+    nodes: [user, company],
+    edges: [knows, worksAt],
+  });
+  // ...
+  await db.close();
+}
+
+main().catch(console.error);
+```
+
+Or use the sync open:
+
+```typescript
+const db = kiteSync('./my-database', {
+  nodes: [user, company],
+  edges: [knows, worksAt],
+});
+// ...
+db.close();
 ```
 
 ## Common Operations
