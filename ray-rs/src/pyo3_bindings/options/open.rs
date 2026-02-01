@@ -1,5 +1,6 @@
 //! Database open options for Python bindings
 
+use super::maintenance::CompressionOptions;
 use crate::core::single_file::{
   SingleFileOpenOptions as RustOpenOptions, SyncMode as RustSyncMode,
 };
@@ -98,6 +99,9 @@ pub struct OpenOptions {
   /// Use background (non-blocking) checkpoint
   #[pyo3(get, set)]
   pub background_checkpoint: Option<bool>,
+  /// Compression options for checkpoint snapshots (single-file only)
+  #[pyo3(get, set)]
+  pub checkpoint_compression: Option<CompressionOptions>,
   /// Cache parsed snapshot in memory (single-file only)
   #[pyo3(get, set)]
   pub cache_snapshot: Option<bool>,
@@ -140,6 +144,7 @@ impl OpenOptions {
         auto_checkpoint=None,
         checkpoint_threshold=None,
         background_checkpoint=None,
+        checkpoint_compression=None,
         cache_snapshot=None,
         cache_enabled=None,
         cache_max_node_props=None,
@@ -164,6 +169,7 @@ impl OpenOptions {
     auto_checkpoint: Option<bool>,
     checkpoint_threshold: Option<f64>,
     background_checkpoint: Option<bool>,
+    checkpoint_compression: Option<CompressionOptions>,
     cache_snapshot: Option<bool>,
     cache_enabled: Option<bool>,
     cache_max_node_props: Option<i64>,
@@ -187,6 +193,7 @@ impl OpenOptions {
       auto_checkpoint,
       checkpoint_threshold,
       background_checkpoint,
+      checkpoint_compression,
       cache_snapshot,
       cache_enabled,
       cache_max_node_props,
@@ -208,44 +215,54 @@ impl OpenOptions {
 
 impl From<OpenOptions> for RustOpenOptions {
   fn from(opts: OpenOptions) -> Self {
+    opts.to_single_file_options().expect("Invalid OpenOptions")
+  }
+}
+
+impl OpenOptions {
+  /// Convert to single-file open options with validation
+  pub fn to_single_file_options(&self) -> PyResult<RustOpenOptions> {
     let mut rust_opts = RustOpenOptions::new();
-    if let Some(v) = opts.read_only {
+    if let Some(v) = self.read_only {
       rust_opts = rust_opts.read_only(v);
     }
-    if let Some(v) = opts.create_if_missing {
+    if let Some(v) = self.create_if_missing {
       rust_opts = rust_opts.create_if_missing(v);
     }
-    if let Some(v) = opts.page_size {
+    if let Some(v) = self.page_size {
       rust_opts = rust_opts.page_size(v as usize);
     }
-    if let Some(v) = opts.wal_size {
+    if let Some(v) = self.wal_size {
       rust_opts = rust_opts.wal_size(v as usize);
     }
-    if let Some(v) = opts.auto_checkpoint {
+    if let Some(v) = self.auto_checkpoint {
       rust_opts = rust_opts.auto_checkpoint(v);
     }
-    if let Some(v) = opts.checkpoint_threshold {
+    if let Some(v) = self.checkpoint_threshold {
       rust_opts = rust_opts.checkpoint_threshold(v);
     }
-    if let Some(v) = opts.background_checkpoint {
+    if let Some(v) = self.background_checkpoint {
       rust_opts = rust_opts.background_checkpoint(v);
+    }
+    if let Some(ref compression) = self.checkpoint_compression {
+      rust_opts = rust_opts.checkpoint_compression(Some(compression.to_core()?));
     }
 
     // Cache options
-    if opts.cache_enabled == Some(true) {
+    if self.cache_enabled == Some(true) {
       let property_cache = Some(PropertyCacheConfig {
-        max_node_props: opts.cache_max_node_props.unwrap_or(10000) as usize,
-        max_edge_props: opts.cache_max_edge_props.unwrap_or(10000) as usize,
+        max_node_props: self.cache_max_node_props.unwrap_or(10000) as usize,
+        max_edge_props: self.cache_max_edge_props.unwrap_or(10000) as usize,
       });
 
       let traversal_cache = Some(TraversalCacheConfig {
-        max_entries: opts.cache_max_traversal_entries.unwrap_or(5000) as usize,
+        max_entries: self.cache_max_traversal_entries.unwrap_or(5000) as usize,
         max_neighbors_per_entry: 100,
       });
 
       let query_cache = Some(QueryCacheConfig {
-        max_entries: opts.cache_max_query_entries.unwrap_or(1000) as usize,
-        ttl_ms: opts.cache_query_ttl_ms.map(|v| v as u64),
+        max_entries: self.cache_max_query_entries.unwrap_or(1000) as usize,
+        ttl_ms: self.cache_query_ttl_ms.map(|v| v as u64),
       });
 
       rust_opts = rust_opts.cache(Some(CacheOptions {
@@ -257,11 +274,11 @@ impl From<OpenOptions> for RustOpenOptions {
     }
 
     // Sync mode
-    if let Some(sync) = opts.sync_mode {
+    if let Some(sync) = self.sync_mode {
       rust_opts = rust_opts.sync_mode(sync.mode);
     }
 
-    rust_opts
+    Ok(rust_opts)
   }
 }
 

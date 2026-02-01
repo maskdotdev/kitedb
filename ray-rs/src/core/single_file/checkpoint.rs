@@ -64,7 +64,7 @@ impl SingleFileDB {
       labels,
       etypes,
       propkeys,
-      compression: None, // TODO: Add compression support
+      compression: self.checkpoint_compression.clone(),
     })?;
 
     // Calculate where to place new snapshot (after WAL)
@@ -266,7 +266,7 @@ impl SingleFileDB {
       labels,
       etypes,
       propkeys,
-      compression: None,
+      compression: self.checkpoint_compression.clone(),
     })?;
 
     // Calculate where to place new snapshot (after WAL)

@@ -3,6 +3,7 @@
 //! Ported from src/core/snapshot-reader.ts
 
 use crate::constants::*;
+use crate::core::snapshot::sections::{parse_section_table, section_count_for_version};
 use crate::error::{KiteError, Result};
 use crate::types::*;
 use crate::util::binary::*;
@@ -11,20 +12,11 @@ use crate::util::crc::crc32c;
 use crate::util::hash::xxhash64_string;
 use crate::util::mmap::{map_file, Mmap};
 use parking_lot::RwLock;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
-
-fn section_count_for_version(version: u32) -> usize {
-  if version >= 3 {
-    SectionId::COUNT
-  } else if version >= 2 {
-    SectionId::COUNT_V2
-  } else {
-    SectionId::COUNT_V1
-  }
-}
 
 // ============================================================================
 // Snapshot Data Structure
@@ -122,57 +114,22 @@ impl SnapshotData {
     };
 
     let section_count = section_count_for_version(version);
-    let section_table_size = section_count * SECTION_ENTRY_SIZE;
+    let parsed = parse_section_table(buffer, section_count, 0)?;
+    let sections = parsed.sections;
+    let aligned_end = align_up(parsed.max_section_end, SECTION_ALIGNMENT);
+    let actual_snapshot_size = aligned_end + 4; // +4 for CRC
 
-    if buffer.len() < SNAPSHOT_HEADER_SIZE + section_table_size {
+    if actual_snapshot_size > buffer.len() {
       return Err(KiteError::InvalidSnapshot(format!(
-        "Snapshot too small for section table: {} bytes",
+        "Snapshot truncated: expected {actual_snapshot_size} bytes, found {}",
         buffer.len()
       )));
     }
 
-    // Parse section table
-    let mut sections = Vec::with_capacity(section_count);
-    let mut offset = SNAPSHOT_HEADER_SIZE;
-
-    for _ in 0..section_count {
-      let section_offset = read_u64(buffer, offset);
-      let section_length = read_u64(buffer, offset + 8);
-      let compression = read_u32(buffer, offset + 16);
-      let uncompressed_size = read_u32(buffer, offset + 20);
-
-      sections.push(SectionEntry {
-        offset: section_offset,
-        length: section_length,
-        compression,
-        uncompressed_size,
-      });
-      offset += SECTION_ENTRY_SIZE;
-    }
-
-    // Calculate actual snapshot size from section table
-    let mut max_section_end = SNAPSHOT_HEADER_SIZE + section_table_size;
-    for section in &sections {
-      if section.length > 0 {
-        let section_end = section.offset as usize + section.length as usize;
-        if section_end > max_section_end {
-          max_section_end = section_end;
-        }
-      }
-    }
-    // Round up to 64-byte alignment
-    let aligned_end = align_up(max_section_end, SECTION_ALIGNMENT);
-    let actual_snapshot_size = aligned_end + 4; // +4 for CRC
-
     // Verify footer CRC
     if !options.skip_crc_validation {
-      let crc_offset = if actual_snapshot_size <= buffer.len() {
-        actual_snapshot_size - 4
-      } else {
-        buffer.len() - 4
-      };
-      let footer_crc = read_u32(buffer, crc_offset);
-      let computed_crc = crc32c(&buffer[..crc_offset]);
+      let footer_crc = read_u32(buffer, actual_snapshot_size - 4);
+      let computed_crc = crc32c(&buffer[..actual_snapshot_size - 4]);
       if footer_crc != computed_crc {
         return Err(KiteError::CrcMismatch {
           stored: footer_crc,
@@ -252,60 +209,27 @@ impl SnapshotData {
     };
 
     let section_count = section_count_for_version(version);
-    let section_table_size = section_count * SECTION_ENTRY_SIZE;
+    let parsed = parse_section_table(buffer, section_count, offset)?;
+    let sections = parsed.sections;
+    let aligned_end = align_up(parsed.max_section_end, SECTION_ALIGNMENT);
+    let actual_snapshot_size = aligned_end + 4;
 
-    if buffer.len() < SNAPSHOT_HEADER_SIZE + section_table_size {
+    if actual_snapshot_size > buffer.len() {
       return Err(KiteError::InvalidSnapshot(format!(
-        "Snapshot too small for section table: {} bytes",
+        "Snapshot truncated: expected {actual_snapshot_size} bytes, found {}",
         buffer.len()
       )));
     }
 
-    // Parse section table
-    let mut sections = Vec::with_capacity(section_count);
-    let mut table_offset = SNAPSHOT_HEADER_SIZE;
-
-    for _ in 0..section_count {
-      let section_offset = read_u64(buffer, table_offset);
-      let section_length = read_u64(buffer, table_offset + 8);
-      let compression = read_u32(buffer, table_offset + 16);
-      let uncompressed_size = read_u32(buffer, table_offset + 20);
-
-      // Adjust section offset to be relative to file start
-      sections.push(SectionEntry {
-        offset: section_offset + offset as u64,
-        length: section_length,
-        compression,
-        uncompressed_size,
-      });
-      table_offset += SECTION_ENTRY_SIZE;
-    }
-
     // Verify footer CRC (optional)
     if !options.skip_crc_validation {
-      // Calculate actual snapshot size from section table
-      let mut max_section_end = SNAPSHOT_HEADER_SIZE + section_table_size;
-      for section in &sections {
-        if section.length > 0 {
-          // Section offsets are now absolute (includes base offset)
-          let section_end = section.offset as usize - offset + section.length as usize;
-          if section_end > max_section_end {
-            max_section_end = section_end;
-          }
-        }
-      }
-      let aligned_end = align_up(max_section_end, SECTION_ALIGNMENT);
-      let actual_snapshot_size = aligned_end + 4;
-
-      if actual_snapshot_size <= buffer.len() {
-        let footer_crc = read_u32(buffer, actual_snapshot_size - 4);
-        let computed_crc = crc32c(&buffer[..actual_snapshot_size - 4]);
-        if footer_crc != computed_crc {
-          return Err(KiteError::CrcMismatch {
-            stored: footer_crc,
-            computed: computed_crc,
-          });
-        }
+      let footer_crc = read_u32(buffer, actual_snapshot_size - 4);
+      let computed_crc = crc32c(&buffer[..actual_snapshot_size - 4]);
+      if footer_crc != computed_crc {
+        return Err(KiteError::CrcMismatch {
+          stored: footer_crc,
+          computed: computed_crc,
+        });
       }
     }
 
@@ -382,6 +306,14 @@ impl SnapshotData {
     None
   }
 
+  /// Get section data as a slice, decompressing if needed.
+  pub fn section_data(&self, id: SectionId) -> Option<Cow<'_, [u8]>> {
+    self
+      .section_slice(id)
+      .map(Cow::Borrowed)
+      .or_else(|| self.section_bytes(id).map(Cow::Owned))
+  }
+
   // ========================================================================
   // Node accessors
   // ========================================================================
@@ -389,7 +321,8 @@ impl SnapshotData {
   /// Get NodeID for a physical node index
   #[inline]
   pub fn get_node_id(&self, phys: PhysNode) -> Option<NodeId> {
-    let section = self.section_slice(SectionId::PhysToNodeId)?;
+    let section = self.section_data(SectionId::PhysToNodeId)?;
+    let section = section.as_ref();
     if (phys as usize) * 8 + 8 > section.len() {
       return None;
     }
@@ -399,7 +332,8 @@ impl SnapshotData {
   /// Get physical node index for a NodeID, or None if not present
   #[inline]
   pub fn get_phys_node(&self, node_id: NodeId) -> Option<PhysNode> {
-    let section = self.section_slice(SectionId::NodeIdToPhys)?;
+    let section = self.section_data(SectionId::NodeIdToPhys)?;
+    let section = section.as_ref();
     let idx = node_id as usize;
     if idx * 4 + 4 > section.len() {
       return None;
@@ -446,8 +380,10 @@ impl SnapshotData {
       return Some(String::new());
     }
 
-    let offsets = self.section_slice(SectionId::StringOffsets)?;
-    let bytes = self.section_slice(SectionId::StringBytes)?;
+    let offsets = self.section_data(SectionId::StringOffsets)?;
+    let bytes = self.section_data(SectionId::StringBytes)?;
+    let offsets = offsets.as_ref();
+    let bytes = bytes.as_ref();
 
     let idx = string_id as usize;
     if idx * 4 + 8 > offsets.len() {
@@ -470,7 +406,8 @@ impl SnapshotData {
 
   /// Get out-edge offset range for a physical node
   fn out_edge_range(&self, phys: PhysNode) -> Option<(usize, usize)> {
-    let offsets = self.section_slice(SectionId::OutOffsets)?;
+    let offsets = self.section_data(SectionId::OutOffsets)?;
+    let offsets = offsets.as_ref();
     let idx = phys as usize;
     if idx * 4 + 8 > offsets.len() {
       return None;
@@ -493,14 +430,16 @@ impl SnapshotData {
       None => return false,
     };
 
-    let out_etype = match self.section_slice(SectionId::OutEtype) {
+    let out_etype = match self.section_data(SectionId::OutEtype) {
       Some(s) => s,
       None => return false,
     };
-    let out_dst = match self.section_slice(SectionId::OutDst) {
+    let out_dst = match self.section_data(SectionId::OutDst) {
       Some(s) => s,
       None => return false,
     };
+    let out_etype = out_etype.as_ref();
+    let out_dst = out_dst.as_ref();
 
     // Binary search since edges are sorted by (etype, dst)
     let mut lo = start;
@@ -535,8 +474,10 @@ impl SnapshotData {
     dst_phys: PhysNode,
   ) -> Option<usize> {
     let (start, end) = self.out_edge_range(src_phys)?;
-    let out_etype = self.section_slice(SectionId::OutEtype)?;
-    let out_dst = self.section_slice(SectionId::OutDst)?;
+    let out_etype = self.section_data(SectionId::OutEtype)?;
+    let out_dst = self.section_data(SectionId::OutDst)?;
+    let out_etype = out_etype.as_ref();
+    let out_dst = out_dst.as_ref();
 
     // Binary search
     let mut lo = start;
@@ -575,7 +516,8 @@ impl SnapshotData {
     if !self.header.flags.contains(SnapshotFlags::HAS_IN_EDGES) {
       return None;
     }
-    let offsets = self.section_slice(SectionId::InOffsets)?;
+    let offsets = self.section_data(SectionId::InOffsets)?;
+    let offsets = offsets.as_ref();
     let idx = phys as usize;
     if idx * 4 + 8 > offsets.len() {
       return None;
@@ -604,13 +546,15 @@ impl SnapshotData {
   pub fn lookup_by_key(&self, key: &str) -> Option<NodeId> {
     let hash64 = xxhash64_string(key);
 
-    let key_entries = self.section_slice(SectionId::KeyEntries)?;
+    let key_entries = self.section_data(SectionId::KeyEntries)?;
+    let key_entries = key_entries.as_ref();
     let num_entries = key_entries.len() / KEY_INDEX_ENTRY_SIZE;
     if num_entries == 0 {
       return None;
     }
 
-    let (lo, hi) = if let Some(buckets) = self.section_slice(SectionId::KeyBuckets) {
+    let (lo, hi) = if let Some(buckets) = self.section_data(SectionId::KeyBuckets) {
+      let buckets = buckets.as_ref();
       if buckets.len() > 4 {
         let num_buckets = buckets.len() / 4 - 1;
         let bucket = (hash64 % num_buckets as u64) as usize;
@@ -672,7 +616,8 @@ impl SnapshotData {
 
   /// Get the key for a node, if any
   pub fn get_node_key(&self, phys: PhysNode) -> Option<String> {
-    let node_key_string = self.section_slice(SectionId::NodeKeyString)?;
+    let node_key_string = self.section_data(SectionId::NodeKeyString)?;
+    let node_key_string = node_key_string.as_ref();
     let idx = phys as usize;
     if idx * 4 + 4 > node_key_string.len() {
       return None;
@@ -694,8 +639,10 @@ impl SnapshotData {
       return None;
     }
 
-    let offsets = self.section_slice(SectionId::NodeLabelOffsets)?;
-    let labels = self.section_slice(SectionId::NodeLabelIds)?;
+    let offsets = self.section_data(SectionId::NodeLabelOffsets)?;
+    let labels = self.section_data(SectionId::NodeLabelIds)?;
+    let offsets = offsets.as_ref();
+    let labels = labels.as_ref();
 
     let idx = phys as usize;
     if idx * 4 + 8 > offsets.len() {
@@ -726,9 +673,12 @@ impl SnapshotData {
       return None;
     }
 
-    let offsets = self.section_slice(SectionId::NodePropOffsets)?;
-    let keys = self.section_slice(SectionId::NodePropKeys)?;
-    let vals = self.section_slice(SectionId::NodePropVals)?;
+    let offsets = self.section_data(SectionId::NodePropOffsets)?;
+    let keys = self.section_data(SectionId::NodePropKeys)?;
+    let vals = self.section_data(SectionId::NodePropVals)?;
+    let offsets = offsets.as_ref();
+    let keys = keys.as_ref();
+    let vals = vals.as_ref();
 
     let idx = phys as usize;
     if idx * 4 + 8 > offsets.len() {
@@ -758,9 +708,12 @@ impl SnapshotData {
       return None;
     }
 
-    let offsets = self.section_slice(SectionId::NodePropOffsets)?;
-    let keys = self.section_slice(SectionId::NodePropKeys)?;
-    let vals = self.section_slice(SectionId::NodePropVals)?;
+    let offsets = self.section_data(SectionId::NodePropOffsets)?;
+    let keys = self.section_data(SectionId::NodePropKeys)?;
+    let vals = self.section_data(SectionId::NodePropVals)?;
+    let offsets = offsets.as_ref();
+    let keys = keys.as_ref();
+    let vals = vals.as_ref();
 
     let idx = phys as usize;
     if idx * 4 + 8 > offsets.len() {
@@ -789,9 +742,12 @@ impl SnapshotData {
       return None;
     }
 
-    let offsets = self.section_slice(SectionId::EdgePropOffsets)?;
-    let keys = self.section_slice(SectionId::EdgePropKeys)?;
-    let vals = self.section_slice(SectionId::EdgePropVals)?;
+    let offsets = self.section_data(SectionId::EdgePropOffsets)?;
+    let keys = self.section_data(SectionId::EdgePropKeys)?;
+    let vals = self.section_data(SectionId::EdgePropVals)?;
+    let offsets = offsets.as_ref();
+    let keys = keys.as_ref();
+    let vals = vals.as_ref();
 
     if edge_idx * 4 + 8 > offsets.len() {
       return None;
@@ -837,8 +793,10 @@ impl SnapshotData {
           return None;
         }
 
-        let offsets = self.section_slice(SectionId::VectorOffsets)?;
-        let data = self.section_slice(SectionId::VectorData)?;
+        let offsets = self.section_data(SectionId::VectorOffsets)?;
+        let data = self.section_data(SectionId::VectorData)?;
+        let offsets = offsets.as_ref();
+        let data = data.as_ref();
 
         let idx = payload as usize;
         if (idx + 1) * 8 > offsets.len() {
@@ -874,8 +832,8 @@ impl SnapshotData {
 /// Iterator over out-edges
 pub struct OutEdgeIter<'a> {
   snapshot: &'a SnapshotData,
-  out_etype: Option<&'a [u8]>,
-  out_dst: Option<&'a [u8]>,
+  out_etype: Option<Cow<'a, [u8]>>,
+  out_dst: Option<Cow<'a, [u8]>>,
   current: usize,
   end: usize,
 }
@@ -885,8 +843,8 @@ impl<'a> OutEdgeIter<'a> {
     let (current, end) = snapshot.out_edge_range(phys).unwrap_or((0, 0));
     Self {
       snapshot,
-      out_etype: snapshot.section_slice(SectionId::OutEtype),
-      out_dst: snapshot.section_slice(SectionId::OutDst),
+      out_etype: snapshot.section_data(SectionId::OutEtype),
+      out_dst: snapshot.section_data(SectionId::OutDst),
       current,
       end,
     }
@@ -901,8 +859,10 @@ impl<'a> Iterator for OutEdgeIter<'a> {
       return None;
     }
 
-    let out_etype = self.out_etype?;
-    let out_dst = self.out_dst?;
+    let out_etype = self.out_etype.as_ref()?;
+    let out_dst = self.out_dst.as_ref()?;
+    let out_etype = out_etype.as_ref();
+    let out_dst = out_dst.as_ref();
 
     if self.current * 4 + 4 > out_etype.len() || self.current * 4 + 4 > out_dst.len() {
       return None;
@@ -926,9 +886,9 @@ impl<'a> ExactSizeIterator for OutEdgeIter<'a> {}
 /// Iterator over in-edges
 pub struct InEdgeIter<'a> {
   snapshot: &'a SnapshotData,
-  in_etype: Option<&'a [u8]>,
-  in_src: Option<&'a [u8]>,
-  in_out_index: Option<&'a [u8]>,
+  in_etype: Option<Cow<'a, [u8]>>,
+  in_src: Option<Cow<'a, [u8]>>,
+  in_out_index: Option<Cow<'a, [u8]>>,
   current: usize,
   end: usize,
 }
@@ -938,9 +898,9 @@ impl<'a> InEdgeIter<'a> {
     let (current, end) = snapshot.in_edge_range(phys).unwrap_or((0, 0));
     Self {
       snapshot,
-      in_etype: snapshot.section_slice(SectionId::InEtype),
-      in_src: snapshot.section_slice(SectionId::InSrc),
-      in_out_index: snapshot.section_slice(SectionId::InOutIndex),
+      in_etype: snapshot.section_data(SectionId::InEtype),
+      in_src: snapshot.section_data(SectionId::InSrc),
+      in_out_index: snapshot.section_data(SectionId::InOutIndex),
       current,
       end,
     }
@@ -955,8 +915,10 @@ impl<'a> Iterator for InEdgeIter<'a> {
       return None;
     }
 
-    let in_etype = self.in_etype?;
-    let in_src = self.in_src?;
+    let in_etype = self.in_etype.as_ref()?;
+    let in_src = self.in_src.as_ref()?;
+    let in_etype = in_etype.as_ref();
+    let in_src = in_src.as_ref();
 
     if self.current * 4 + 4 > in_etype.len() || self.current * 4 + 4 > in_src.len() {
       return None;
@@ -966,7 +928,9 @@ impl<'a> Iterator for InEdgeIter<'a> {
     let etype = read_u32_at(in_etype, self.current);
     let out_index = self
       .in_out_index
+      .as_ref()
       .and_then(|idx| {
+        let idx = idx.as_ref();
         if self.current * 4 + 4 <= idx.len() {
           Some(read_u32_at(idx, self.current))
         } else {
@@ -1001,7 +965,8 @@ pub struct OutEdgeInfo {
 impl SnapshotData {
   /// Get label name by LabelID
   pub fn get_label_name(&self, label_id: LabelId) -> Option<&str> {
-    let label_string_ids = self.section_slice(SectionId::LabelStringIds)?;
+    let label_string_ids = self.section_data(SectionId::LabelStringIds)?;
+    let label_string_ids = label_string_ids.as_ref();
     let idx = label_id as usize;
     if idx * 4 + 4 > label_string_ids.len() {
       return None;
@@ -1021,7 +986,8 @@ impl SnapshotData {
 
   /// Get etype name by ETypeID
   pub fn get_etype_name(&self, etype_id: ETypeId) -> Option<&str> {
-    let etype_string_ids = self.section_slice(SectionId::EtypeStringIds)?;
+    let etype_string_ids = self.section_data(SectionId::EtypeStringIds)?;
+    let etype_string_ids = etype_string_ids.as_ref();
     let idx = etype_id as usize;
     if idx * 4 + 4 > etype_string_ids.len() {
       return None;
@@ -1037,7 +1003,8 @@ impl SnapshotData {
 
   /// Get propkey name by PropKeyID
   pub fn get_propkey_name(&self, propkey_id: PropKeyId) -> Option<&str> {
-    let propkey_string_ids = self.section_slice(SectionId::PropkeyStringIds)?;
+    let propkey_string_ids = self.section_data(SectionId::PropkeyStringIds)?;
+    let propkey_string_ids = propkey_string_ids.as_ref();
     let idx = propkey_id as usize;
     if idx * 4 + 4 > propkey_string_ids.len() {
       return None;

@@ -177,7 +177,9 @@ impl PyDatabase {
       PathBuf::from(format!("{path}.kitedb"))
     };
 
-    let opts: RustOpenOptions = options.into();
+    let opts = options
+      .to_single_file_options()
+      .map_err(|e| PyRuntimeError::new_err(format!("Failed to parse options: {e}")))?;
     let db = open_single_file(&db_path, opts)
       .map_err(|e| PyRuntimeError::new_err(format!("Failed to open database: {e}")))?;
     Ok(PyDatabase {
@@ -400,11 +402,7 @@ impl PyDatabase {
     }
   }
 
-  fn upsert_node(
-    &self,
-    key: String,
-    props: Vec<(u32, Option<PropValue>)>,
-  ) -> PyResult<i64> {
+  fn upsert_node(&self, key: String, props: Vec<(u32, Option<PropValue>)>) -> PyResult<i64> {
     let core_props: Vec<(PropKeyId, Option<crate::types::PropValue>)> = props
       .into_iter()
       .map(|(k, v)| (k as PropKeyId, v.map(|value| value.into())))
@@ -417,11 +415,7 @@ impl PyDatabase {
     )
   }
 
-  fn upsert_node_by_id(
-    &self,
-    node_id: i64,
-    props: Vec<(u32, Option<PropValue>)>,
-  ) -> PyResult<i64> {
+  fn upsert_node_by_id(&self, node_id: i64, props: Vec<(u32, Option<PropValue>)>) -> PyResult<i64> {
     let core_props: Vec<(PropKeyId, Option<crate::types::PropValue>)> = props
       .into_iter()
       .map(|(k, v)| (k as PropKeyId, v.map(|value| value.into())))
@@ -487,8 +481,20 @@ impl PyDatabase {
 
     dispatch_tx!(
       self,
-      |db| edges::upsert_edge_single(db, src as NodeId, etype as ETypeId, dst as NodeId, &core_props),
-      |h| edges::upsert_edge_graph(h, src as NodeId, etype as ETypeId, dst as NodeId, &core_props)
+      |db| edges::upsert_edge_single(
+        db,
+        src as NodeId,
+        etype as ETypeId,
+        dst as NodeId,
+        &core_props
+      ),
+      |h| edges::upsert_edge_graph(
+        h,
+        src as NodeId,
+        etype as ETypeId,
+        dst as NodeId,
+        &core_props
+      )
     )
   }
 

@@ -60,6 +60,12 @@ impl<K, V> LruNode<K, V> {
 /// cache.set("d", 4);
 /// assert_eq!(cache.get(&"b"), None);
 /// ```
+///
+/// # Safety
+/// This cache uses raw pointers for O(1) list operations. The invariants are:
+/// - Every pointer in `map`, `head`, and `tail` points to a valid node owned by the cache.
+/// - Nodes are only freed after being removed from both the list and the map.
+/// - `prev`/`next` links are updated atomically within a mutable borrow.
 pub struct LruCache<K: Hash + Eq + Clone, V> {
   max_size: usize,
   map: HashMap<K, NonNull<LruNode<K, V>>>,
@@ -378,7 +384,8 @@ impl<K: Hash + Eq + Clone, V> Drop for LruCache<K, V> {
   }
 }
 
-// SAFETY: LruCache can be sent between threads if K and V are Send
+// SAFETY: LruCache can be sent between threads if K and V are Send.
+// All internal mutation requires &mut self, preventing concurrent access.
 unsafe impl<K: Hash + Eq + Clone + Send, V: Send> Send for LruCache<K, V> {}
 
 // ============================================================================
@@ -437,6 +444,27 @@ mod tests {
     assert_eq!(cache.get(&"c"), Some(&3));
     assert_eq!(cache.get(&"d"), None);
     assert_eq!(cache.len(), 3);
+  }
+
+  #[test]
+  fn test_stress_insert_remove() {
+    let mut cache = LruCache::new(128);
+
+    for i in 0..1024 {
+      cache.set(i, i * 2);
+      if i % 3 == 0 {
+        let _ = cache.get(&i);
+      }
+      if i % 5 == 0 {
+        cache.delete(&i);
+      }
+    }
+
+    for i in 0..1024 {
+      if let Some(value) = cache.get(&i) {
+        assert_eq!(*value, i * 2);
+      }
+    }
   }
 
   #[test]

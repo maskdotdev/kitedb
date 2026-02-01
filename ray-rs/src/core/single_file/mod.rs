@@ -17,6 +17,7 @@ use crate::core::pager::FilePager;
 use crate::core::snapshot::reader::SnapshotData;
 use crate::core::wal::buffer::WalBuffer;
 use crate::types::*;
+use crate::util::compression::CompressionOptions;
 use crate::vector::types::VectorManifest;
 
 // Submodules
@@ -134,6 +135,9 @@ pub struct SingleFileDB {
 
   /// Cache manager for property, traversal, query, and key caches
   pub cache: RwLock<Option<CacheManager>>,
+
+  /// Compression options for checkpoint snapshots
+  pub(crate) checkpoint_compression: Option<CompressionOptions>,
 
   /// Synchronization mode for WAL writes
   pub(crate) sync_mode: open::SyncMode,

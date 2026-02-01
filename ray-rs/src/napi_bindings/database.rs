@@ -128,6 +128,8 @@ pub struct OpenOptions {
   pub checkpoint_threshold: Option<f64>,
   /// Use background (non-blocking) checkpoint
   pub background_checkpoint: Option<bool>,
+  /// Compression options for checkpoint snapshots (single-file only)
+  pub checkpoint_compression: Option<CompressionOptions>,
   /// Enable caching
   pub cache_enabled: Option<bool>,
   /// Max node properties in cache
@@ -169,6 +171,9 @@ impl From<OpenOptions> for RustOpenOptions {
     }
     if let Some(v) = opts.background_checkpoint {
       rust_opts = rust_opts.background_checkpoint(v);
+    }
+    if let Some(compression) = opts.checkpoint_compression {
+      rust_opts = rust_opts.checkpoint_compression(Some(compression.into()));
     }
 
     // Cache options
@@ -1083,12 +1088,10 @@ impl Database {
         for prop in props {
           let key_id = prop.key_id as PropKeyId;
           if matches!(prop.value.prop_type, PropType::Null) {
-            db
-              .delete_node_prop(node_id, key_id)
+            db.delete_node_prop(node_id, key_id)
               .map_err(|e| Error::from_reason(format!("Failed to delete property: {e}")))?;
           } else {
-            db
-              .set_node_prop(node_id, key_id, prop.value.into())
+            db.set_node_prop(node_id, key_id, prop.value.into())
               .map_err(|e| Error::from_reason(format!("Failed to set property: {e}")))?;
           }
         }
@@ -1129,12 +1132,10 @@ impl Database {
         for prop in props {
           let key_id = prop.key_id as PropKeyId;
           if matches!(prop.value.prop_type, PropType::Null) {
-            db
-              .delete_node_prop(node_id_u, key_id)
+            db.delete_node_prop(node_id_u, key_id)
               .map_err(|e| Error::from_reason(format!("Failed to delete property: {e}")))?;
           } else {
-            db
-              .set_node_prop(node_id_u, key_id, prop.value.into())
+            db.set_node_prop(node_id_u, key_id, prop.value.into())
               .map_err(|e| Error::from_reason(format!("Failed to set property: {e}")))?;
           }
         }
@@ -1154,8 +1155,9 @@ impl Database {
           .collect();
 
         let opts = NodeOpts::new();
-        let (node_id, _) = upsert_node_by_id_with_props(handle, node_id as NodeId, opts, updates)
-          .map_err(|e| Error::from_reason(format!("Failed to upsert node: {e}")))?;
+        let (node_id, _) =
+          upsert_node_by_id_with_props(handle, node_id as NodeId, opts, updates)
+            .map_err(|e| Error::from_reason(format!("Failed to upsert node: {e}")))?;
         Ok(node_id as i64)
       }),
       None => Err(Error::from_reason("Database is closed")),
@@ -1307,8 +1309,7 @@ impl Database {
           })
           .collect();
 
-        db
-          .upsert_edge_with_props(src as NodeId, etype as ETypeId, dst as NodeId, updates)
+        db.upsert_edge_with_props(src as NodeId, etype as ETypeId, dst as NodeId, updates)
           .map_err(|e| Error::from_reason(format!("Failed to upsert edge: {e}")))
       }
       Some(DatabaseInner::Graph(_)) => self.with_graph_tx(|handle| {

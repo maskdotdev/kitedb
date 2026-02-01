@@ -15,6 +15,7 @@ use crate::core::snapshot::reader::SnapshotData;
 use crate::core::wal::buffer::WalBuffer;
 use crate::error::{KiteError, Result};
 use crate::types::*;
+use crate::util::compression::CompressionOptions;
 use crate::util::mmap::map_file;
 use crate::vector::store::{create_vector_store, vector_store_delete, vector_store_insert};
 use crate::vector::types::VectorStoreConfig;
@@ -67,6 +68,8 @@ pub struct SingleFileOpenOptions {
   pub background_checkpoint: bool,
   /// Cache options (None = disabled)
   pub cache: Option<CacheOptions>,
+  /// Compression options for checkpoint snapshots
+  pub checkpoint_compression: Option<CompressionOptions>,
   /// Synchronization mode for WAL writes (default: Full)
   pub sync_mode: SyncMode,
 }
@@ -82,6 +85,10 @@ impl Default for SingleFileOpenOptions {
       checkpoint_threshold: 0.8,
       background_checkpoint: true,
       cache: None,
+      checkpoint_compression: Some(CompressionOptions {
+        enabled: true,
+        ..Default::default()
+      }),
       sync_mode: SyncMode::Full,
     }
   }
@@ -129,6 +136,16 @@ impl SingleFileOpenOptions {
 
   pub fn cache(mut self, options: Option<CacheOptions>) -> Self {
     self.cache = options;
+    self
+  }
+
+  pub fn checkpoint_compression(mut self, options: Option<CompressionOptions>) -> Self {
+    self.checkpoint_compression = options;
+    self
+  }
+
+  pub fn disable_checkpoint_compression(mut self) -> Self {
+    self.checkpoint_compression = None;
     self
   }
 
@@ -404,6 +421,7 @@ pub fn open_single_file<P: AsRef<Path>>(
     checkpoint_status: Mutex::new(CheckpointStatus::Idle),
     vector_stores: RwLock::new(vector_stores),
     cache: RwLock::new(cache),
+    checkpoint_compression: options.checkpoint_compression.clone(),
     sync_mode: options.sync_mode,
   })
 }
@@ -412,7 +430,59 @@ pub fn open_single_file<P: AsRef<Path>>(
 mod tests {
   use super::*;
   use crate::core::single_file::close_single_file;
+  use crate::core::single_file::recovery::read_wal_area;
+  use crate::core::wal::record::parse_wal_record;
+  use crate::util::binary::{align_up, read_u32};
   use tempfile::tempdir;
+
+  fn corrupt_last_wal_record(db: &SingleFileDB) {
+    let mut pager = db.pager.lock();
+    let header = db.header.read().clone();
+    let wal_data = read_wal_area(&mut pager, &header).unwrap();
+    let mut pos = header.wal_tail as usize;
+    let head = header.wal_head as usize;
+    let mut last_start = None;
+
+    while pos < head {
+      let rec_len = read_u32(&wal_data, pos) as usize;
+      if rec_len == 0 {
+        break;
+      }
+      if parse_wal_record(&wal_data, pos).is_none() {
+        break;
+      }
+      last_start = Some(pos);
+      let aligned_size = align_up(rec_len, WAL_RECORD_ALIGNMENT);
+      pos += aligned_size;
+    }
+
+    let last_start = last_start.expect("wal record");
+    let rec_len = read_u32(&wal_data, last_start) as usize;
+    let crc_offset = last_start + rec_len - 4;
+
+    let wal_start = header.wal_start_page as usize * header.page_size as usize;
+    let file_offset = wal_start + crc_offset;
+    let page_size = header.page_size as usize;
+    let page_num = (file_offset / page_size) as u32;
+    let page_offset = file_offset % page_size;
+
+    if page_offset + 4 <= page_size {
+      let mut page = pager.read_page(page_num).unwrap();
+      page[page_offset..page_offset + 4].fill(0);
+      pager.write_page(page_num, &page).unwrap();
+    } else {
+      let first_len = page_size - page_offset;
+      let mut page = pager.read_page(page_num).unwrap();
+      page[page_offset..].fill(0);
+      pager.write_page(page_num, &page).unwrap();
+
+      let mut next_page = pager.read_page(page_num + 1).unwrap();
+      next_page[..(4 - first_len)].fill(0);
+      pager.write_page(page_num + 1, &next_page).unwrap();
+    }
+
+    pager.sync().unwrap();
+  }
 
   #[test]
   fn test_recover_incomplete_background_checkpoint() {
@@ -502,7 +572,8 @@ mod tests {
     // Simulate an interrupted header update: wal_head advanced, secondary head missing
     {
       let mut pager = db.pager.lock();
-      let wal = db.wal_buffer.lock();
+      let mut wal = db.wal_buffer.lock();
+      wal.flush(&mut pager).unwrap();
       let mut header = db.header.write();
 
       header.active_wal_region = 1;
@@ -565,6 +636,90 @@ mod tests {
 
     let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
     assert!(db.get_node_by_key("n1").is_some());
+    close_single_file(db).unwrap();
+  }
+
+  #[test]
+  fn test_recover_wal_with_truncated_record() {
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("wal-truncated.kitedb");
+
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+
+    db.begin(false).unwrap();
+    let _n1 = db.create_node(Some("n1")).unwrap();
+    db.commit().unwrap();
+
+    db.begin(false).unwrap();
+    let _n2 = db.create_node(Some("n2")).unwrap();
+    db.commit().unwrap();
+
+    corrupt_last_wal_record(&db);
+    drop(db);
+
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    assert!(db.get_node_by_key("n1").is_some());
+    assert!(db.get_node_by_key("n2").is_none());
+    close_single_file(db).unwrap();
+  }
+
+  #[test]
+  fn test_recover_ignores_uncommitted_transaction() {
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("wal-uncommitted.kitedb");
+
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+
+    db.begin(false).unwrap();
+    let _n1 = db.create_node(Some("n1")).unwrap();
+
+    // Persist WAL head without a commit record
+    {
+      let mut pager = db.pager.lock();
+      let wal = db.wal_buffer.lock();
+      let mut header = db.header.write();
+
+      header.wal_head = wal.head();
+      header.wal_tail = wal.tail();
+      header.wal_primary_head = wal.primary_head();
+      header.wal_secondary_head = wal.secondary_head();
+      header.active_wal_region = wal.active_region();
+      header.change_counter += 1;
+
+      let header_bytes = header.serialize_to_page();
+      pager.write_page(0, &header_bytes).unwrap();
+      pager.sync().unwrap();
+    }
+
+    drop(db);
+
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    assert!(db.get_node_by_key("n1").is_none());
+    close_single_file(db).unwrap();
+  }
+
+  #[test]
+  fn test_checkpoint_replay_after_crash() {
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("checkpoint-replay.kitedb");
+
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+
+    db.begin(false).unwrap();
+    let _n1 = db.create_node(Some("n1")).unwrap();
+    db.commit().unwrap();
+
+    db.checkpoint().unwrap();
+
+    db.begin(false).unwrap();
+    let _n2 = db.create_node(Some("n2")).unwrap();
+    db.commit().unwrap();
+
+    drop(db);
+
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    assert!(db.get_node_by_key("n1").is_some());
+    assert!(db.get_node_by_key("n2").is_some());
     close_single_file(db).unwrap();
   }
 }

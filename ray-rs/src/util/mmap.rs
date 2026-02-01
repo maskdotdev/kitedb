@@ -47,9 +47,19 @@ impl std::ops::Deref for Mmap {
 }
 
 /// Map a file into memory (native uses unsafe mmap, wasm reads to memory).
+///
+/// # Safety
+/// Callers must ensure the file is not mutated while the mapping is live.
 pub fn map_file(file: &File) -> std::io::Result<Mmap> {
   #[cfg(not(target_arch = "wasm32"))]
   unsafe {
+    let len = file.metadata()?.len();
+    if len == 0 {
+      return Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "cannot mmap an empty file",
+      ));
+    }
     Mmap::map(file)
   }
   #[cfg(target_arch = "wasm32")]

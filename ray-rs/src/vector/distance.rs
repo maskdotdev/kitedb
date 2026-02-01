@@ -39,7 +39,7 @@ fn has_avx() -> bool {
 /// - Loop-unrolled scalar otherwise
 #[inline]
 pub fn dot_product(a: &[f32], b: &[f32]) -> f32 {
-  debug_assert_eq!(a.len(), b.len());
+  assert_eq!(a.len(), b.len(), "vector length mismatch");
 
   #[cfg(target_arch = "x86_64")]
   {
@@ -131,7 +131,7 @@ unsafe fn dot_product_avx(a: &[f32], b: &[f32]) -> f32 {
 /// Automatically uses the best available implementation.
 #[inline]
 pub fn squared_euclidean(a: &[f32], b: &[f32]) -> f32 {
-  debug_assert_eq!(a.len(), b.len());
+  assert_eq!(a.len(), b.len(), "vector length mismatch");
 
   #[cfg(target_arch = "x86_64")]
   {
