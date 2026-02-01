@@ -719,6 +719,13 @@ async function runBenchmarks(config: BenchConfig): Promise<void> {
 		const randomNodeId =
 			lowLevelNodeIds[Math.floor(lowLevelNodeIds.length / 2)];
 		const randomUserRef = fluentUserRefs[Math.floor(fluentUserRefs.length / 2)];
+		const batchSize = 16;
+		const batchCenter = Math.floor(fluentUserRefs.length / 2);
+		const batchStart = Math.max(0, batchCenter - batchSize / 2);
+		const batchEnd = Math.min(fluentUserRefs.length, batchCenter + batchSize / 2);
+		const batchIds = fluentUserRefs
+			.slice(batchStart, batchEnd)
+			.map((ref) => ref.id);
 
 		bench
 			.add("Low-level: key lookup", () => {
@@ -733,6 +740,17 @@ async function runBenchmarks(config: BenchConfig): Promise<void> {
 			.add("Fluent: getId (id-only)", () => {
 				fluentDb.getId(User, randomKeyArg);
 			})
+			.add("Fluent: getById (with props)", () => {
+				fluentDb.getById(randomUserRef.id);
+			})
+			.add("Fluent: getById x16 (loop)", () => {
+				for (const id of batchIds) {
+					fluentDb.getById(id);
+				}
+			})
+			.add("Fluent: getByIds (batch 16)", () => {
+				fluentDb.getByIds(batchIds);
+			})
 			.add("Low-level: traverseNodeIds", () => {
 				lowLevelDb.traverseNodeIds(
 					[randomNodeId],
@@ -744,6 +762,9 @@ async function runBenchmarks(config: BenchConfig): Promise<void> {
 			})
 			.add("Fluent: from().out().nodes()", () => {
 				fluentDb.from(randomUserRef).out(knows).nodes();
+			})
+			.add("Fluent: from().out().nodesWithProps()", () => {
+				fluentDb.from(randomUserRef).out(knows).nodesWithProps();
 			});
 
 		await bench.run();
