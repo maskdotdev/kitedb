@@ -68,7 +68,7 @@ jobs:
           fi
 
       - name: Publish to NPM
-        run: npm publish --provenance --access public
-        working-directory: ray-rs
+        run: npm publish --workspace=ray-rs --provenance --access public
+        working-directory: .
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -20,10 +20,46 @@ defaults:
   run:
     working-directory: ray-rs
 jobs:
+  meta:
+    name: Release Gate
+    runs-on: ubuntu-latest
+    outputs:
+      all: ${{ steps.flags.outputs.all }}
+      any: ${{ steps.flags.outputs.any }}
+      js: ${{ steps.flags.outputs.js }}
+      ts: ${{ steps.flags.outputs.ts }}
+      py: ${{ steps.flags.outputs.py }}
+      rs: ${{ steps.flags.outputs.rs }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: flags
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          if echo "$COMMIT_MSG" | grep -E "^(all): [0-9]+\.[0-9]+\.[0-9]+"; then
+            echo "all=true" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$COMMIT_MSG" | grep -E "^(js): [0-9]+\.[0-9]+\.[0-9]+"; then
+            echo "js=true" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$COMMIT_MSG" | grep -E "^(ts): [0-9]+\.[0-9]+\.[0-9]+"; then
+            echo "ts=true" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$COMMIT_MSG" | grep -E "^(py): [0-9]+\.[0-9]+\.[0-9]+"; then
+            echo "py=true" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$COMMIT_MSG" | grep -E "^(rs|core): [0-9]+\.[0-9]+\.[0-9]+"; then
+            echo "rs=true" >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$COMMIT_MSG" | grep -E "^(all|js|ts|py|rs|core): [0-9]+\.[0-9]+\.[0-9]+"; then
+            echo "any=true" >> "$GITHUB_OUTPUT"
+          fi
   # ===========================================
   # Node.js Builds (napi-rs)
   # ===========================================
   build:
+    if: needs.meta.outputs.js == 'true' || needs.meta.outputs.ts == 'true' || needs.meta.outputs.all == 'true'
+    needs:
+      - meta
     strategy:
       fail-fast: false
       matrix:
@@ -81,7 +117,9 @@ jobs:
       contents: write
       id-token: write
     needs:
+      - meta
       - build
+    if: needs.meta.outputs.js == 'true' || needs.meta.outputs.ts == 'true' || needs.meta.outputs.all == 'true'
     steps:
       - uses: actions/checkout@v4
       - name: Setup node
@@ -110,18 +148,18 @@ jobs:
         run: ls -R ./npm
         working-directory: ray-rs
       - name: Publish
-        working-directory: ray-rs
+        working-directory: .
         run: |
           echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
           npm config set provenance true
           COMMIT_MSG=$(git log -1 --pretty=%B)
-          # Match: ts: X.Y.Z or all: X.Y.Z
-          if echo "$COMMIT_MSG" | grep -E "^(ts|all): [0-9]+\.[0-9]+\.[0-9]+$"; then
-            npm publish --access public
-          elif echo "$COMMIT_MSG" | grep -E "^(ts|all): [0-9]+\.[0-9]+\.[0-9]+"; then
-            npm publish --tag next --access public
+          # Match: js|ts|all: X.Y.Z
+          if echo "$COMMIT_MSG" | grep -E "^(js|ts|all): [0-9]+\.[0-9]+\.[0-9]+$"; then
+            npm publish --workspace=ray-rs --access public
+          elif echo "$COMMIT_MSG" | grep -E "^(js|ts|all): [0-9]+\.[0-9]+\.[0-9]+"; then
+            npm publish --workspace=ray-rs --tag next --access public
           else
-            echo "Not a ts/all release, skipping npm publish"
+            echo "Not a js/ts/all release, skipping npm publish"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -133,6 +171,9 @@ jobs:
   build-python-linux:
     name: Build Python - Linux ${{ matrix.target }}
     runs-on: ${{ matrix.platform.runner }}
+    needs:
+      - meta
+    if: needs.meta.outputs.py == 'true' || needs.meta.outputs.all == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -167,6 +208,9 @@ jobs:
   build-python-macos:
     name: Build Python - macOS aarch64
     runs-on: macos-14
+    needs:
+      - meta
+    if: needs.meta.outputs.py == 'true' || needs.meta.outputs.all == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -192,6 +236,9 @@ jobs:
   build-python-windows:
     name: Build Python - Windows x86_64
     runs-on: windows-latest
+    needs:
+      - meta
+    if: needs.meta.outputs.py == 'true' || needs.meta.outputs.all == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -217,6 +264,9 @@ jobs:
   build-python-sdist:
     name: Build Python - Source Distribution
     runs-on: ubuntu-latest
+    needs:
+      - meta
+    if: needs.meta.outputs.py == 'true' || needs.meta.outputs.all == 'true'
     steps:
       - uses: actions/checkout@v4
       - name: Build sdist
@@ -235,10 +285,12 @@ jobs:
     name: Publish Python
     runs-on: ubuntu-latest
     needs:
+      - meta
       - build-python-linux
       - build-python-macos
       - build-python-windows
       - build-python-sdist
+    if: needs.meta.outputs.py == 'true' || needs.meta.outputs.all == 'true'
     permissions:
       id-token: write
     steps:
@@ -256,7 +308,7 @@ jobs:
         working-directory: ray-rs
         run: |
           COMMIT_MSG=$(git log -1 --pretty=%B)
-          # Match: py: X.Y.Z or all: X.Y.Z
+          # Match: py|all: X.Y.Z
           if echo "$COMMIT_MSG" | grep -E "^(py|all): [0-9]+\.[0-9]+\.[0-9]+"; then
             pip install maturin
             maturin upload --non-interactive --skip-existing dist/*
@@ -272,6 +324,9 @@ jobs:
   publish-cargo:
     name: Publish Cargo
     runs-on: ubuntu-latest
+    needs:
+      - meta
+    if: needs.meta.outputs.rs == 'true' || needs.meta.outputs.all == 'true'
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -297,11 +352,11 @@ jobs:
       - name: Publish to crates.io
         run: |
           COMMIT_MSG=$(git log -1 --pretty=%B)
-          # Match: core: X.Y.Z or all: X.Y.Z
-          if echo "$COMMIT_MSG" | grep -E "^(core|all): [0-9]+\.[0-9]+\.[0-9]+"; then
+          # Match: rs|core|all: X.Y.Z
+          if echo "$COMMIT_MSG" | grep -E "^(rs|core|all): [0-9]+\.[0-9]+\.[0-9]+"; then
             cargo publish --no-default-features
           else
-            echo "Not a core/all release, skipping crates.io publish"
+            echo "Not a rs/core/all release, skipping crates.io publish"
           fi
         working-directory: ray-rs
         env:
