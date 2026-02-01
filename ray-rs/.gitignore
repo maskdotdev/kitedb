@@ -119,6 +119,9 @@ dist
 /target
 Cargo.lock
 
+# Python build artifacts
+python/kitedb/*.so
+
 *.node
 /core.wasi.cjs
 /core.wasi-browser.js
