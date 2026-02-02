@@ -363,7 +363,7 @@ fn active_fragment_index(manifest: &VectorManifest) -> usize {
     .fragments
     .iter()
     .position(|f| f.id == fragment_id)
-    .unwrap()
+    .expect("active fragment id missing from manifest")
 }
 
 fn append_to_fragment(
@@ -392,7 +392,12 @@ fn append_to_fragment(
 }
 
 fn ensure_row_group(fragment: &mut Fragment, row_group_size: usize, dimensions: usize) -> usize {
-  if fragment.row_groups.is_empty() || fragment.row_groups.last().unwrap().is_full(row_group_size) {
+  if fragment
+    .row_groups
+    .last()
+    .map(|rg| rg.is_full(row_group_size))
+    .unwrap_or(true)
+  {
     let rg_id = fragment.row_groups.len();
     fragment
       .row_groups

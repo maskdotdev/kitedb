@@ -19,7 +19,7 @@
 - Compactor vacuum: removed header double-clone.
 
 **Remaining (open)**
-1) **Residual invariant unwraps** — low-risk scan only.
+- None (production code unwraps removed; invariant cases now guarded/`expect`).
 
 ---
 

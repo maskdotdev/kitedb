@@ -576,7 +576,8 @@ impl IvfPqIndex {
       };
 
       // Get distance table (shared or per-cluster for residuals)
-      let dist_table = if self.config.use_residuals {
+      let mut dist_table_storage = None;
+      let dist_table: &[f32] = if self.config.use_residuals {
         // Query residual = query - centroid (requires per-cluster table)
         let cent_offset = cluster * self.dimensions;
         let query_residual: Vec<f32> = query_for_search
@@ -584,9 +585,14 @@ impl IvfPqIndex {
           .zip(&self.ivf_centroids[cent_offset..cent_offset + self.dimensions])
           .map(|(q, c)| q - c)
           .collect();
-        self.build_distance_table(&query_residual)
+        dist_table_storage = Some(self.build_distance_table(&query_residual));
+        dist_table_storage
+          .as_deref()
+          .expect("distance table missing after build")
       } else {
-        shared_dist_table.clone().unwrap()
+        shared_dist_table
+          .as_deref()
+          .expect("shared distance table missing for non-residual search")
       };
 
       // Search vectors in this cluster using PQ ADC
@@ -607,7 +613,7 @@ impl IvfPqIndex {
         };
 
         // Compute approximate distance using ADC
-        let dist = self.distance_adc(&dist_table, codes);
+        let dist = self.distance_adc(dist_table, codes);
 
         // Apply threshold filter
         if let Some(threshold) = options.threshold {

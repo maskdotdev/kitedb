@@ -902,7 +902,10 @@ impl VersionChainManager {
         return false;
       }
       current_depth += 1;
-      node = node.prev.as_mut().unwrap();
+      node = match node.prev.as_mut() {
+        Some(prev) => prev,
+        None => return false,
+      };
     }
 
     // Check if we can safely truncate (respecting min_active_ts)

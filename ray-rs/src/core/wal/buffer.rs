@@ -467,14 +467,14 @@ impl WalBuffer {
       let page_file_offset = page_idx * page_size;
 
       // Get or create the page buffer
-      let page_buffer = if let Some(buffer) = self.pending_writes.get_mut(&page_file_offset) {
-        buffer
-      } else {
-        // First write to this page - load existing content
-        let page_num = (page_file_offset / page_size) as u32;
-        let existing = pager.read_page(page_num)?;
-        self.pending_writes.insert(page_file_offset, existing);
-        self.pending_writes.get_mut(&page_file_offset).unwrap()
+      let page_buffer = match self.pending_writes.entry(page_file_offset) {
+        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::hash_map::Entry::Vacant(entry) => {
+          // First write to this page - load existing content
+          let page_num = (page_file_offset / page_size) as u32;
+          let existing = pager.read_page(page_num)?;
+          entry.insert(existing)
+        }
       };
 
       let page_start = page_file_offset;

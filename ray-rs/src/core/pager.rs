@@ -151,7 +151,10 @@ impl FilePager {
       let mmap = map_file(&self.file)?;
       self.mmap = Some(mmap);
     }
-    Ok(self.mmap.as_ref().unwrap())
+    self
+      .mmap
+      .as_ref()
+      .ok_or_else(|| KiteError::Internal("mmap not initialized after mapping".to_string()))
   }
 
   /// Get a slice of the mmap'd file for a page range

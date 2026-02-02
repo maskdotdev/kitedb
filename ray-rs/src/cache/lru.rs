@@ -165,7 +165,7 @@ impl<K: Hash + Eq + Clone, V> LruCache<K, V> {
 
     // Create new node
     let node = Box::new(LruNode::new(key.clone(), value));
-    let node_ptr = NonNull::new(Box::into_raw(node)).unwrap();
+    let node_ptr = NonNull::from(Box::leak(node));
 
     // Add to front
     self.push_front(node_ptr);
@@ -195,7 +195,7 @@ impl<K: Hash + Eq + Clone, V> LruCache<K, V> {
 
     // Create new node
     let node = Box::new(LruNode::new(key.clone(), value));
-    let node_ptr = NonNull::new(Box::into_raw(node)).unwrap();
+    let node_ptr = NonNull::from(Box::leak(node));
 
     // Add to front
     self.push_front(node_ptr);

@@ -164,7 +164,9 @@ impl SingleFileDB {
   ) -> Result<()> {
     let mut stores = self.vector_stores.write();
     if stores.contains_key(&prop_key_id) {
-      let store = stores.get(&prop_key_id).unwrap();
+      let store = stores.get(&prop_key_id).ok_or_else(|| {
+        KiteError::Internal("vector store missing after contains_key".to_string())
+      })?;
       if store.config.dimensions != dimensions {
         return Err(KiteError::VectorDimensionMismatch {
           expected: store.config.dimensions,
