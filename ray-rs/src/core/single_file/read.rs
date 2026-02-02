@@ -652,6 +652,13 @@ impl SingleFileDB {
     // Sort by (etype, dst) for consistent ordering
     edges.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
 
+    if let Some(mvcc) = self.mvcc.as_ref() {
+      if txid != 0 {
+        let mut tx_mgr = mvcc.tx_manager.lock();
+        tx_mgr.record_read(txid, format!("neighbors_out:{node_id}:*"));
+      }
+    }
+
     edges
   }
 
@@ -778,6 +785,13 @@ impl SingleFileDB {
     // Sort by (etype, src) for consistent ordering
     edges.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
 
+    if let Some(mvcc) = self.mvcc.as_ref() {
+      if txid != 0 {
+        let mut tx_mgr = mvcc.tx_manager.lock();
+        tx_mgr.record_read(txid, format!("neighbors_in:{node_id}:*"));
+      }
+    }
+
     edges
   }
 
@@ -882,12 +896,26 @@ impl SingleFileDB {
       .and_then(|vc| vc.get_node_version(node_id))
       .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
     if node_visible == Some(false) {
+      if let Some(mvcc) = self.mvcc.as_ref() {
+        if txid != 0 {
+          let mut tx_mgr = mvcc.tx_manager.lock();
+          tx_mgr.record_read(txid, format!("nodelabels:{node_id}"));
+          tx_mgr.record_read(txid, format!("nodelabel:{node_id}:{label_id}"));
+        }
+      }
       return false;
     }
 
     if let Some(vc) = vc_guard.as_ref() {
       if let Some(label_version) = vc.get_node_label_version(node_id, label_id) {
         if let Some(visible) = get_visible_version(&label_version, tx_snapshot_ts, txid) {
+          if let Some(mvcc) = self.mvcc.as_ref() {
+            if txid != 0 {
+              let mut tx_mgr = mvcc.tx_manager.lock();
+              tx_mgr.record_read(txid, format!("nodelabels:{node_id}"));
+              tx_mgr.record_read(txid, format!("nodelabel:{node_id}:{label_id}"));
+            }
+          }
           return visible.data.unwrap_or(false);
         }
       }
@@ -897,16 +925,37 @@ impl SingleFileDB {
 
     // Check if node is deleted
     if node_visible.is_none() && delta.is_node_deleted(node_id) {
+      if let Some(mvcc) = self.mvcc.as_ref() {
+        if txid != 0 {
+          let mut tx_mgr = mvcc.tx_manager.lock();
+          tx_mgr.record_read(txid, format!("nodelabels:{node_id}"));
+          tx_mgr.record_read(txid, format!("nodelabel:{node_id}:{label_id}"));
+        }
+      }
       return false;
     }
 
     // Check if label was removed in delta
     if delta.is_label_removed(node_id, label_id) {
+      if let Some(mvcc) = self.mvcc.as_ref() {
+        if txid != 0 {
+          let mut tx_mgr = mvcc.tx_manager.lock();
+          tx_mgr.record_read(txid, format!("nodelabels:{node_id}"));
+          tx_mgr.record_read(txid, format!("nodelabel:{node_id}:{label_id}"));
+        }
+      }
       return false;
     }
 
     // Check if label was added in delta
     if delta.is_label_added(node_id, label_id) {
+      if let Some(mvcc) = self.mvcc.as_ref() {
+        if txid != 0 {
+          let mut tx_mgr = mvcc.tx_manager.lock();
+          tx_mgr.record_read(txid, format!("nodelabels:{node_id}"));
+          tx_mgr.record_read(txid, format!("nodelabel:{node_id}:{label_id}"));
+        }
+      }
       return true;
     }
 
@@ -914,11 +963,26 @@ impl SingleFileDB {
     if let Some(ref snapshot) = *self.snapshot.read() {
       if let Some(phys) = snapshot.get_phys_node(node_id) {
         if let Some(labels) = snapshot.get_node_labels(phys) {
-          return labels.contains(&label_id);
+          let has_label = labels.contains(&label_id);
+          if let Some(mvcc) = self.mvcc.as_ref() {
+            if txid != 0 {
+              let mut tx_mgr = mvcc.tx_manager.lock();
+              tx_mgr.record_read(txid, format!("nodelabels:{node_id}"));
+              tx_mgr.record_read(txid, format!("nodelabel:{node_id}:{label_id}"));
+            }
+          }
+          return has_label;
         }
       }
     }
 
+    if let Some(mvcc) = self.mvcc.as_ref() {
+      if txid != 0 {
+        let mut tx_mgr = mvcc.tx_manager.lock();
+        tx_mgr.record_read(txid, format!("nodelabels:{node_id}"));
+        tx_mgr.record_read(txid, format!("nodelabel:{node_id}:{label_id}"));
+      }
+    }
     false
   }
 
@@ -1015,6 +1079,15 @@ impl SingleFileDB {
 
     let mut result: Vec<_> = labels.into_iter().collect();
     result.sort_unstable();
+    if let Some(mvcc) = self.mvcc.as_ref() {
+      if txid != 0 {
+        let mut tx_mgr = mvcc.tx_manager.lock();
+        tx_mgr.record_read(txid, format!("nodelabels:{node_id}"));
+        for label_id in &result {
+          tx_mgr.record_read(txid, format!("nodelabel:{node_id}:{label_id}"));
+        }
+      }
+    }
     result
   }
 
@@ -1177,5 +1250,90 @@ impl SingleFileDB {
     }
 
     None
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use crate::core::single_file::open::{close_single_file, open_single_file, SingleFileOpenOptions};
+  use std::sync::{mpsc, Arc};
+  use std::thread;
+  use tempfile::tempdir;
+
+  #[test]
+  fn test_mvcc_label_visibility_across_transactions() {
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("test-db");
+    let db = Arc::new(open_single_file(db_path, SingleFileOpenOptions::new().mvcc(true)).unwrap());
+
+    db.begin(false).unwrap();
+    let node_id = db.create_node(Some("n1")).unwrap();
+    let label_id = db.define_label("Tag").unwrap();
+    db.commit().unwrap();
+
+    let (ready_tx, ready_rx) = mpsc::channel();
+    let (cont_tx, cont_rx) = mpsc::channel();
+    let (done_tx, done_rx) = mpsc::channel();
+    let db_reader = Arc::clone(&db);
+    let handle = thread::spawn(move || {
+      db_reader.begin(true).unwrap();
+      assert!(!db_reader.node_has_label(node_id, label_id));
+      assert!(db_reader.get_node_labels(node_id).is_empty());
+      ready_tx.send(()).unwrap();
+      cont_rx.recv().unwrap();
+      assert!(!db_reader.node_has_label(node_id, label_id));
+      assert!(db_reader.get_node_labels(node_id).is_empty());
+      db_reader.commit().unwrap();
+      done_tx.send(()).unwrap();
+    });
+
+    ready_rx.recv().unwrap();
+    db.begin(false).unwrap();
+    db.add_node_label(node_id, label_id).unwrap();
+    db.commit().unwrap();
+    cont_tx.send(()).unwrap();
+    done_rx.recv().unwrap();
+    handle.join().unwrap();
+
+    db.begin(true).unwrap();
+    assert!(db.node_has_label(node_id, label_id));
+    let labels = db.get_node_labels(node_id);
+    assert!(labels.contains(&label_id));
+    db.commit().unwrap();
+
+    let (ready_tx2, ready_rx2) = mpsc::channel();
+    let (cont_tx2, cont_rx2) = mpsc::channel();
+    let (done_tx2, done_rx2) = mpsc::channel();
+    let db_reader2 = Arc::clone(&db);
+    let handle2 = thread::spawn(move || {
+      db_reader2.begin(true).unwrap();
+      assert!(db_reader2.node_has_label(node_id, label_id));
+      assert!(db_reader2.get_node_labels(node_id).contains(&label_id));
+      ready_tx2.send(()).unwrap();
+      cont_rx2.recv().unwrap();
+      assert!(db_reader2.node_has_label(node_id, label_id));
+      assert!(db_reader2.get_node_labels(node_id).contains(&label_id));
+      db_reader2.commit().unwrap();
+      done_tx2.send(()).unwrap();
+    });
+
+    ready_rx2.recv().unwrap();
+    db.begin(false).unwrap();
+    db.remove_node_label(node_id, label_id).unwrap();
+    db.commit().unwrap();
+    cont_tx2.send(()).unwrap();
+    done_rx2.recv().unwrap();
+    handle2.join().unwrap();
+
+    db.begin(true).unwrap();
+    assert!(!db.node_has_label(node_id, label_id));
+    assert!(!db.get_node_labels(node_id).contains(&label_id));
+    db.commit().unwrap();
+
+    let db = match Arc::try_unwrap(db) {
+      Ok(db) => db,
+      Err(_) => panic!("single owner"),
+    };
+    close_single_file(db).unwrap();
   }
 }
