@@ -1256,6 +1256,7 @@ impl SingleFileDB {
 #[cfg(test)]
 mod tests {
   use crate::core::single_file::open::{close_single_file, open_single_file, SingleFileOpenOptions};
+  use crate::error::KiteError;
   use std::sync::{mpsc, Arc};
   use std::thread;
   use tempfile::tempdir;
@@ -1329,6 +1330,49 @@ mod tests {
     assert!(!db.node_has_label(node_id, label_id));
     assert!(!db.get_node_labels(node_id).contains(&label_id));
     db.commit().unwrap();
+
+    let db = match Arc::try_unwrap(db) {
+      Ok(db) => db,
+      Err(_) => panic!("single owner"),
+    };
+    close_single_file(db).unwrap();
+  }
+
+  #[test]
+  fn test_mvcc_neighbor_read_conflicts_with_edge_write() {
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("test-db");
+    let db = Arc::new(open_single_file(db_path, SingleFileOpenOptions::new().mvcc(true)).unwrap());
+
+    db.begin(false).unwrap();
+    let src = db.create_node(Some("src")).unwrap();
+    let dst = db.create_node(Some("dst")).unwrap();
+    db.commit().unwrap();
+
+    let (ready_tx, ready_rx) = mpsc::channel();
+    let (cont_tx, cont_rx) = mpsc::channel();
+    let db_reader = Arc::clone(&db);
+    let handle = thread::spawn(move || {
+      db_reader.begin(false).unwrap();
+      let edges = db_reader.get_out_edges(src);
+      assert!(edges.is_empty());
+      ready_tx.send(()).unwrap();
+      cont_rx.recv().unwrap();
+      let result = db_reader.commit();
+      match result {
+        Err(KiteError::Conflict { keys, .. }) => {
+          assert!(keys.iter().any(|key| key == &format!("neighbors_out:{src}:*")));
+        }
+        other => panic!("expected conflict, got {other:?}"),
+      }
+    });
+
+    ready_rx.recv().unwrap();
+    db.begin(false).unwrap();
+    db.add_edge_by_name(src, "Rel", dst).unwrap();
+    db.commit().unwrap();
+    cont_tx.send(()).unwrap();
+    handle.join().unwrap();
 
     let db = match Arc::try_unwrap(db) {
       Ok(db) => db,

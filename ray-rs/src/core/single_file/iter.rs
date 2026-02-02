@@ -4,6 +4,7 @@
 
 use crate::mvcc::visibility::{edge_exists as mvcc_edge_exists, node_exists as mvcc_node_exists};
 use crate::types::*;
+use std::collections::HashSet;
 
 use super::SingleFileDB;
 
@@ -197,6 +198,8 @@ impl SingleFileDB {
     let delta = self.delta.read();
     let snapshot = self.snapshot.read();
     let mut edges = Vec::new();
+    let mut read_srcs =
+      (self.mvcc.is_some() && txid != 0).then(|| HashSet::<NodeId>::new());
 
     // From snapshot
     if let Some(ref snap) = *snapshot {
@@ -213,6 +216,9 @@ impl SingleFileDB {
             || (src_visible.is_none() && delta.is_node_deleted(src))
           {
             continue;
+          }
+          if let Some(ref mut srcs) = read_srcs {
+            srcs.insert(src);
           }
 
           for (dst_phys, etype) in snap.iter_out_edges(phys) {
@@ -273,6 +279,9 @@ impl SingleFileDB {
         {
           continue;
         }
+        if let Some(ref mut srcs) = read_srcs {
+          srcs.insert(src);
+        }
         let dst_visible = vc_guard
           .as_ref()
           .and_then(|vc| vc.get_node_version(patch.other))
@@ -304,39 +313,55 @@ impl SingleFileDB {
 
     if let Some(pending_delta) = pending {
       for (&src, add_set) in &pending_delta.out_add {
-      for patch in add_set {
-        if let Some(filter_etype) = etype_filter {
-          if patch.etype != filter_etype {
+        for patch in add_set {
+          if let Some(filter_etype) = etype_filter {
+            if patch.etype != filter_etype {
+              continue;
+            }
+          }
+
+          let src_visible = vc_guard
+            .as_ref()
+            .and_then(|vc| vc.get_node_version(src))
+            .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+          if src_visible == Some(false)
+            || pending_delta.is_node_deleted(src)
+            || (src_visible.is_none() && delta.is_node_deleted(src))
+          {
             continue;
           }
-        }
+          if let Some(ref mut srcs) = read_srcs {
+            srcs.insert(src);
+          }
+          let dst_visible = vc_guard
+            .as_ref()
+            .and_then(|vc| vc.get_node_version(patch.other))
+            .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+          if dst_visible == Some(false)
+            || pending_delta.is_node_deleted(patch.other)
+            || (dst_visible.is_none() && delta.is_node_deleted(patch.other))
+          {
+            continue;
+          }
 
-        let src_visible = vc_guard
-          .as_ref()
-          .and_then(|vc| vc.get_node_version(src))
-          .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
-        if src_visible == Some(false)
-          || pending_delta.is_node_deleted(src)
-          || (src_visible.is_none() && delta.is_node_deleted(src))
-        {
-          continue;
-        }
-        let dst_visible = vc_guard
-          .as_ref()
-          .and_then(|vc| vc.get_node_version(patch.other))
-          .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
-        if dst_visible == Some(false)
-          || pending_delta.is_node_deleted(patch.other)
-          || (dst_visible.is_none() && delta.is_node_deleted(patch.other))
-        {
-          continue;
-        }
-
-        edges.push(FullEdge {
-          src,
-          etype: patch.etype,
-          dst: patch.other,
+          edges.push(FullEdge {
+            src,
+            etype: patch.etype,
+            dst: patch.other,
           });
+        }
+      }
+    }
+
+    if let (Some(mvcc), Some(srcs)) = (self.mvcc.as_ref(), read_srcs) {
+      let mut tx_mgr = mvcc.tx_manager.lock();
+      if let Some(filter_etype) = etype_filter {
+        for src in srcs {
+          tx_mgr.record_read(txid, format!("neighbors_out:{src}:{filter_etype}"));
+        }
+      } else {
+        for src in srcs {
+          tx_mgr.record_read(txid, format!("neighbors_out:{src}:*"));
         }
       }
     }
