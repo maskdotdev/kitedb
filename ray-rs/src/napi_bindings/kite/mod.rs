@@ -113,6 +113,7 @@ impl Kite {
 #[napi]
 impl Kite {
   /// Open a Kite database
+  #[allow(clippy::arc_with_non_send_sync)]
   #[napi(factory)]
   pub fn open(path: String, options: JsKiteOptions) -> Result<Self> {
     let mut node_specs: HashMap<String, KeySpec> = HashMap::new();
@@ -995,6 +996,7 @@ impl napi::Task for OpenKiteTask {
     Ok(())
   }
 
+  #[allow(clippy::arc_with_non_send_sync)]
   fn resolve(&mut self, _env: Env, _output: Self::Output) -> Result<Self::JsValue> {
     let (ray, node_specs) = self
       .result

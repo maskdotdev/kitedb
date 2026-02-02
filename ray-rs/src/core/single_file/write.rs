@@ -22,7 +22,7 @@ impl SingleFileDB {
 
   /// Create a node
   pub fn create_node(&self, key: Option<&str>) -> Result<NodeId> {
-    let txid = self.require_write_tx()?;
+    let (txid, tx_handle) = self.require_write_tx_handle()?;
     let node_id = self.alloc_node_id();
 
     // Write WAL record
@@ -33,8 +33,11 @@ impl SingleFileDB {
     );
     self.write_wal(record)?;
 
-    // Update delta
-    self.delta.write().create_node(node_id, key);
+    // Update pending delta
+    {
+      let mut tx = tx_handle.lock();
+      tx.pending.create_node(node_id, key);
+    }
 
     if let Some(mvcc) = self.mvcc.as_ref() {
       let mut tx_mgr = mvcc.tx_manager.lock();
@@ -49,7 +52,7 @@ impl SingleFileDB {
 
   /// Create a node with a specific ID
   pub fn create_node_with_id(&self, node_id: NodeId, key: Option<&str>) -> Result<NodeId> {
-    let txid = self.require_write_tx()?;
+    let (txid, tx_handle) = self.require_write_tx_handle()?;
 
     if self.node_exists(node_id) {
       return Err(KiteError::Internal(format!(
@@ -67,8 +70,11 @@ impl SingleFileDB {
     );
     self.write_wal(record)?;
 
-    // Update delta
-    self.delta.write().create_node(node_id, key);
+    // Update pending delta
+    {
+      let mut tx = tx_handle.lock();
+      tx.pending.create_node(node_id, key);
+    }
 
     if let Some(mvcc) = self.mvcc.as_ref() {
       let mut tx_mgr = mvcc.tx_manager.lock();
@@ -83,7 +89,7 @@ impl SingleFileDB {
 
   /// Delete a node
   pub fn delete_node(&self, node_id: NodeId) -> Result<()> {
-    let txid = self.require_write_tx()?;
+    let (txid, tx_handle) = self.require_write_tx_handle()?;
 
     // Write WAL record
     let record = WalRecord::new(
@@ -93,8 +99,11 @@ impl SingleFileDB {
     );
     self.write_wal(record)?;
 
-    // Update delta
-    self.delta.write().delete_node(node_id);
+    // Update pending delta
+    {
+      let mut tx = tx_handle.lock();
+      tx.pending.delete_node(node_id);
+    }
 
     if let Some(mvcc) = self.mvcc.as_ref() {
       let mut tx_mgr = mvcc.tx_manager.lock();
@@ -113,7 +122,7 @@ impl SingleFileDB {
 
   /// Add an edge
   pub fn add_edge(&self, src: NodeId, etype: ETypeId, dst: NodeId) -> Result<()> {
-    let txid = self.require_write_tx()?;
+    let (txid, tx_handle) = self.require_write_tx_handle()?;
 
     // Write WAL record
     let record = WalRecord::new(
@@ -123,8 +132,11 @@ impl SingleFileDB {
     );
     self.write_wal(record)?;
 
-    // Update delta
-    self.delta.write().add_edge(src, etype, dst);
+    // Update pending delta
+    {
+      let mut tx = tx_handle.lock();
+      tx.pending.add_edge(src, etype, dst);
+    }
 
     if let Some(mvcc) = self.mvcc.as_ref() {
       let mut tx_mgr = mvcc.tx_manager.lock();
@@ -145,7 +157,7 @@ impl SingleFileDB {
 
   /// Delete an edge
   pub fn delete_edge(&self, src: NodeId, etype: ETypeId, dst: NodeId) -> Result<()> {
-    let txid = self.require_write_tx()?;
+    let (txid, tx_handle) = self.require_write_tx_handle()?;
 
     // Write WAL record
     let record = WalRecord::new(
@@ -155,8 +167,11 @@ impl SingleFileDB {
     );
     self.write_wal(record)?;
 
-    // Update delta
-    self.delta.write().delete_edge(src, etype, dst);
+    // Update pending delta
+    {
+      let mut tx = tx_handle.lock();
+      tx.pending.delete_edge(src, etype, dst);
+    }
 
     if let Some(mvcc) = self.mvcc.as_ref() {
       let mut tx_mgr = mvcc.tx_manager.lock();
@@ -205,7 +220,7 @@ impl SingleFileDB {
 
   /// Set a node property
   pub fn set_node_prop(&self, node_id: NodeId, key_id: PropKeyId, value: PropValue) -> Result<()> {
-    let txid = self.require_write_tx()?;
+    let (txid, tx_handle) = self.require_write_tx_handle()?;
 
     // Write WAL record
     let record = WalRecord::new(
@@ -215,8 +230,11 @@ impl SingleFileDB {
     );
     self.write_wal(record)?;
 
-    // Update delta
-    self.delta.write().set_node_prop(node_id, key_id, value);
+    // Update pending delta
+    {
+      let mut tx = tx_handle.lock();
+      tx.pending.set_node_prop(node_id, key_id, value);
+    }
 
     if let Some(mvcc) = self.mvcc.as_ref() {
       let mut tx_mgr = mvcc.tx_manager.lock();
@@ -242,7 +260,7 @@ impl SingleFileDB {
 
   /// Delete a node property
   pub fn delete_node_prop(&self, node_id: NodeId, key_id: PropKeyId) -> Result<()> {
-    let txid = self.require_write_tx()?;
+    let (txid, tx_handle) = self.require_write_tx_handle()?;
 
     // Write WAL record
     let record = WalRecord::new(
@@ -252,8 +270,11 @@ impl SingleFileDB {
     );
     self.write_wal(record)?;
 
-    // Update delta
-    self.delta.write().delete_node_prop(node_id, key_id);
+    // Update pending delta
+    {
+      let mut tx = tx_handle.lock();
+      tx.pending.delete_node_prop(node_id, key_id);
+    }
 
     if let Some(mvcc) = self.mvcc.as_ref() {
       let mut tx_mgr = mvcc.tx_manager.lock();
@@ -279,7 +300,7 @@ impl SingleFileDB {
     key_id: PropKeyId,
     value: PropValue,
   ) -> Result<()> {
-    let txid = self.require_write_tx()?;
+    let (txid, tx_handle) = self.require_write_tx_handle()?;
 
     // Write WAL record
     let record = WalRecord::new(
@@ -289,11 +310,13 @@ impl SingleFileDB {
     );
     self.write_wal(record)?;
 
-    // Update delta
-    self
-      .delta
-      .write()
-      .set_edge_prop(src, etype, dst, key_id, value);
+    // Update pending delta
+    {
+      let mut tx = tx_handle.lock();
+      tx
+        .pending
+        .set_edge_prop(src, etype, dst, key_id, value);
+    }
 
     if let Some(mvcc) = self.mvcc.as_ref() {
       let mut tx_mgr = mvcc.tx_manager.lock();
@@ -327,7 +350,7 @@ impl SingleFileDB {
     dst: NodeId,
     key_id: PropKeyId,
   ) -> Result<()> {
-    let txid = self.require_write_tx()?;
+    let (txid, tx_handle) = self.require_write_tx_handle()?;
 
     // Write WAL record
     let record = WalRecord::new(
@@ -337,8 +360,11 @@ impl SingleFileDB {
     );
     self.write_wal(record)?;
 
-    // Update delta
-    self.delta.write().delete_edge_prop(src, etype, dst, key_id);
+    // Update pending delta
+    {
+      let mut tx = tx_handle.lock();
+      tx.pending.delete_edge_prop(src, etype, dst, key_id);
+    }
 
     if let Some(mvcc) = self.mvcc.as_ref() {
       let mut tx_mgr = mvcc.tx_manager.lock();
@@ -357,7 +383,7 @@ impl SingleFileDB {
 
   /// Add a label to a node
   pub fn add_node_label(&self, node_id: NodeId, label_id: LabelId) -> Result<()> {
-    let txid = self.require_write_tx()?;
+    let (txid, tx_handle) = self.require_write_tx_handle()?;
 
     // Write WAL record
     let record = WalRecord::new(
@@ -367,8 +393,11 @@ impl SingleFileDB {
     );
     self.write_wal(record)?;
 
-    // Update delta
-    self.delta.write().add_node_label(node_id, label_id);
+    // Update pending delta
+    {
+      let mut tx = tx_handle.lock();
+      tx.pending.add_node_label(node_id, label_id);
+    }
 
     if let Some(mvcc) = self.mvcc.as_ref() {
       let mut tx_mgr = mvcc.tx_manager.lock();
@@ -389,7 +418,7 @@ impl SingleFileDB {
 
   /// Remove a label from a node
   pub fn remove_node_label(&self, node_id: NodeId, label_id: LabelId) -> Result<()> {
-    let txid = self.require_write_tx()?;
+    let (txid, tx_handle) = self.require_write_tx_handle()?;
 
     // Write WAL record
     let record = WalRecord::new(
@@ -399,8 +428,11 @@ impl SingleFileDB {
     );
     self.write_wal(record)?;
 
-    // Update delta
-    self.delta.write().remove_node_label(node_id, label_id);
+    // Update pending delta
+    {
+      let mut tx = tx_handle.lock();
+      tx.pending.remove_node_label(node_id, label_id);
+    }
 
     if let Some(mvcc) = self.mvcc.as_ref() {
       let mut tx_mgr = mvcc.tx_manager.lock();

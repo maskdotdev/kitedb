@@ -45,7 +45,7 @@ impl SingleFileDB {
     }
 
     // Don't checkpoint with active transaction
-    if self.has_transaction() {
+    if self.has_any_transaction() {
       return Err(KiteError::TransactionInProgress);
     }
 

@@ -7,20 +7,43 @@ use crate::core::wal::record::{
 };
 use crate::error::{KiteError, Result};
 use crate::types::*;
+use parking_lot::Mutex;
+use std::sync::Arc;
 
 use super::open::SyncMode;
 use super::{SingleFileDB, SingleFileTxState};
 
 impl SingleFileDB {
+  pub(crate) fn current_tx_handle(&self) -> Option<Arc<Mutex<SingleFileTxState>>> {
+    let tid = std::thread::current().id();
+    let current_tx = self.current_tx.lock();
+    current_tx.get(&tid).cloned()
+  }
+
+  pub(crate) fn require_write_tx_handle(&self) -> Result<(TxId, Arc<Mutex<SingleFileTxState>>)> {
+    let handle = self.current_tx_handle().ok_or(KiteError::NoTransaction)?;
+    let txid = {
+      let tx = handle.lock();
+      if tx.read_only {
+        return Err(KiteError::ReadOnly);
+      }
+      tx.txid
+    };
+    Ok((txid, handle))
+  }
+
   /// Begin a new transaction
   pub fn begin(&self, read_only: bool) -> Result<TxId> {
     if self.read_only && !read_only {
       return Err(KiteError::ReadOnly);
     }
 
-    let mut current_tx = self.current_tx.lock();
-    if current_tx.is_some() {
-      return Err(KiteError::TransactionInProgress);
+    let tid = std::thread::current().id();
+    {
+      let current_tx = self.current_tx.lock();
+      if current_tx.contains_key(&tid) {
+        return Err(KiteError::TransactionInProgress);
+      }
     }
 
     let (txid, snapshot_ts) = if let Some(mvcc) = self.mvcc.as_ref() {
@@ -44,28 +67,25 @@ impl SingleFileDB {
       wal.write_record(&record, &mut pager)?;
     }
 
-    let delta_snapshot = if read_only {
-      None
-    } else {
-      Some(self.delta.read().clone())
-    };
-
-    *current_tx = Some(SingleFileTxState::new(
+    let tx_state = Arc::new(Mutex::new(SingleFileTxState::new(
       txid,
       read_only,
       snapshot_ts,
-      delta_snapshot,
-    ));
+    )));
+
+    self.current_tx.lock().insert(tid, tx_state);
     Ok(txid)
   }
 
   /// Commit the current transaction
   pub fn commit(&self) -> Result<()> {
-    // Take the transaction and release the lock immediately
-    let tx = {
+    let tx_handle = {
+      let tid = std::thread::current().id();
       let mut current_tx = self.current_tx.lock();
-      current_tx.take().ok_or(KiteError::NoTransaction)?
+      current_tx.remove(&tid).ok_or(KiteError::NoTransaction)?
     };
+
+    let tx = { tx_handle.lock().clone() };
 
     if tx.read_only {
       // Read-only transactions don't need WAL
@@ -81,9 +101,6 @@ impl SingleFileDB {
       let mut tx_mgr = mvcc.tx_manager.lock();
       if let Err(err) = mvcc.conflict_detector.validate_commit(&tx_mgr, tx.txid) {
         tx_mgr.abort_tx(tx.txid);
-        if let Some(delta_snapshot) = tx.delta_snapshot {
-          *self.delta.write() = delta_snapshot;
-        }
         return Err(KiteError::Conflict {
           txid: err.txid,
           keys: err.conflicting_keys,
@@ -96,208 +113,10 @@ impl SingleFileDB {
       commit_ts_for_mvcc = Some((commit_ts, tx_mgr.get_active_count() > 0));
     }
 
-    if let (Some((commit_ts, has_active_readers)), Some(delta_snapshot)) =
-      (commit_ts_for_mvcc, tx.delta_snapshot.as_ref())
-    {
-      if has_active_readers {
-        let current_delta = self.delta.read();
-        let snapshot = self.snapshot.read();
-        let mvcc = self.mvcc.as_ref().unwrap();
-        let mut vc = mvcc.version_chain.lock();
+    let pending = tx.pending;
 
-        let txid = tx.txid;
-
-        for (&node_id, node_delta) in &current_delta.created_nodes {
-          if !delta_snapshot.created_nodes.contains_key(&node_id) {
-            vc.append_node_version(
-              node_id,
-              NodeVersionData {
-                node_id,
-                delta: node_delta.clone(),
-              },
-              txid,
-              commit_ts,
-            );
-          }
-        }
-
-        for node_id in delta_snapshot.created_nodes.keys() {
-          if !current_delta.created_nodes.contains_key(node_id) {
-            vc.delete_node_version(*node_id, txid, commit_ts);
-          }
-        }
-
-        for node_id in current_delta
-          .deleted_nodes
-          .difference(&delta_snapshot.deleted_nodes)
-        {
-          vc.delete_node_version(*node_id, txid, commit_ts);
-        }
-
-        let mut added_edges: Vec<(NodeId, ETypeId, NodeId)> = Vec::new();
-        let mut deleted_edges: Vec<(NodeId, ETypeId, NodeId)> = Vec::new();
-
-        for (&src, patches) in &current_delta.out_add {
-          let before = delta_snapshot.out_add.get(&src);
-          for patch in patches {
-            if before.map(|set| set.contains(patch)).unwrap_or(false) {
-              continue;
-            }
-            added_edges.push((src, patch.etype, patch.other));
-          }
-        }
-
-        for (&src, patches) in &current_delta.out_del {
-          let before = delta_snapshot.out_del.get(&src);
-          for patch in patches {
-            if before.map(|set| set.contains(patch)).unwrap_or(false) {
-              continue;
-            }
-            deleted_edges.push((src, patch.etype, patch.other));
-          }
-        }
-
-        for (&src, patches) in &delta_snapshot.out_add {
-          let after = current_delta.out_add.get(&src);
-          for patch in patches {
-            if after.map(|set| set.contains(patch)).unwrap_or(false) {
-              continue;
-            }
-            deleted_edges.push((src, patch.etype, patch.other));
-          }
-        }
-
-        for (&src, patches) in &delta_snapshot.out_del {
-          let after = current_delta.out_del.get(&src);
-          for patch in patches {
-            if after.map(|set| set.contains(patch)).unwrap_or(false) {
-              continue;
-            }
-            added_edges.push((src, patch.etype, patch.other));
-          }
-        }
-
-        for (src, etype, dst) in added_edges {
-          vc.append_edge_version(src, etype, dst, true, txid, commit_ts);
-        }
-        for (src, etype, dst) in deleted_edges {
-          vc.append_edge_version(src, etype, dst, false, txid, commit_ts);
-        }
-
-        let old_node_prop = |node_id: NodeId, key_id: PropKeyId| -> Option<PropValue> {
-          let delta = delta_snapshot;
-          if delta.is_node_deleted(node_id) {
-            return None;
-          }
-          if let Some(value_opt) = delta.get_node_prop(node_id, key_id) {
-            return value_opt.cloned();
-          }
-          if let Some(ref snap) = *snapshot {
-            if let Some(phys) = snap.get_phys_node(node_id) {
-              return snap.get_node_prop(phys, key_id);
-            }
-          }
-          None
-        };
-
-        let old_edge_prop = |src: NodeId, etype: ETypeId, dst: NodeId, key_id: PropKeyId| {
-          let delta = delta_snapshot;
-          if delta.is_node_deleted(src) || delta.is_node_deleted(dst) {
-            return None;
-          }
-          if delta.is_edge_deleted(src, etype, dst) {
-            return None;
-          }
-          if let Some(value_opt) = delta.get_edge_prop(src, etype, dst, key_id) {
-            return value_opt.cloned();
-          }
-          if let Some(ref snap) = *snapshot {
-            if let (Some(src_phys), Some(dst_phys)) =
-              (snap.get_phys_node(src), snap.get_phys_node(dst))
-            {
-              if let Some(edge_idx) = snap.find_edge_index(src_phys, etype, dst_phys) {
-                if let Some(snapshot_props) = snap.get_edge_props(edge_idx) {
-                  return snapshot_props.get(&key_id).cloned();
-                }
-              }
-            }
-          }
-          None
-        };
-
-        for (node_id, node_delta) in current_delta
-          .created_nodes
-          .iter()
-          .chain(current_delta.modified_nodes.iter())
-        {
-          if current_delta.deleted_nodes.contains(node_id) {
-            continue;
-          }
-          let before_props = delta_snapshot
-            .created_nodes
-            .get(node_id)
-            .or_else(|| delta_snapshot.modified_nodes.get(node_id))
-            .and_then(|d| d.props.as_ref());
-          let after_props = node_delta.props.as_ref();
-
-          if let Some(after_map) = after_props {
-            for (key_id, after_value) in after_map {
-              let before_value = before_props.and_then(|m| m.get(key_id));
-              if before_value == Some(after_value) {
-                continue;
-              }
-              let is_new_node = !delta_snapshot.created_nodes.contains_key(node_id)
-                && current_delta.created_nodes.contains_key(node_id);
-              if !is_new_node && vc.get_node_prop_version(*node_id, *key_id).is_none() {
-                let old_value = old_node_prop(*node_id, *key_id);
-                vc.append_node_prop_version(*node_id, *key_id, old_value, 0, 0);
-              }
-              vc.append_node_prop_version(
-                *node_id,
-                *key_id,
-                after_value.clone(),
-                txid,
-                commit_ts,
-              );
-            }
-          }
-        }
-
-        for (edge_key, after_props) in &current_delta.edge_props {
-          let before_props = delta_snapshot.edge_props.get(edge_key);
-          for (key_id, after_value) in after_props {
-            let before_value = before_props.and_then(|m| m.get(key_id));
-            if before_value == Some(after_value) {
-              continue;
-            }
-            let (src, etype, dst) = *edge_key;
-            if vc
-              .get_edge_prop_version(src, etype, dst, *key_id)
-              .is_none()
-            {
-              vc.append_edge_prop_version(
-                src,
-                etype,
-                dst,
-                *key_id,
-                old_edge_prop(src, etype, dst, *key_id),
-                0,
-                0,
-              );
-            }
-            vc.append_edge_prop_version(
-              src,
-              etype,
-              dst,
-              *key_id,
-              after_value.clone(),
-              txid,
-              commit_ts,
-            );
-          }
-        }
-      }
-    }
+    // Serialize commit by holding the delta write lock while we finalize WAL + state.
+    let mut delta = self.delta.write();
 
     // Write COMMIT record to WAL
     let record = WalRecord::new(WalRecordType::Commit, tx.txid, build_commit_payload());
@@ -346,8 +165,142 @@ impl SingleFileDB {
       }
     }
 
+    if let (Some((commit_ts, has_active_readers)), Some(mvcc)) =
+      (commit_ts_for_mvcc, self.mvcc.as_ref())
+    {
+      if has_active_readers {
+        let snapshot = self.snapshot.read();
+        let mut vc = mvcc.version_chain.lock();
+        let txid = tx.txid;
+
+        for (&node_id, node_delta) in &pending.created_nodes {
+          vc.append_node_version(
+            node_id,
+            NodeVersionData {
+              node_id,
+              delta: node_delta.clone(),
+            },
+            txid,
+            commit_ts,
+          );
+        }
+
+        for &node_id in &pending.deleted_nodes {
+          vc.delete_node_version(node_id, txid, commit_ts);
+        }
+
+        for (&src, patches) in &pending.out_add {
+          for patch in patches {
+            vc.append_edge_version(src, patch.etype, patch.other, true, txid, commit_ts);
+          }
+        }
+
+        for (&src, patches) in &pending.out_del {
+          for patch in patches {
+            vc.append_edge_version(src, patch.etype, patch.other, false, txid, commit_ts);
+          }
+        }
+
+        let old_node_prop = |node_id: NodeId, key_id: PropKeyId| -> Option<PropValue> {
+          if delta.is_node_deleted(node_id) {
+            return None;
+          }
+          if let Some(value_opt) = delta.get_node_prop(node_id, key_id) {
+            return value_opt.cloned();
+          }
+          if let Some(ref snap) = *snapshot {
+            if let Some(phys) = snap.get_phys_node(node_id) {
+              return snap.get_node_prop(phys, key_id);
+            }
+          }
+          None
+        };
+
+        let old_edge_prop = |src: NodeId, etype: ETypeId, dst: NodeId, key_id: PropKeyId| {
+          if delta.is_node_deleted(src) || delta.is_node_deleted(dst) {
+            return None;
+          }
+          if delta.is_edge_deleted(src, etype, dst) {
+            return None;
+          }
+          if let Some(value_opt) = delta.get_edge_prop(src, etype, dst, key_id) {
+            return value_opt.cloned();
+          }
+          if let Some(ref snap) = *snapshot {
+            if let (Some(src_phys), Some(dst_phys)) =
+              (snap.get_phys_node(src), snap.get_phys_node(dst))
+            {
+              if let Some(edge_idx) = snap.find_edge_index(src_phys, etype, dst_phys) {
+                if let Some(snapshot_props) = snap.get_edge_props(edge_idx) {
+                  return snapshot_props.get(&key_id).cloned();
+                }
+              }
+            }
+          }
+          None
+        };
+
+        for (node_id, node_delta) in pending
+          .created_nodes
+          .iter()
+          .chain(pending.modified_nodes.iter())
+        {
+          if pending.deleted_nodes.contains(node_id) {
+            continue;
+          }
+
+          if let Some(after_map) = node_delta.props.as_ref() {
+            for (key_id, after_value) in after_map {
+              let before_value = old_node_prop(*node_id, *key_id);
+              if before_value == *after_value {
+                continue;
+              }
+              if vc.get_node_prop_version(*node_id, *key_id).is_none() {
+                vc.append_node_prop_version(*node_id, *key_id, before_value.clone(), 0, 0);
+              }
+              vc.append_node_prop_version(
+                *node_id,
+                *key_id,
+                after_value.clone(),
+                txid,
+                commit_ts,
+              );
+            }
+          }
+        }
+
+        for (edge_key, after_props) in &pending.edge_props {
+          for (key_id, after_value) in after_props {
+            let (src, etype, dst) = *edge_key;
+            let before_value = old_edge_prop(src, etype, dst, *key_id);
+            if before_value == *after_value {
+              continue;
+            }
+            if vc
+              .get_edge_prop_version(src, etype, dst, *key_id)
+              .is_none()
+            {
+              vc.append_edge_prop_version(src, etype, dst, *key_id, before_value.clone(), 0, 0);
+            }
+            vc.append_edge_prop_version(
+              src,
+              etype,
+              dst,
+              *key_id,
+              after_value.clone(),
+              txid,
+              commit_ts,
+            );
+          }
+        }
+      }
+    }
+
+    merge_pending_delta(&mut delta, &pending);
+    drop(delta);
+
     // Apply pending vector operations
-    self.apply_pending_vectors();
+    self.apply_pending_vectors(&pending.pending_vectors);
 
     // Check if auto-checkpoint should be triggered
     // Note: We release all locks above first to avoid deadlock during checkpoint
@@ -373,8 +326,12 @@ impl SingleFileDB {
 
   /// Rollback the current transaction
   pub fn rollback(&self) -> Result<()> {
-    let mut current_tx = self.current_tx.lock();
-    let tx = current_tx.take().ok_or(KiteError::NoTransaction)?;
+    let tx_handle = {
+      let tid = std::thread::current().id();
+      let mut current_tx = self.current_tx.lock();
+      current_tx.remove(&tid).ok_or(KiteError::NoTransaction)?
+    };
+    let tx = { tx_handle.lock().clone() };
 
     if tx.read_only {
       // Read-only transactions don't need WAL
@@ -396,24 +353,23 @@ impl SingleFileDB {
     let mut wal = self.wal_buffer.lock();
     wal.write_record(&record, &mut pager)?;
 
-    // Discard pending writes (rollback doesn't need to be durable)
-    wal.discard_pending();
-
-    if let Some(delta_snapshot) = tx.delta_snapshot {
-      *self.delta.write() = delta_snapshot;
-    }
-
     Ok(())
   }
 
   /// Check if there's an active transaction
   pub fn has_transaction(&self) -> bool {
-    self.current_tx.lock().is_some()
+    self.current_tx_handle().is_some()
+  }
+
+  pub(crate) fn has_any_transaction(&self) -> bool {
+    !self.current_tx.lock().is_empty()
   }
 
   /// Get the current transaction ID (if any)
   pub fn current_txid(&self) -> Option<TxId> {
-    self.current_tx.lock().as_ref().map(|tx| tx.txid)
+    self.current_tx_handle()
+      .as_ref()
+      .map(|tx| tx.lock().txid)
   }
 
   /// Write a WAL record (internal helper)
@@ -426,11 +382,96 @@ impl SingleFileDB {
 
   /// Get current transaction ID or error
   pub(crate) fn require_write_tx(&self) -> Result<TxId> {
-    let current_tx = self.current_tx.lock();
-    match current_tx.as_ref() {
-      Some(tx) if !tx.read_only => Ok(tx.txid),
-      Some(_) => Err(KiteError::ReadOnly),
-      None => Err(KiteError::NoTransaction),
+    let (txid, _) = self.require_write_tx_handle()?;
+    Ok(txid)
+  }
+}
+
+fn merge_pending_delta(target: &mut DeltaState, pending: &DeltaState) {
+  for (&label_id, name) in &pending.new_labels {
+    target.define_label(label_id, name);
+  }
+  for (&etype_id, name) in &pending.new_etypes {
+    target.define_etype(etype_id, name);
+  }
+  for (&propkey_id, name) in &pending.new_propkeys {
+    target.define_propkey(propkey_id, name);
+  }
+
+  for (&node_id, node_delta) in &pending.created_nodes {
+    target.create_node(node_id, node_delta.key.as_deref());
+
+    if let Some(labels) = node_delta.labels.as_ref() {
+      for &label_id in labels {
+        target.add_node_label(node_id, label_id);
+      }
     }
+    if let Some(labels_deleted) = node_delta.labels_deleted.as_ref() {
+      for &label_id in labels_deleted {
+        target.remove_node_label(node_id, label_id);
+      }
+    }
+    if let Some(props) = node_delta.props.as_ref() {
+      for (&key_id, value) in props {
+        match value {
+          Some(value) => target.set_node_prop(node_id, key_id, value.clone()),
+          None => target.delete_node_prop(node_id, key_id),
+        }
+      }
+    }
+  }
+
+  for &node_id in &pending.deleted_nodes {
+    target.delete_node(node_id);
+  }
+
+  for (&node_id, node_delta) in &pending.modified_nodes {
+    if let Some(labels) = node_delta.labels.as_ref() {
+      for &label_id in labels {
+        target.add_node_label(node_id, label_id);
+      }
+    }
+    if let Some(labels_deleted) = node_delta.labels_deleted.as_ref() {
+      for &label_id in labels_deleted {
+        target.remove_node_label(node_id, label_id);
+      }
+    }
+    if let Some(props) = node_delta.props.as_ref() {
+      for (&key_id, value) in props {
+        match value {
+          Some(value) => target.set_node_prop(node_id, key_id, value.clone()),
+          None => target.delete_node_prop(node_id, key_id),
+        }
+      }
+    }
+  }
+
+  for (&src, patches) in &pending.out_add {
+    for patch in patches {
+      target.add_edge(src, patch.etype, patch.other);
+    }
+  }
+
+  for (&src, patches) in &pending.out_del {
+    for patch in patches {
+      target.delete_edge(src, patch.etype, patch.other);
+    }
+  }
+
+  for ((src, etype, dst), props) in &pending.edge_props {
+    for (&key_id, value) in props {
+      match value {
+        Some(value) => target.set_edge_prop(*src, *etype, *dst, key_id, value.clone()),
+        None => target.delete_edge_prop(*src, *etype, *dst, key_id),
+      }
+    }
+  }
+
+  for (key, node_id) in &pending.key_index {
+    target.key_index.insert(key.clone(), *node_id);
+  }
+
+  for key in &pending.key_index_deleted {
+    target.key_index_deleted.insert(key.clone());
   }
 }

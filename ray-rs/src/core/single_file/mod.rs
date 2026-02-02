@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::thread::ThreadId;
 
 use parking_lot::{Mutex, RwLock};
 
@@ -56,26 +57,21 @@ pub use recovery::replay_wal_record;
 ///
 /// This is scoped to SingleFileDB and only tracks what single-file
 /// transactions need.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SingleFileTxState {
   pub txid: TxId,
   pub read_only: bool,
   pub snapshot_ts: u64,
-  pub delta_snapshot: Option<DeltaState>,
+  pub pending: DeltaState,
 }
 
 impl SingleFileTxState {
-  pub fn new(
-    txid: TxId,
-    read_only: bool,
-    snapshot_ts: u64,
-    delta_snapshot: Option<DeltaState>,
-  ) -> Self {
+  pub fn new(txid: TxId, read_only: bool, snapshot_ts: u64) -> Self {
     Self {
       txid,
       read_only,
       snapshot_ts,
-      delta_snapshot,
+      pending: DeltaState::new(),
     }
   }
 }
@@ -109,7 +105,7 @@ pub struct SingleFileDB {
   pub(crate) next_tx_id: AtomicU64,
 
   /// Current active transaction
-  pub current_tx: Mutex<Option<SingleFileTxState>>,
+  pub current_tx: Mutex<HashMap<ThreadId, std::sync::Arc<Mutex<SingleFileTxState>>>>,
 
   /// MVCC manager (if enabled)
   pub mvcc: Option<std::sync::Arc<MvccManager>>,
@@ -211,8 +207,20 @@ impl SingleFileDB {
 
   /// Check if a node exists
   pub fn node_exists(&self, node_id: NodeId) -> bool {
+    let tx_handle = self.current_tx_handle();
+    if let Some(handle) = tx_handle.as_ref() {
+      let tx = handle.lock();
+      if tx.pending.is_node_deleted(node_id) {
+        return false;
+      }
+      if tx.pending.is_node_created(node_id) {
+        return true;
+      }
+    }
+
     if let Some(mvcc) = self.mvcc.as_ref() {
-      let (txid, tx_snapshot_ts) = if let Some(tx) = self.current_tx.lock().as_ref() {
+      let (txid, tx_snapshot_ts) = if let Some(handle) = tx_handle.as_ref() {
+        let tx = handle.lock();
         (tx.txid, tx.snapshot_ts)
       } else {
         (0, mvcc.tx_manager.lock().get_next_commit_ts())
@@ -247,8 +255,23 @@ impl SingleFileDB {
 
   /// Check if an edge exists
   pub fn edge_exists(&self, src: NodeId, etype: ETypeId, dst: NodeId) -> bool {
+    let tx_handle = self.current_tx_handle();
+    if let Some(handle) = tx_handle.as_ref() {
+      let tx = handle.lock();
+      if tx.pending.is_node_deleted(src) || tx.pending.is_node_deleted(dst) {
+        return false;
+      }
+      if tx.pending.is_edge_deleted(src, etype, dst) {
+        return false;
+      }
+      if tx.pending.is_edge_added(src, etype, dst) {
+        return true;
+      }
+    }
+
     if let Some(mvcc) = self.mvcc.as_ref() {
-      let (txid, tx_snapshot_ts) = if let Some(tx) = self.current_tx.lock().as_ref() {
+      let (txid, tx_snapshot_ts) = if let Some(handle) = tx_handle.as_ref() {
+        let tx = handle.lock();
         (tx.txid, tx.snapshot_ts)
       } else {
         (0, mvcc.tx_manager.lock().get_next_commit_ts())

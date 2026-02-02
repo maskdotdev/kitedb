@@ -47,7 +47,7 @@ impl SingleFileDB {
       return Err(KiteError::ReadOnly);
     }
 
-    if self.has_transaction() {
+    if self.has_any_transaction() {
       return Err(KiteError::TransactionInProgress);
     }
 
@@ -133,7 +133,7 @@ impl SingleFileDB {
       return Err(KiteError::ReadOnly);
     }
 
-    if self.has_transaction() {
+    if self.has_any_transaction() {
       return Err(KiteError::TransactionInProgress);
     }
 

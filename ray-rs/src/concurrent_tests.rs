@@ -88,9 +88,13 @@ mod tests {
       .edge(likes)
   }
 
+  fn temp_db_path(temp_dir: &tempfile::TempDir) -> std::path::PathBuf {
+    temp_dir.path().join("test-db")
+  }
+
   fn setup_test_db(node_count: usize, edge_count: usize) -> (tempfile::TempDir, Kite) {
     let temp_dir = tempdir().unwrap();
-    let mut ray = Kite::open(temp_dir.path(), create_test_schema()).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
 
     // Create nodes
     let mut node_ids = Vec::with_capacity(node_count);

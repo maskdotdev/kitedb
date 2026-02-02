@@ -3323,6 +3323,10 @@ mod tests {
   use super::*;
   use tempfile::tempdir;
 
+  fn temp_db_path(temp_dir: &tempfile::TempDir) -> std::path::PathBuf {
+    temp_dir.path().join("test-db")
+  }
+
   fn create_test_schema() -> KiteOptions {
     let user = NodeDef::new("User", "user:")
       .prop(PropDef::string("name").required())
@@ -3347,7 +3351,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let ray = Kite::open(temp_dir.path(), options).unwrap();
+    let ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     assert_eq!(ray.node_types().len(), 2);
     assert_eq!(ray.edge_types().len(), 2);
@@ -3362,7 +3366,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create a user
     let mut props = HashMap::new();
@@ -3390,7 +3394,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create two users
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -3422,7 +3426,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create a user
     let mut props = HashMap::new();
@@ -3446,7 +3450,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     assert_eq!(ray.count_nodes(), 0);
 
@@ -3464,7 +3468,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let user = ray.create_node("User", "alice", HashMap::new()).unwrap();
     assert!(ray.exists(user.id));
@@ -3480,7 +3484,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create a user
     let user = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -3504,7 +3508,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create some users and posts
     ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -3527,7 +3531,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create some users and posts
     ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -3547,7 +3551,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create nodes and edges
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -3575,7 +3579,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -3601,7 +3605,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create a chain: alice -> bob -> charlie
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -3633,7 +3637,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -3660,7 +3664,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -3684,7 +3688,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create a chain: alice -> bob -> charlie
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -3713,7 +3717,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -3736,7 +3740,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -3756,7 +3760,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create: alice -> bob -> charlie -> dave
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -3786,7 +3790,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create a diamond: alice -> bob -> dave, alice -> charlie -> dave
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -3825,7 +3829,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create multiple nodes in a batch
     let results = ray
@@ -3864,7 +3868,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // First batch: create nodes
     let results = ray
@@ -3912,7 +3916,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create a node
     let user = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -3948,7 +3952,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create initial nodes
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -3995,7 +3999,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create nodes and edges
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -4038,7 +4042,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Execute a transaction
     let (alice, bob) = ray
@@ -4063,7 +4067,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create node with properties in transaction
     let alice = ray
@@ -4091,7 +4095,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Transaction that fails partway through
     let result: Result<()> = ray.transaction(|ctx| {
@@ -4116,7 +4120,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create some data first
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -4152,7 +4156,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create nodes first
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -4198,7 +4202,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Use the builder pattern
     let results = ray
@@ -4257,7 +4261,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -4293,7 +4297,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -4329,7 +4333,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -4361,7 +4365,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -4397,7 +4401,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -4424,7 +4428,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -4480,7 +4484,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -4519,7 +4523,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -4542,7 +4546,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
     let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
@@ -4580,7 +4584,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Insert with returning
     let mut props = HashMap::new();
@@ -4615,7 +4619,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Insert without returning
     let mut props = HashMap::new();
@@ -4645,7 +4649,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Insert multiple nodes
     let mut alice_props = HashMap::new();
@@ -4686,7 +4690,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Empty insert should succeed
     let users = ray
@@ -4708,13 +4712,16 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let ray = Kite::open(temp_dir.path(), options).unwrap();
+    let ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     let result = ray.check().unwrap();
     assert!(result.valid);
     assert!(result.errors.is_empty());
-    // Should have a warning about missing snapshot
-    assert!(result.warnings.iter().any(|w| w.contains("No snapshot")));
+    // Should warn about an empty database
+    assert!(result
+      .warnings
+      .iter()
+      .any(|w| w.contains("No nodes in database")));
 
     ray.close().unwrap();
   }
@@ -4724,7 +4731,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create some nodes and edges
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -4752,7 +4759,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create nodes with properties
     let mut props = HashMap::new();
@@ -4788,7 +4795,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create a node
     let mut props = HashMap::new();
@@ -4820,7 +4827,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create a node
     let mut props = HashMap::new();
@@ -4852,7 +4859,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create a node
     let mut props = HashMap::new();
@@ -4879,7 +4886,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create by ID
     ray
@@ -4919,7 +4926,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create a node with properties
     let mut props = HashMap::new();
@@ -4954,7 +4961,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create a node
     let eve = ray.create_node("User", "eve", HashMap::new()).unwrap();
@@ -4986,7 +4993,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Try to update non-existent node by ID
     let result = ray.update_by_id(999999);
@@ -5004,7 +5011,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create a node
     let mut props = HashMap::new();
@@ -5026,7 +5033,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create some data
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -5056,7 +5063,7 @@ mod tests {
     let temp_dir = tempdir().unwrap();
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_dir.path(), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
 
     // Create some data
     let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
@@ -5066,12 +5073,9 @@ mod tests {
     // Get stats
     let stats = ray.stats();
 
-    // Should report correct counts
-    assert!(stats.snapshot_nodes >= 2);
-    assert!(stats.snapshot_edges >= 1);
-    // Delta should show created nodes
-    assert!(stats.delta_nodes_created >= 2);
-    assert!(stats.delta_edges_added >= 1);
+    // Should report correct counts (snapshot + delta)
+    assert!(stats.snapshot_nodes + stats.delta_nodes_created as u64 >= 2);
+    assert!(stats.snapshot_edges + stats.delta_edges_added as u64 >= 1);
 
     ray.close().unwrap();
   }

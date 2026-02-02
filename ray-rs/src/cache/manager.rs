@@ -146,6 +146,11 @@ pub struct CacheManager {
   enabled: bool,
 }
 
+// CacheManager is mutated via &mut methods and is always guarded by an external lock in the DB.
+// Marking it Send/Sync enables safe sharing through those locks.
+unsafe impl Send for CacheManager {}
+unsafe impl Sync for CacheManager {}
+
 impl CacheManager {
   /// Create a new cache manager with the given options
   pub fn new(options: CacheOptions) -> Self {

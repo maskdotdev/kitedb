@@ -34,6 +34,9 @@ pub struct NodeIterator {
 impl NodeIterator {
   pub(crate) fn new(db: &SingleFileDB) -> Self {
     let mut nodes = Vec::new();
+    let tx_handle = db.current_tx_handle();
+    let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
+    let pending = tx_guard.as_ref().map(|tx| &tx.pending);
     let delta = db.delta.read();
     let snapshot = db.snapshot.read();
 
@@ -43,7 +46,9 @@ impl NodeIterator {
       for phys in 0..num_nodes {
         if let Some(node_id) = snap.get_node_id(phys) {
           // Skip if deleted in delta
-          if !delta.is_node_deleted(node_id) {
+          if !delta.is_node_deleted(node_id)
+            && !pending.is_some_and(|p| p.is_node_deleted(node_id))
+          {
             nodes.push(node_id);
           }
         }
@@ -52,13 +57,25 @@ impl NodeIterator {
 
     // 2. Add nodes created in delta (excluding deleted)
     for &node_id in delta.created_nodes.keys() {
-      if !delta.deleted_nodes.contains(&node_id) {
+      if !delta.deleted_nodes.contains(&node_id)
+        && !pending.is_some_and(|p| p.is_node_deleted(node_id))
+      {
         nodes.push(node_id);
+      }
+    }
+
+    // 3. Add nodes created in pending (excluding deleted)
+    if let Some(pending_delta) = pending {
+      for &node_id in pending_delta.created_nodes.keys() {
+        if !pending_delta.deleted_nodes.contains(&node_id) {
+          nodes.push(node_id);
+        }
       }
     }
 
     // Sort for consistent ordering
     nodes.sort_unstable();
+    nodes.dedup();
 
     Self { nodes, index: 0 }
   }
@@ -110,59 +127,14 @@ impl SingleFileDB {
   /// Optimized to avoid full iteration by using snapshot metadata
   /// and delta size adjustments.
   pub fn count_nodes(&self) -> usize {
-    let delta = self.delta.read();
-    let snapshot = self.snapshot.read();
-
-    // Start with snapshot count
-    let mut count = if let Some(ref snap) = *snapshot {
-      snap.header.num_nodes as usize
-    } else {
-      0
-    };
-
-    // Subtract snapshot nodes that were deleted in delta
-    for &node_id in &delta.deleted_nodes {
-      // Only subtract if it was a snapshot node (not a delta-created node)
-      if !delta.created_nodes.contains_key(&node_id) {
-        if let Some(ref snap) = *snapshot {
-          if snap.get_phys_node(node_id).is_some() {
-            count = count.saturating_sub(1);
-          }
-        }
-      }
-    }
-
-    // Add delta created nodes (that weren't deleted)
-    for &node_id in delta.created_nodes.keys() {
-      if !delta.deleted_nodes.contains(&node_id) {
-        count += 1;
-      }
-    }
-
-    count
+    self.iter_nodes().len()
   }
 
   /// Count total edges in the database
   ///
   /// Note: This may be slow for large graphs as it needs to iterate.
   pub fn count_edges(&self) -> usize {
-    let delta = self.delta.read();
-    let snapshot = self.snapshot.read();
-
-    // Start with snapshot edge count
-    let mut count = if let Some(ref snap) = *snapshot {
-      snap.header.num_edges as usize
-    } else {
-      0
-    };
-
-    // Subtract deleted edges
-    count = count.saturating_sub(delta.total_edges_deleted());
-
-    // Add new edges
-    count += delta.total_edges_added();
-
-    count
+    self.list_edges(None).len()
   }
 
   /// Count edges of a specific type
@@ -174,6 +146,9 @@ impl SingleFileDB {
   ///
   /// Optionally filter by edge type.
   pub fn list_edges(&self, etype_filter: Option<ETypeId>) -> Vec<FullEdge> {
+    let tx_handle = self.current_tx_handle();
+    let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
+    let pending = tx_guard.as_ref().map(|tx| &tx.pending);
     let delta = self.delta.read();
     let snapshot = self.snapshot.read();
     let mut edges = Vec::new();
@@ -184,7 +159,7 @@ impl SingleFileDB {
       for phys in 0..num_nodes {
         if let Some(src) = snap.get_node_id(phys) {
           // Skip deleted nodes
-          if delta.is_node_deleted(src) {
+          if delta.is_node_deleted(src) || pending.is_some_and(|p| p.is_node_deleted(src)) {
             continue;
           }
 
@@ -198,7 +173,9 @@ impl SingleFileDB {
 
             if let Some(dst) = snap.get_node_id(dst_phys) {
               // Skip deleted edges
-              if delta.is_edge_deleted(src, etype, dst) {
+              if delta.is_edge_deleted(src, etype, dst)
+                || pending.is_some_and(|p| p.is_edge_deleted(src, etype, dst))
+              {
                 continue;
               }
 
@@ -219,11 +196,37 @@ impl SingleFileDB {
           }
         }
 
+        if pending.is_some_and(|p| p.is_edge_deleted(src, patch.etype, patch.other)) {
+          continue;
+        }
+
         edges.push(FullEdge {
           src,
           etype: patch.etype,
           dst: patch.other,
         });
+      }
+    }
+
+    if let Some(pending_delta) = pending {
+      for (&src, add_set) in &pending_delta.out_add {
+        for patch in add_set {
+          if let Some(filter_etype) = etype_filter {
+            if patch.etype != filter_etype {
+              continue;
+            }
+          }
+
+          if delta.is_node_deleted(src) || pending_delta.is_node_deleted(src) {
+            continue;
+          }
+
+          edges.push(FullEdge {
+            src,
+            etype: patch.etype,
+            dst: patch.other,
+          });
+        }
       }
     }
 

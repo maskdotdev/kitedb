@@ -27,7 +27,7 @@ impl SingleFileDB {
     prop_key_id: PropKeyId,
     vector: &[f32],
   ) -> Result<()> {
-    let txid = self.require_write_tx()?;
+    let (txid, tx_handle) = self.require_write_tx_handle()?;
 
     // Check dimensions if store already exists
     {
@@ -50,12 +50,14 @@ impl SingleFileDB {
     );
     self.write_wal(record)?;
 
-    // Queue in delta for commit
-    self
-      .delta
-      .write()
-      .pending_vectors
-      .insert((node_id, prop_key_id), Some(vector.to_vec()));
+    // Queue in pending delta for commit
+    {
+      let mut tx = tx_handle.lock();
+      tx
+        .pending
+        .pending_vectors
+        .insert((node_id, prop_key_id), Some(vector.to_vec()));
+    }
 
     Ok(())
   }
@@ -64,7 +66,7 @@ impl SingleFileDB {
   ///
   /// Returns Ok(()) even if the vector doesn't exist (idempotent).
   pub fn delete_node_vector(&self, node_id: NodeId, prop_key_id: PropKeyId) -> Result<()> {
-    let txid = self.require_write_tx()?;
+    let (txid, tx_handle) = self.require_write_tx_handle()?;
 
     // Write WAL record
     let record = WalRecord::new(
@@ -74,12 +76,14 @@ impl SingleFileDB {
     );
     self.write_wal(record)?;
 
-    // Queue delete in delta
-    self
-      .delta
-      .write()
-      .pending_vectors
-      .insert((node_id, prop_key_id), None); // None means delete
+    // Queue delete in pending delta
+    {
+      let mut tx = tx_handle.lock();
+      tx
+        .pending
+        .pending_vectors
+        .insert((node_id, prop_key_id), None); // None means delete
+    }
 
     Ok(())
   }
@@ -88,6 +92,17 @@ impl SingleFileDB {
   ///
   /// Checks pending operations first, then falls back to committed storage.
   pub fn get_node_vector(&self, node_id: NodeId, prop_key_id: PropKeyId) -> Option<Vec<f32>> {
+    let tx_handle = self.current_tx_handle();
+    if let Some(handle) = tx_handle.as_ref() {
+      let tx = handle.lock();
+      if tx.pending.is_node_deleted(node_id) {
+        return None;
+      }
+      if let Some(pending) = tx.pending.pending_vectors.get(&(node_id, prop_key_id)) {
+        return pending.clone();
+      }
+    }
+
     let delta = self.delta.read();
 
     // Check if node is deleted
@@ -95,7 +110,7 @@ impl SingleFileDB {
       return None;
     }
 
-    // Check pending operations first
+    // Check pending operations from committed replay (startup)
     if let Some(pending) = delta.pending_vectors.get(&(node_id, prop_key_id)) {
       // Some(vec) = set, None = delete
       return pending.clone();
@@ -109,6 +124,17 @@ impl SingleFileDB {
 
   /// Check if a node has a vector embedding
   pub fn has_node_vector(&self, node_id: NodeId, prop_key_id: PropKeyId) -> bool {
+    let tx_handle = self.current_tx_handle();
+    if let Some(handle) = tx_handle.as_ref() {
+      let tx = handle.lock();
+      if tx.pending.is_node_deleted(node_id) {
+        return false;
+      }
+      if let Some(pending) = tx.pending.pending_vectors.get(&(node_id, prop_key_id)) {
+        return pending.is_some();
+      }
+    }
+
     let delta = self.delta.read();
 
     // Check if node is deleted
@@ -116,7 +142,7 @@ impl SingleFileDB {
       return false;
     }
 
-    // Check pending operations first
+    // Check pending operations from committed replay (startup)
     if let Some(pending) = delta.pending_vectors.get(&(node_id, prop_key_id)) {
       return pending.is_some();
     }
@@ -157,11 +183,11 @@ impl SingleFileDB {
   }
 
   /// Apply pending vector operations (called during commit)
-  pub(crate) fn apply_pending_vectors(&self) {
-    let mut delta = self.delta.write();
-    let pending: Vec<_> = delta.pending_vectors.drain().collect();
-    drop(delta);
-
+  pub(crate) fn apply_pending_vectors(
+    &self,
+    pending_vectors: &HashMap<(NodeId, PropKeyId), Option<Vec<f32>>>,
+  ) {
+    let pending: Vec<_> = pending_vectors.iter().map(|(k, v)| (*k, v.clone())).collect();
     let mut stores = self.vector_stores.write();
 
     for ((node_id, prop_key_id), operation) in pending {

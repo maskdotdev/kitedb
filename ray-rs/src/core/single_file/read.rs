@@ -20,9 +20,17 @@ impl SingleFileDB {
   /// Returns None if the node doesn't exist or is deleted.
   /// Merges properties from snapshot with delta modifications.
   pub fn get_node_props(&self, node_id: NodeId) -> Option<HashMap<PropKeyId, PropValue>> {
+    let tx_handle = self.current_tx_handle();
+    let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
+    let pending = tx_guard.as_ref().map(|tx| &tx.pending);
+
+    if pending.is_some_and(|p| p.is_node_deleted(node_id)) {
+      return None;
+    }
+
     let delta = self.delta.read();
 
-    // Check if node is deleted
+    // Check if node is deleted in committed state
     if delta.is_node_deleted(node_id) {
       return None;
     }
@@ -39,7 +47,7 @@ impl SingleFileDB {
       }
     }
 
-    // Apply delta modifications
+    // Apply committed delta modifications
     if let Some(node_delta) = delta.get_node_delta(node_id) {
       if let Some(ref delta_props) = node_delta.props {
         for (&key_id, value) in delta_props {
@@ -55,11 +63,31 @@ impl SingleFileDB {
       }
     }
 
+    // Apply pending modifications (overlay)
+    if let Some(pending_delta) = pending {
+      if let Some(node_delta) = pending_delta.get_node_delta(node_id) {
+        if let Some(ref delta_props) = node_delta.props {
+          for (&key_id, value) in delta_props {
+            match value {
+              Some(v) => {
+                props.insert(key_id, v.clone());
+              }
+              None => {
+                props.remove(&key_id);
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Check if node exists at all
+    let node_exists_in_pending =
+      pending.is_some_and(|p| p.is_node_created(node_id) || p.get_node_delta(node_id).is_some());
     let node_exists_in_delta =
       delta.is_node_created(node_id) || delta.get_node_delta(node_id).is_some();
 
-    if !node_exists_in_delta {
+    if !node_exists_in_pending && !node_exists_in_delta {
       if let Some(ref snap) = *snapshot {
         snap.get_phys_node(node_id)?;
       } else {
@@ -75,8 +103,27 @@ impl SingleFileDB {
   ///
   /// Returns None if the node doesn't exist, is deleted, or doesn't have the property.
   pub fn get_node_prop(&self, node_id: NodeId, key_id: PropKeyId) -> Option<PropValue> {
+    let tx_handle = self.current_tx_handle();
+    if let Some(handle) = tx_handle.as_ref() {
+      let tx = handle.lock();
+      if tx.pending.is_node_deleted(node_id) {
+        return None;
+      }
+      if let Some(node_delta) = tx.pending.get_node_delta(node_id) {
+        if let Some(ref delta_props) = node_delta.props {
+          if let Some(value) = delta_props.get(&key_id) {
+            return value.clone();
+          }
+        }
+      }
+      if tx.pending.is_node_created(node_id) {
+        return None;
+      }
+    }
+
     if let Some(mvcc) = self.mvcc.as_ref() {
-      let (txid, tx_snapshot_ts) = if let Some(tx) = self.current_tx.lock().as_ref() {
+      let (txid, tx_snapshot_ts) = if let Some(handle) = tx_handle.as_ref() {
+        let tx = handle.lock();
         (tx.txid, tx.snapshot_ts)
       } else {
         (0, mvcc.tx_manager.lock().get_next_commit_ts())
@@ -141,6 +188,17 @@ impl SingleFileDB {
     etype: ETypeId,
     dst: NodeId,
   ) -> Option<HashMap<PropKeyId, PropValue>> {
+    let tx_handle = self.current_tx_handle();
+    let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
+    let pending = tx_guard.as_ref().map(|tx| &tx.pending);
+
+    if pending.is_some_and(|p| p.is_node_deleted(src) || p.is_node_deleted(dst)) {
+      return None;
+    }
+    if pending.is_some_and(|p| p.is_edge_deleted(src, etype, dst)) {
+      return None;
+    }
+
     let delta = self.delta.read();
 
     // Check if either node is deleted
@@ -148,7 +206,7 @@ impl SingleFileDB {
       return None;
     }
 
-    // Check if edge is deleted in delta
+    // Check if edge is deleted in committed delta
     if delta.is_edge_deleted(src, etype, dst) {
       return None;
     }
@@ -158,6 +216,7 @@ impl SingleFileDB {
 
     // First, determine if edge exists
     let edge_added_in_delta = delta.is_edge_added(src, etype, dst);
+    let edge_added_in_pending = pending.is_some_and(|p| p.is_edge_added(src, etype, dst));
     let mut edge_exists_in_snapshot = false;
 
     // Check snapshot for edge existence and get base properties
@@ -176,11 +235,11 @@ impl SingleFileDB {
     }
 
     // Edge must exist either in delta or snapshot
-    if !edge_added_in_delta && !edge_exists_in_snapshot {
+    if !edge_added_in_delta && !edge_added_in_pending && !edge_exists_in_snapshot {
       return None;
     }
 
-    // Apply delta modifications (only if edge exists)
+    // Apply committed delta modifications (only if edge exists)
     if let Some(delta_props) = delta.get_edge_props_delta(src, etype, dst) {
       for (&key_id, value) in delta_props {
         match value {
@@ -189,6 +248,22 @@ impl SingleFileDB {
           }
           None => {
             props.remove(&key_id);
+          }
+        }
+      }
+    }
+
+    // Apply pending modifications
+    if let Some(pending_delta) = pending {
+      if let Some(delta_props) = pending_delta.get_edge_props_delta(src, etype, dst) {
+        for (&key_id, value) in delta_props {
+          match value {
+            Some(v) => {
+              props.insert(key_id, v.clone());
+            }
+            None => {
+              props.remove(&key_id);
+            }
           }
         }
       }
@@ -207,8 +282,25 @@ impl SingleFileDB {
     dst: NodeId,
     key_id: PropKeyId,
   ) -> Option<PropValue> {
+    let tx_handle = self.current_tx_handle();
+    if let Some(handle) = tx_handle.as_ref() {
+      let tx = handle.lock();
+      if tx.pending.is_node_deleted(src) || tx.pending.is_node_deleted(dst) {
+        return None;
+      }
+      if tx.pending.is_edge_deleted(src, etype, dst) {
+        return None;
+      }
+      if let Some(delta_props) = tx.pending.get_edge_props_delta(src, etype, dst) {
+        if let Some(value) = delta_props.get(&key_id) {
+          return value.clone();
+        }
+      }
+    }
+
     if let Some(mvcc) = self.mvcc.as_ref() {
-      let (txid, tx_snapshot_ts) = if let Some(tx) = self.current_tx.lock().as_ref() {
+      let (txid, tx_snapshot_ts) = if let Some(handle) = tx_handle.as_ref() {
+        let tx = handle.lock();
         (tx.txid, tx.snapshot_ts)
       } else {
         (0, mvcc.tx_manager.lock().get_next_commit_ts())
@@ -239,6 +331,10 @@ impl SingleFileDB {
 
     // First, determine if edge exists at all
     let edge_added_in_delta = delta.is_edge_added(src, etype, dst);
+    let edge_added_in_pending = tx_handle
+      .as_ref()
+      .map(|handle| handle.lock().pending.is_edge_added(src, etype, dst))
+      .unwrap_or(false);
     let snapshot = self.snapshot.read();
     let edge_exists_in_snapshot = if let Some(ref snap) = *snapshot {
       if let Some(src_phys) = snap.get_phys_node(src) {
@@ -255,7 +351,7 @@ impl SingleFileDB {
     };
 
     // Edge must exist either in delta or snapshot
-    if !edge_added_in_delta && !edge_exists_in_snapshot {
+    if !edge_added_in_delta && !edge_added_in_pending && !edge_exists_in_snapshot {
       return None;
     }
 
@@ -296,9 +392,18 @@ impl SingleFileDB {
   /// Merges edges from snapshot with delta additions/deletions.
   /// Filters out edges to deleted nodes.
   pub fn get_out_edges(&self, node_id: NodeId) -> Vec<(ETypeId, NodeId)> {
-    let delta = self.delta.read();
+    let tx_handle = self.current_tx_handle();
+    let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
+    let pending = tx_guard.as_ref().map(|tx| &tx.pending);
 
     // If node is deleted, no edges
+    if pending.is_some_and(|p| p.is_node_deleted(node_id)) {
+      return Vec::new();
+    }
+
+    let delta = self.delta.read();
+
+    // If node is deleted in committed state, no edges
     if delta.is_node_deleted(node_id) {
       return Vec::new();
     }
@@ -313,11 +418,15 @@ impl SingleFileDB {
           // Convert physical dst to NodeId
           if let Some(dst_node_id) = snap.get_node_id(dst_phys) {
             // Skip edges to deleted nodes
-            if delta.is_node_deleted(dst_node_id) {
+            if delta.is_node_deleted(dst_node_id)
+              || pending.is_some_and(|p| p.is_node_deleted(dst_node_id))
+            {
               continue;
             }
             // Skip edges deleted in delta
-            if delta.is_edge_deleted(node_id, etype, dst_node_id) {
+            if delta.is_edge_deleted(node_id, etype, dst_node_id)
+              || pending.is_some_and(|p| p.is_edge_deleted(node_id, etype, dst_node_id))
+            {
               continue;
             }
             edges.push((etype, dst_node_id));
@@ -330,7 +439,24 @@ impl SingleFileDB {
     if let Some(added_edges) = delta.out_add.get(&node_id) {
       for edge_patch in added_edges {
         // Skip edges to deleted nodes
-        if delta.is_node_deleted(edge_patch.other) {
+        if delta.is_node_deleted(edge_patch.other)
+          || pending.is_some_and(|p| p.is_node_deleted(edge_patch.other))
+        {
+          continue;
+        }
+        if pending.is_some_and(|p| p.is_edge_deleted(node_id, edge_patch.etype, edge_patch.other))
+        {
+          continue;
+        }
+        edges.push((edge_patch.etype, edge_patch.other));
+      }
+    }
+
+    if let Some(added_edges) = pending.and_then(|p| p.out_add.get(&node_id)) {
+      for edge_patch in added_edges {
+        if delta.is_node_deleted(edge_patch.other)
+          || pending.is_some_and(|p| p.is_node_deleted(edge_patch.other))
+        {
           continue;
         }
         edges.push((edge_patch.etype, edge_patch.other));
@@ -349,6 +475,15 @@ impl SingleFileDB {
   /// Merges edges from snapshot with delta additions/deletions.
   /// Filters out edges from deleted nodes.
   pub fn get_in_edges(&self, node_id: NodeId) -> Vec<(ETypeId, NodeId)> {
+    let tx_handle = self.current_tx_handle();
+    let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
+    let pending = tx_guard.as_ref().map(|tx| &tx.pending);
+
+    // If node is deleted, no edges
+    if pending.is_some_and(|p| p.is_node_deleted(node_id)) {
+      return Vec::new();
+    }
+
     let delta = self.delta.read();
 
     // If node is deleted, no edges
@@ -366,11 +501,15 @@ impl SingleFileDB {
           // Convert physical src to NodeId
           if let Some(src_node_id) = snap.get_node_id(src_phys) {
             // Skip edges from deleted nodes
-            if delta.is_node_deleted(src_node_id) {
+            if delta.is_node_deleted(src_node_id)
+              || pending.is_some_and(|p| p.is_node_deleted(src_node_id))
+            {
               continue;
             }
             // Skip edges deleted in delta
-            if delta.is_edge_deleted(src_node_id, etype, node_id) {
+            if delta.is_edge_deleted(src_node_id, etype, node_id)
+              || pending.is_some_and(|p| p.is_edge_deleted(src_node_id, etype, node_id))
+            {
               continue;
             }
             edges.push((etype, src_node_id));
@@ -383,7 +522,24 @@ impl SingleFileDB {
     if let Some(added_edges) = delta.in_add.get(&node_id) {
       for edge_patch in added_edges {
         // Skip edges from deleted nodes
-        if delta.is_node_deleted(edge_patch.other) {
+        if delta.is_node_deleted(edge_patch.other)
+          || pending.is_some_and(|p| p.is_node_deleted(edge_patch.other))
+        {
+          continue;
+        }
+        if pending.is_some_and(|p| p.is_edge_deleted(edge_patch.other, edge_patch.etype, node_id))
+        {
+          continue;
+        }
+        edges.push((edge_patch.etype, edge_patch.other));
+      }
+    }
+
+    if let Some(added_edges) = pending.and_then(|p| p.in_add.get(&node_id)) {
+      for edge_patch in added_edges {
+        if delta.is_node_deleted(edge_patch.other)
+          || pending.is_some_and(|p| p.is_node_deleted(edge_patch.other))
+        {
           continue;
         }
         edges.push((edge_patch.etype, edge_patch.other));
@@ -417,7 +573,9 @@ impl SingleFileDB {
       .map(|(_, dst)| dst)
       .collect();
     if let Some(mvcc) = self.mvcc.as_ref() {
-      if let Some(tx) = self.current_tx.lock().as_ref() {
+      let tx_handle = self.current_tx_handle();
+      if let Some(handle) = tx_handle.as_ref() {
+        let tx = handle.lock();
         let mut tx_mgr = mvcc.tx_manager.lock();
         tx_mgr.record_read(tx.txid, format!("neighbors_out:{node_id}:{etype}"));
       }
@@ -436,7 +594,9 @@ impl SingleFileDB {
       .map(|(_, src)| src)
       .collect();
     if let Some(mvcc) = self.mvcc.as_ref() {
-      if let Some(tx) = self.current_tx.lock().as_ref() {
+      let tx_handle = self.current_tx_handle();
+      if let Some(handle) = tx_handle.as_ref() {
+        let tx = handle.lock();
         let mut tx_mgr = mvcc.tx_manager.lock();
         tx_mgr.record_read(tx.txid, format!("neighbors_in:{node_id}:{etype}"));
       }
@@ -460,6 +620,20 @@ impl SingleFileDB {
 
   /// Check if a node has a specific label
   pub fn node_has_label(&self, node_id: NodeId, label_id: LabelId) -> bool {
+    let tx_handle = self.current_tx_handle();
+    let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
+    let pending = tx_guard.as_ref().map(|tx| &tx.pending);
+
+    if pending.is_some_and(|p| p.is_node_deleted(node_id)) {
+      return false;
+    }
+    if pending.is_some_and(|p| p.is_label_removed(node_id, label_id)) {
+      return false;
+    }
+    if pending.is_some_and(|p| p.is_label_added(node_id, label_id)) {
+      return true;
+    }
+
     let delta = self.delta.read();
 
     // Check if node is deleted
@@ -491,6 +665,14 @@ impl SingleFileDB {
 
   /// Get all labels for a node
   pub fn get_node_labels(&self, node_id: NodeId) -> Vec<LabelId> {
+    let tx_handle = self.current_tx_handle();
+    let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
+    let pending = tx_guard.as_ref().map(|tx| &tx.pending);
+
+    if pending.is_some_and(|p| p.is_node_deleted(node_id)) {
+      return Vec::new();
+    }
+
     let delta = self.delta.read();
 
     // Check if node is deleted
@@ -509,15 +691,27 @@ impl SingleFileDB {
       }
     }
 
-    // Add labels from delta
+    // Add labels from committed delta
     if let Some(added) = delta.get_added_labels(node_id) {
       labels.extend(added.iter().copied());
     }
 
-    // Remove labels deleted in delta
+    // Remove labels deleted in committed delta
     if let Some(removed) = delta.get_removed_labels(node_id) {
       for &label_id in removed {
         labels.remove(&label_id);
+      }
+    }
+
+    // Apply pending label changes
+    if let Some(pending_delta) = pending {
+      if let Some(added) = pending_delta.get_added_labels(node_id) {
+        labels.extend(added.iter().copied());
+      }
+      if let Some(removed) = pending_delta.get_removed_labels(node_id) {
+        for &label_id in removed {
+          labels.remove(&label_id);
+        }
       }
     }
 
@@ -535,8 +729,13 @@ impl SingleFileDB {
   /// Returns the NodeId if found, None otherwise.
   /// Checks delta key index first, then falls back to snapshot.
   pub fn get_node_by_key(&self, key: &str) -> Option<NodeId> {
+    let tx_handle = self.current_tx_handle();
+    let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
+    let pending = tx_guard.as_ref().map(|tx| &tx.pending);
+
     if let Some(mvcc) = self.mvcc.as_ref() {
-      if let Some(tx) = self.current_tx.lock().as_ref() {
+      if let Some(handle) = tx_handle.as_ref() {
+        let tx = handle.lock();
         let mut tx_mgr = mvcc.tx_manager.lock();
         tx_mgr.record_read(tx.txid, format!("key:{key}"));
       }
@@ -544,14 +743,29 @@ impl SingleFileDB {
 
     let delta = self.delta.read();
 
-    // Check delta key index first
+    // Check pending key index first
+    if pending.is_some_and(|p| p.key_index_deleted.contains(key)) {
+      return None;
+    }
+
+    if let Some(&node_id) = pending.and_then(|p| p.key_index.get(key)) {
+      if !pending.is_some_and(|p| p.is_node_deleted(node_id))
+        && !delta.is_node_deleted(node_id)
+      {
+        return Some(node_id);
+      }
+    }
+
+    // Check committed delta key index
     if delta.key_index_deleted.contains(key) {
       return None;
     }
 
     if let Some(&node_id) = delta.key_index.get(key) {
       // Verify node isn't deleted
-      if !delta.is_node_deleted(node_id) {
+      if !delta.is_node_deleted(node_id)
+        && !pending.is_some_and(|p| p.is_node_deleted(node_id))
+      {
         return Some(node_id);
       }
     }
@@ -561,7 +775,9 @@ impl SingleFileDB {
     if let Some(ref snap) = *snapshot {
       if let Some(node_id) = snap.lookup_by_key(key) {
         // Verify node isn't deleted in delta
-        if !delta.is_node_deleted(node_id) {
+        if !delta.is_node_deleted(node_id)
+          && !pending.is_some_and(|p| p.is_node_deleted(node_id))
+        {
           return Some(node_id);
         }
       }
@@ -574,6 +790,18 @@ impl SingleFileDB {
   ///
   /// Returns the key string if the node has one, None otherwise.
   pub fn get_node_key(&self, node_id: NodeId) -> Option<String> {
+    let tx_handle = self.current_tx_handle();
+    let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
+    let pending = tx_guard.as_ref().map(|tx| &tx.pending);
+
+    if pending.is_some_and(|p| p.is_node_deleted(node_id)) {
+      return None;
+    }
+
+    if let Some(node_delta) = pending.and_then(|p| p.created_nodes.get(&node_id)) {
+      return node_delta.key.clone();
+    }
+
     let delta = self.delta.read();
 
     // Check if node is deleted

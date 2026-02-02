@@ -597,7 +597,7 @@ pub fn open_single_file<P: AsRef<Path>>(
     next_etype_id: AtomicU32::new(next_etype_id),
     next_propkey_id: AtomicU32::new(next_propkey_id),
     next_tx_id: AtomicU64::new(next_tx_id),
-    current_tx: Mutex::new(None),
+    current_tx: Mutex::new(HashMap::new()),
     mvcc,
     label_names: RwLock::new(label_names),
     label_ids: RwLock::new(label_ids),
