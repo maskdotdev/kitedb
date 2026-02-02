@@ -512,7 +512,13 @@ pub fn commit(handle: &mut TxHandle) -> Result<()> {
         let config = crate::vector::types::VectorStoreConfig::new(vector.len());
         crate::vector::store::create_vector_store(config)
       });
-      let _ = crate::vector::store::vector_store_insert(store, *node_id, vector);
+      if let Err(err) = crate::vector::store::vector_store_insert(store, *node_id, vector) {
+        eprintln!(
+          "Warning: Failed to insert vector for node {node_id} prop {prop_key_id}: {err}",
+          node_id = *node_id,
+          prop_key_id = *prop_key_id
+        );
+      }
     }
 
     for (node_id, prop_key_id) in &handle.tx.pending_vector_deletes {
