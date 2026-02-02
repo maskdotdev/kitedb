@@ -505,7 +505,13 @@ impl GraphDB {
             let config = VectorStoreConfig::new(vector.len());
             create_vector_store(config)
           });
-          let _ = vector_store_insert(store, node_id, vector.as_ref());
+          if let Err(err) = vector_store_insert(store, node_id, vector.as_ref()) {
+            eprintln!(
+              "Warning: Failed to apply vector for node {node_id} prop {prop_key_id}: {err}",
+              node_id = node_id,
+              prop_key_id = prop_key_id
+            );
+          }
         }
         None => {
           if let Some(store) = stores.get_mut(&prop_key_id) {
