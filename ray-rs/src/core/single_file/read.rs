@@ -58,6 +58,7 @@ impl SingleFileDB {
     // Apply committed delta modifications
     if let Some(node_delta) = delta.get_node_delta(node_id) {
       if let Some(ref delta_props) = node_delta.props {
+        props.reserve(delta_props.len());
         for (&key_id, value) in delta_props {
           match value {
             Some(v) => {
@@ -97,6 +98,7 @@ impl SingleFileDB {
     if let Some(pending_delta) = pending {
       if let Some(node_delta) = pending_delta.get_node_delta(node_id) {
         if let Some(ref delta_props) = node_delta.props {
+          props.reserve(delta_props.len());
           for (&key_id, value) in delta_props {
             match value {
               Some(v) => {
@@ -355,6 +357,7 @@ impl SingleFileDB {
 
     // Apply committed delta modifications (only if edge exists)
     if let Some(delta_props) = delta.get_edge_props_delta(src, etype, dst) {
+      props.reserve(delta_props.len());
       for (&key_id, value) in delta_props {
         match value {
           Some(v) => {
@@ -370,6 +373,7 @@ impl SingleFileDB {
     // Apply pending modifications
     if let Some(pending_delta) = pending {
       if let Some(delta_props) = pending_delta.get_edge_props_delta(src, etype, dst) {
+        props.reserve(delta_props.len());
         for (&key_id, value) in delta_props {
           match value {
             Some(v) => {
