@@ -711,7 +711,7 @@ impl Kite {
     let node_def = self
       .nodes
       .get(node_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}")))?
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}").into()))?
       .clone();
 
     let full_key = node_def.key(key_suffix);
@@ -771,7 +771,7 @@ impl Kite {
     let key_prefix = self
       .nodes
       .get(node_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}")))?
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}").into()))?
       .key_prefix
       .clone();
 
@@ -790,7 +790,7 @@ impl Kite {
     let key_prefix = self
       .nodes
       .get(node_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}")))?
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}").into()))?
       .key_prefix
       .clone();
 
@@ -806,7 +806,7 @@ impl Kite {
     let node_def = self
       .nodes
       .get(node_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}").into()))?;
 
     let full_key = node_def.key(key_suffix);
 
@@ -960,7 +960,7 @@ impl Kite {
     let node_def = self
       .nodes
       .get(node_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}")))?
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}").into()))?
       .clone();
 
     Ok(KiteUpsertByIdBuilder {
@@ -993,7 +993,7 @@ impl Kite {
     let full_key = self
       .nodes
       .get(node_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}")))?
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}").into()))?
       .key(key_suffix);
 
     let node_id = {
@@ -1020,11 +1020,11 @@ impl Kite {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?;
 
     let etype_id = edge_def
       .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     let mut handle = begin_tx(&self.db)?;
     add_edge(&mut handle, src, etype_id, dst)?;
@@ -1060,12 +1060,12 @@ impl Kite {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?
       .clone();
 
     let etype_id = edge_def
       .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     let mut handle = begin_tx(&self.db)?;
     add_edge(&mut handle, src, etype_id, dst)?;
@@ -1090,11 +1090,11 @@ impl Kite {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?;
 
     let etype_id = edge_def
       .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     let mut handle = begin_tx(&self.db)?;
     let deleted = delete_edge(&mut handle, src, etype_id, dst)?;
@@ -1107,11 +1107,11 @@ impl Kite {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?;
 
     let etype_id = edge_def
       .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     // Direct read without transaction
     Ok(edge_exists_db(&self.db, src, etype_id, dst))
@@ -1124,7 +1124,7 @@ impl Kite {
         let edge_def = self
           .edges
           .get(name)
-          .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {name}")))?;
+          .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {name}").into()))?;
         edge_def.etype_id
       }
       None => None,
@@ -1141,7 +1141,7 @@ impl Kite {
         let edge_def = self
           .edges
           .get(name)
-          .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {name}")))?;
+          .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {name}").into()))?;
         edge_def.etype_id
       }
       None => None,
@@ -1169,11 +1169,11 @@ impl Kite {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?;
 
     let etype_id = edge_def
       .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     let prop_key_id = match self.db.get_propkey_id(prop_name) {
       Some(id) => id,
@@ -1196,11 +1196,11 @@ impl Kite {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?;
 
     let etype_id = edge_def
       .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     // Direct read without transaction
     let props = get_edge_props_db(&self.db, src, etype_id, dst);
@@ -1232,11 +1232,11 @@ impl Kite {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?;
 
     let etype_id = edge_def
       .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     let prop_key_id = self.db.get_or_create_propkey(prop_name);
 
@@ -1257,16 +1257,16 @@ impl Kite {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?;
 
     let etype_id = edge_def
       .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     let prop_key_id = self
       .db
       .get_propkey_id(prop_name)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown property: {prop_name}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown property: {prop_name}").into()))?;
 
     let mut handle = begin_tx(&self.db)?;
     del_edge_prop(&mut handle, src, etype_id, dst, prop_key_id)?;
@@ -1303,11 +1303,11 @@ impl Kite {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?;
 
     let etype_id = edge_def
       .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     Ok(KiteUpdateEdgeBuilder {
       ray: self,
@@ -1330,10 +1330,10 @@ impl Kite {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
-    let etype_id = edge_def
-      .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Edge type not initialized: {edge_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?;
+    let etype_id = edge_def.etype_id.ok_or_else(|| {
+      KiteError::InvalidSchema(format!("Edge type not initialized: {edge_type}").into())
+    })?;
 
     Ok(KiteUpsertEdgeBuilder {
       ray: self,
@@ -1362,7 +1362,7 @@ impl Kite {
     let node_def = self
       .nodes
       .get(node_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}").into()))?;
 
     let prefix = &node_def.key_prefix;
     let mut count = 0u64;
@@ -1388,11 +1388,11 @@ impl Kite {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?;
 
     let etype_id = edge_def
       .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     Ok(count_edges(&self.db, Some(etype_id)))
   }
@@ -1422,7 +1422,7 @@ impl Kite {
     let node_def = self
       .nodes
       .get(node_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}")))?
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}").into()))?
       .clone();
 
     let prefix = node_def.key_prefix.clone();
@@ -1464,7 +1464,7 @@ impl Kite {
         let edge_def = self
           .edges
           .get(name)
-          .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {name}")))?;
+          .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {name}").into()))?;
         edge_def.etype_id
       }
       None => None,
@@ -1513,7 +1513,7 @@ impl Kite {
     let node_def = self
       .nodes
       .get(node_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}").into()))?;
 
     let full_key = node_def.key(key_suffix);
 
@@ -1670,7 +1670,7 @@ impl Kite {
         let edge_def = self
           .edges
           .get(name)
-          .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {name}")))?;
+          .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {name}").into()))?;
         edge_def.etype_id
       }
       None => None,
@@ -2062,7 +2062,7 @@ impl<'a> KiteTraversalBuilder<'a> {
           .ray
           .edges
           .get(name)
-          .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {name}")))?;
+          .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {name}").into()))?;
         Ok(edge_def.etype_id)
       }
       None => Ok(None),
@@ -2121,11 +2121,10 @@ impl<'a> KitePathBuilder<'a> {
   ///
   /// Can be called multiple times to allow multiple edge types.
   pub fn via(mut self, edge_type: &str) -> Result<Self> {
-    let edge_def = self
-      .ray
-      .edges
-      .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+    let edge_def =
+      self.ray.edges.get(edge_type).ok_or_else(|| {
+        KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into())
+      })?;
 
     if let Some(etype_id) = edge_def.etype_id {
       self.allowed_etypes.insert(etype_id);
@@ -2301,10 +2300,9 @@ impl Kite {
           key_suffix,
           props,
         } => {
-          let node_def = self
-            .nodes
-            .get(&node_type)
-            .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}")))?;
+          let node_def = self.nodes.get(&node_type).ok_or_else(|| {
+            KiteError::InvalidSchema(format!("Unknown node type: {node_type}").into())
+          })?;
 
           let full_key = node_def.key(&key_suffix);
 
@@ -2335,14 +2333,13 @@ impl Kite {
           edge_type,
           dst,
         } => {
-          let edge_def = self
-            .edges
-            .get(&edge_type)
-            .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+          let edge_def = self.edges.get(&edge_type).ok_or_else(|| {
+            KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into())
+          })?;
 
           let etype_id = edge_def
             .etype_id
-            .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+            .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
           add_edge(&mut handle, src, etype_id, dst)?;
           BatchResult::EdgeCreated
@@ -2353,14 +2350,13 @@ impl Kite {
           edge_type,
           dst,
         } => {
-          let edge_def = self
-            .edges
-            .get(&edge_type)
-            .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+          let edge_def = self.edges.get(&edge_type).ok_or_else(|| {
+            KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into())
+          })?;
 
           let etype_id = edge_def
             .etype_id
-            .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+            .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
           let deleted = delete_edge(&mut handle, src, etype_id, dst)?;
           BatchResult::EdgeRemoved(deleted)
@@ -2378,10 +2374,9 @@ impl Kite {
         }
 
         BatchOp::DelProp { node_id, prop_name } => {
-          let prop_key_id = handle
-            .db
-            .get_propkey_id(&prop_name)
-            .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown property: {prop_name}")))?;
+          let prop_key_id = handle.db.get_propkey_id(&prop_name).ok_or_else(|| {
+            KiteError::InvalidSchema(format!("Unknown property: {prop_name}").into())
+          })?;
           del_node_prop(&mut handle, node_id, prop_key_id)?;
           BatchResult::PropDeleted
         }
@@ -2426,7 +2421,7 @@ impl<'a> TxContext<'a> {
     let node_def = self
       .nodes
       .get(node_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}")))?
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}").into()))?
       .clone();
 
     let full_key = node_def.key(key_suffix);
@@ -2458,11 +2453,11 @@ impl<'a> TxContext<'a> {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?;
 
     let etype_id = edge_def
       .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     add_edge(&mut self.handle, src, etype_id, dst)?;
     Ok(())
@@ -2473,11 +2468,11 @@ impl<'a> TxContext<'a> {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?;
 
     let etype_id = edge_def
       .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     delete_edge(&mut self.handle, src, etype_id, dst)
   }
@@ -2495,7 +2490,7 @@ impl<'a> TxContext<'a> {
       .handle
       .db
       .get_propkey_id(prop_name)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown property: {prop_name}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown property: {prop_name}").into()))?;
     del_node_prop(&mut self.handle, node_id, prop_key_id)?;
     Ok(())
   }
@@ -2510,11 +2505,11 @@ impl<'a> TxContext<'a> {
     let edge_def = self
       .edges
       .get(edge_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown edge type: {edge_type}").into()))?;
 
     let etype_id = edge_def
       .etype_id
-      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".to_string()))?;
+      .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     Ok(edge_exists(&self.handle, src, etype_id, dst))
   }
@@ -2525,7 +2520,7 @@ impl<'a> TxContext<'a> {
       .handle
       .db
       .get_propkey_id(prop_name)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown property: {prop_name}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown property: {prop_name}").into()))?;
 
     Ok(get_node_prop(&self.handle, node_id, prop_key_id))
   }
@@ -2535,7 +2530,7 @@ impl<'a> TxContext<'a> {
     let node_def = self
       .nodes
       .get(node_type)
-      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}")))?;
+      .ok_or_else(|| KiteError::InvalidSchema(format!("Unknown node type: {node_type}").into()))?;
 
     let full_key = node_def.key(key_suffix);
     let node_id = get_node_by_key(&self.handle, &full_key);

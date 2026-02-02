@@ -3,6 +3,7 @@
 //! Uses thiserror for ergonomic error handling
 
 use crate::types::{NodeId, TxId};
+use std::borrow::Cow;
 use thiserror::Error;
 
 /// Main error type for KiteDB operations
@@ -110,11 +111,11 @@ pub enum KiteError {
 
   /// Invalid schema definition
   #[error("Invalid schema: {0}")]
-  InvalidSchema(String),
+  InvalidSchema(Cow<'static, str>),
 
   /// Invalid query or builder usage
   #[error("Invalid query: {0}")]
-  InvalidQuery(String),
+  InvalidQuery(Cow<'static, str>),
 }
 
 /// Result type alias for KiteDB operations

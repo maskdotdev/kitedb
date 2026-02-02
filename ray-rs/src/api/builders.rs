@@ -162,7 +162,7 @@ where
   /// Execute the update
   pub fn execute(self) -> Result<R> {
     let node_id = self.node_id.ok_or_else(|| {
-      KiteError::InvalidQuery("Update requires a node ID (use where_id())".to_string())
+      KiteError::InvalidQuery("Update requires a node ID (use where_id())".into())
     })?;
     Ok((self.executor)(node_id, self.updates))
   }
@@ -204,7 +204,7 @@ where
   /// Execute the delete
   pub fn execute(self) -> Result<R> {
     let node_id = self.node_id.ok_or_else(|| {
-      KiteError::InvalidQuery("Delete requires a node ID (use where_id())".to_string())
+      KiteError::InvalidQuery("Delete requires a node ID (use where_id())".into())
     })?;
     Ok((self.executor)(node_id))
   }
@@ -260,9 +260,9 @@ where
 
   /// Execute the link
   pub fn execute(self) -> Result<R> {
-    let dst = self.dst.ok_or_else(|| {
-      KiteError::InvalidQuery("Link requires a destination (use to())".to_string())
-    })?;
+    let dst = self
+      .dst
+      .ok_or_else(|| KiteError::InvalidQuery("Link requires a destination (use to())".into()))?;
     Ok((self.executor)(self.src, self.etype, dst, self.props))
   }
 }
@@ -309,7 +309,7 @@ where
   /// Execute the unlink
   pub fn execute(self) -> Result<R> {
     let dst = self.dst.ok_or_else(|| {
-      KiteError::InvalidQuery("Unlink requires a destination (use from_node())".to_string())
+      KiteError::InvalidQuery("Unlink requires a destination (use from_node())".into())
     })?;
     Ok((self.executor)(self.src, self.etype, dst))
   }
