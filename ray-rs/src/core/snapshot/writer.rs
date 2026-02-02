@@ -4,7 +4,7 @@
 //! Ported from src/core/snapshot-writer.ts
 
 use crate::constants::*;
-use crate::error::Result;
+use crate::error::{KiteError, Result};
 use crate::types::*;
 use crate::util::binary::*;
 use crate::util::compression::{maybe_compress, CompressionOptions, CompressionType};
@@ -903,8 +903,9 @@ pub fn build_snapshot(db_path: &Path, input: SnapshotBuildInput) -> Result<Strin
   // Write section table
   offset = header_size;
   for id_num in 0..SectionId::COUNT {
-    let id = SectionId::from_u32(id_num as u32)
-      .expect("section id out of range in snapshot writer");
+    let id = SectionId::from_u32(id_num as u32).ok_or_else(|| {
+      KiteError::Internal("section id out of range in snapshot writer".to_string())
+    })?;
     let (sec_offset, sec_length, compression, uncompressed_size) = section_offsets
       .get(&id)
       .copied()
@@ -1458,8 +1459,9 @@ pub fn build_snapshot_to_memory(input: SnapshotBuildInput) -> Result<Vec<u8>> {
   // Write section table
   offset = header_size;
   for id_num in 0..SectionId::COUNT {
-    let id = SectionId::from_u32(id_num as u32)
-      .expect("section id out of range in snapshot writer");
+    let id = SectionId::from_u32(id_num as u32).ok_or_else(|| {
+      KiteError::Internal("section id out of range in snapshot writer".to_string())
+    })?;
     let (sec_offset, sec_length, compression, uncompressed_size) = section_offsets
       .get(&id)
       .copied()

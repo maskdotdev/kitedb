@@ -535,9 +535,7 @@ mod tests {
 
     assert!(
       (result - expected).abs() < 1e-3,
-      "result: {}, expected: {}",
-      result,
-      expected
+      "result: {result}, expected: {expected}"
     );
   }
 
@@ -566,9 +564,7 @@ mod tests {
 
     assert!(
       (result - expected).abs() < 1e-3,
-      "result: {}, expected: {}",
-      result,
-      expected
+      "result: {result}, expected: {expected}"
     );
   }
 
@@ -587,9 +583,7 @@ mod tests {
 
     assert!(
       (result - expected).abs() < 1e-3,
-      "result: {}, expected: {}",
-      result,
-      expected
+      "result: {result}, expected: {expected}"
     );
   }
 

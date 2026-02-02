@@ -19,7 +19,18 @@
 - Compactor vacuum: removed header double-clone.
 
 **Remaining (open)**
-- None (production code unwraps removed; invariant cases now guarded/`expect`).
+- None (production code unwraps removed; invariants now return typed errors).
+
+---
+
+## Invariant/Error Spec (prod)
+
+Invariants now surface as typed errors instead of panics:
+- `VectorStoreError::Invariant(String)` for vector-store state violations (e.g., active fragment missing).
+- `KiteError::Internal(String)` for snapshot writer section id range violations.
+
+Behavior:
+- Invariant breaches return `Err(...)` and are not recoverable, but avoid process abort.
 
 ---
 

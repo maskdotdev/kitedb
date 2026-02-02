@@ -190,6 +190,10 @@ impl OpenOptions {
   fn new(
     read_only: Option<bool>,
     create_if_missing: Option<bool>,
+    mvcc: Option<bool>,
+    mvcc_gc_interval_ms: Option<i64>,
+    mvcc_retention_ms: Option<i64>,
+    mvcc_max_chain_depth: Option<i64>,
     page_size: Option<u32>,
     wal_size: Option<u32>,
     auto_checkpoint: Option<bool>,

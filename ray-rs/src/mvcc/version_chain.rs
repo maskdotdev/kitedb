@@ -1167,7 +1167,9 @@ mod tests {
       1,
       2,
       1,
-      Some(std::sync::Arc::new(PropValue::F64(3.14))),
+      Some(std::sync::Arc::new(PropValue::F64(
+        std::f64::consts::PI,
+      ))),
       1,
       10,
     );
@@ -1176,7 +1178,7 @@ mod tests {
     assert!(version.is_some());
     assert_eq!(
       version.unwrap().data.as_deref(),
-      Some(&PropValue::F64(3.14))
+      Some(&PropValue::F64(std::f64::consts::PI))
     );
   }
 

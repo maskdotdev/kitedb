@@ -567,34 +567,19 @@ impl IvfPqIndex {
     } else {
       None
     };
+    let shared_table = if self.config.use_residuals {
+      None
+    } else {
+      match shared_dist_table.as_deref() {
+        Some(table) => Some(table),
+        None => {
+          debug_assert!(false, "shared distance table missing for non-residual search");
+          return Vec::new();
+        }
+      }
+    };
 
-    // Search within selected clusters
-    for cluster in probe_clusters {
-      let vector_ids = match self.inverted_lists.get(&cluster) {
-        Some(list) if !list.is_empty() => list,
-        _ => continue,
-      };
-
-      // Get distance table (shared or per-cluster for residuals)
-      let mut dist_table_storage = None;
-      let dist_table: &[f32] = if self.config.use_residuals {
-        // Query residual = query - centroid (requires per-cluster table)
-        let cent_offset = cluster * self.dimensions;
-        let query_residual: Vec<f32> = query_for_search
-          .iter()
-          .zip(&self.ivf_centroids[cent_offset..cent_offset + self.dimensions])
-          .map(|(q, c)| q - c)
-          .collect();
-        dist_table_storage = Some(self.build_distance_table(&query_residual));
-        dist_table_storage
-          .as_deref()
-          .expect("distance table missing after build")
-      } else {
-        shared_dist_table
-          .as_deref()
-          .expect("shared distance table missing for non-residual search")
-      };
-
+    let mut search_vectors = |dist_table: &[f32], vector_ids: &Vec<u64>| {
       // Search vectors in this cluster using PQ ADC
       for &vector_id in vector_ids {
         // Apply filter early if provided
@@ -632,6 +617,31 @@ impl IvfPqIndex {
             heap.push(vector_id, dist);
           }
         }
+      }
+    };
+
+    // Search within selected clusters
+    for cluster in probe_clusters {
+      let vector_ids = match self.inverted_lists.get(&cluster) {
+        Some(list) if !list.is_empty() => list,
+        _ => continue,
+      };
+
+      if self.config.use_residuals {
+        // Query residual = query - centroid (requires per-cluster table)
+        let cent_offset = cluster * self.dimensions;
+        let query_residual: Vec<f32> = query_for_search
+          .iter()
+          .zip(&self.ivf_centroids[cent_offset..cent_offset + self.dimensions])
+          .map(|(q, c)| q - c)
+          .collect();
+        let dist_table = self.build_distance_table(&query_residual);
+        search_vectors(&dist_table, vector_ids);
+      } else if let Some(table) = shared_table {
+        search_vectors(table, vector_ids);
+      } else {
+        debug_assert!(false, "shared distance table missing for non-residual search");
+        return Vec::new();
       }
     }
 

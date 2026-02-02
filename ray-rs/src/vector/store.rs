@@ -35,7 +35,7 @@ pub fn vector_store_insert(
   let vec_data = prepare_insert_vector(manifest, vector);
 
   ensure_active_fragment(manifest);
-  let fragment_idx = active_fragment_index(manifest);
+  let fragment_idx = active_fragment_index(manifest)?;
 
   let (fragment_id, local_index) = append_to_fragment(manifest, fragment_idx, &vec_data);
   let vector_id = register_vector(manifest, node_id, fragment_id, local_index);
@@ -357,13 +357,17 @@ fn prepare_insert_vector(manifest: &VectorManifest, vector: &[f32]) -> Vec<f32> 
   vec_data
 }
 
-fn active_fragment_index(manifest: &VectorManifest) -> usize {
+fn active_fragment_index(manifest: &VectorManifest) -> Result<usize, VectorStoreError> {
   let fragment_id = manifest.active_fragment_id;
   manifest
     .fragments
     .iter()
     .position(|f| f.id == fragment_id)
-    .expect("active fragment id missing from manifest")
+    .ok_or_else(|| {
+      VectorStoreError::Invariant(format!(
+        "active fragment id {fragment_id} missing from manifest"
+      ))
+    })
 }
 
 fn append_to_fragment(
@@ -491,6 +495,8 @@ pub enum VectorStoreError {
   InvalidVector(String),
   /// Vector not found
   NotFound(u64),
+  /// Internal invariant violation
+  Invariant(String),
 }
 
 impl std::fmt::Display for VectorStoreError {
@@ -504,6 +510,7 @@ impl std::fmt::Display for VectorStoreError {
       }
       VectorStoreError::InvalidVector(msg) => write!(f, "Invalid vector: {msg}"),
       VectorStoreError::NotFound(id) => write!(f, "Vector not found: {id}"),
+      VectorStoreError::Invariant(msg) => write!(f, "Invariant violation: {msg}"),
     }
   }
 }
@@ -790,5 +797,8 @@ mod tests {
 
     let err3 = VectorStoreError::NotFound(42);
     assert!(err3.to_string().contains("42"));
+
+    let err4 = VectorStoreError::Invariant("broken".into());
+    assert!(err4.to_string().contains("broken"));
   }
 }

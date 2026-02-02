@@ -965,33 +965,3 @@ mod tests {
   }
 }
 
-/// Close a single-file database
-pub fn close_single_file(db: SingleFileDB) -> Result<()> {
-  if let Some(ref mvcc) = db.mvcc {
-    mvcc.stop();
-  }
-
-  // Flush WAL and sync to disk
-  let mut pager = db.pager.lock();
-  let mut wal_buffer = db.wal_buffer.lock();
-
-  // Flush any pending WAL writes
-  wal_buffer.flush(&mut pager)?;
-
-  // Update header with current WAL state
-  {
-    let mut header = db.header.write();
-    header.wal_head = wal_buffer.head();
-    header.wal_tail = wal_buffer.tail();
-    header.max_node_id = db.next_node_id.load(Ordering::SeqCst).saturating_sub(1);
-    header.next_tx_id = db.next_tx_id.load(Ordering::SeqCst);
-
-    // Write header
-    let header_bytes = header.serialize_to_page();
-    pager.write_page(0, &header_bytes)?;
-  }
-
-  // Final sync
-  pager.sync()?;
-  Ok(())
-}

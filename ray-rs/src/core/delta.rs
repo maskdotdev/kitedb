@@ -287,8 +287,6 @@ impl DeltaState {
 
   /// Add a label to a node
   pub fn add_node_label(&mut self, node_id: NodeId, label_id: LabelId) {
-    let is_created = self.created_nodes.contains_key(&node_id);
-
     let node_delta = if let Some(node_delta) = self.created_nodes.get_mut(&node_id) {
       node_delta
     } else {

@@ -238,8 +238,9 @@ pub struct VectorIndexStats {
 /// # Example
 /// ```rust,no_run
 /// # use kitedb::api::vector_search::{SimilarOptions, VectorIndex, VectorIndexOptions};
+/// # use kitedb::api::vector_search::VectorIndexError;
 /// # use kitedb::types::NodeId;
-/// # fn main() {
+/// # fn main() -> Result<(), VectorIndexError> {
 /// # let node_id: NodeId = 1;
 /// # let embedding = vec![0.0_f32; 768];
 /// # let query_vector = vec![0.0_f32; 768];
@@ -247,15 +248,14 @@ pub struct VectorIndexStats {
 /// let mut embeddings = VectorIndex::new(VectorIndexOptions::new(768));
 ///
 /// // Add vectors for nodes
-/// embeddings.set(node_id, &embedding);
+/// embeddings.set(node_id, &embedding)?;
 ///
 /// // Find similar nodes
-/// let similar = embeddings
-///     .search(&query_vector, SimilarOptions::new(10))
-///     .unwrap();
+/// let similar = embeddings.search(&query_vector, SimilarOptions::new(10))?;
 /// for hit in similar {
 ///     println!("{}: {}", hit.node_id, hit.similarity);
 /// }
+/// # Ok(())
 /// # }
 /// ```
 pub struct VectorIndex {

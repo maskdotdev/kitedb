@@ -11,7 +11,7 @@ use std::sync::RwLock;
 use crate::backup as core_backup;
 use crate::core::single_file::{
   close_single_file, is_single_file_path, open_single_file, SingleFileDB as RustSingleFileDB,
-  SingleFileOpenOptions as RustOpenOptions, VacuumOptions as RustVacuumOptions,
+  VacuumOptions as RustVacuumOptions,
 };
 use crate::metrics as core_metrics;
 use crate::types::{ETypeId, NodeId, PropKeyId};

@@ -83,7 +83,8 @@ fn bench_single_file_checkpoint(c: &mut Criterion) {
             (temp_dir, db)
           },
           |(_temp_dir, db)| {
-            black_box(db.checkpoint().unwrap());
+            db.checkpoint().unwrap();
+            black_box(());
             close_single_file(db).unwrap();
           },
           BatchSize::SmallInput,

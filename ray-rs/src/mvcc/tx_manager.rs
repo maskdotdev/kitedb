@@ -637,7 +637,7 @@ mod tests {
 
     for i in 0..10 {
       let (txid, _) = tx_mgr.begin_tx();
-      tx_mgr.record_write(txid, TxKey::Key(format!("key{}", i).into()));
+      tx_mgr.record_write(txid, TxKey::Key(format!("key{i}").into()));
       tx_mgr.commit_tx(txid).unwrap();
     }
 

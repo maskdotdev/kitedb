@@ -338,7 +338,7 @@ mod tests {
 
       let header = create_wal_header(seg_id);
       let header_bytes = serialize_wal_header(&header);
-      fs::write(&filepath, &header_bytes).unwrap();
+      fs::write(&filepath, header_bytes).unwrap();
     }
 
     let segments = list_wal_segments(temp_dir.path()).unwrap();

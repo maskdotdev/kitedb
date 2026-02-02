@@ -790,7 +790,7 @@ mod tests {
   #[test]
   fn test_node() {
     let user = node("user")
-      .key(|id| format!("user:{}", id))
+      .key(|id| format!("user:{id}"))
       .prop(prop::string("name"))
       .prop(prop::int("age").optional())
       .build();
@@ -869,12 +869,12 @@ mod tests {
   #[test]
   fn test_database_schema() {
     let user = node("user")
-      .key(|id| format!("user:{}", id))
+      .key(|id| format!("user:{id}"))
       .prop(prop::string("name"))
       .build();
 
     let post = node("post")
-      .key(|id| format!("post:{}", id))
+      .key(|id| format!("post:{id}"))
       .prop(prop::string("title"))
       .build();
 

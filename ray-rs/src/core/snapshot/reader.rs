@@ -42,7 +42,10 @@ pub enum SectionBytes<'a> {
 }
 
 impl SectionBytes<'_> {
-  pub fn as_ref(&self) -> &[u8] {
+}
+
+impl AsRef<[u8]> for SectionBytes<'_> {
+  fn as_ref(&self) -> &[u8] {
     match self {
       SectionBytes::Borrowed(bytes) => bytes,
       SectionBytes::Shared(bytes) => bytes.as_ref(),

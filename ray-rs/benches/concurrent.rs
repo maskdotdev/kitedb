@@ -95,7 +95,7 @@ fn bench_concurrent_reads(c: &mut Criterion) {
       group.throughput(Throughput::Elements((*num_threads * ops_per_thread) as u64));
 
       group.bench_with_input(
-        BenchmarkId::new(format!("nodes_{}", node_count), num_threads),
+        BenchmarkId::new(format!("nodes_{node_count}"), num_threads),
         num_threads,
         |bencher, &num_threads| {
           bencher.iter(|| {
@@ -113,7 +113,7 @@ fn bench_concurrent_reads(c: &mut Criterion) {
                   for i in 0..ops_per_thread {
                     let idx = (thread_id * 100 + i) % node_count;
                     let ray_guard = ray.read();
-                    black_box(ray_guard.get("User", &format!("user{idx}")));
+                    let _ = black_box(ray_guard.get("User", &format!("user{idx}")));
                   }
                 })
               })
@@ -165,7 +165,7 @@ fn bench_read_scaling(c: &mut Criterion) {
                 for i in 0..ops_per_thread {
                   let idx = (thread_id * 123 + i * 7) % 2000; // Spread reads
                   let ray_guard = ray.read();
-                  black_box(ray_guard.get("User", &format!("user{idx}")));
+                  let _ = black_box(ray_guard.get("User", &format!("user{idx}")));
                 }
               })
             })
@@ -305,7 +305,7 @@ fn bench_traversal_scaling(c: &mut Criterion) {
                 for i in 0..traversals_per_thread {
                   let start = start_ids[(thread_id + i) % start_ids.len()];
                   let ray_guard = ray.read();
-                  black_box(ray_guard.neighbors_out(start, Some("FOLLOWS")));
+                  let _ = black_box(ray_guard.neighbors_out(start, Some("FOLLOWS")));
                 }
               })
             })
@@ -340,7 +340,7 @@ fn bench_reader_writer_contention(c: &mut Criterion) {
     group.throughput(Throughput::Elements(total_ops as u64));
 
     group.bench_with_input(
-      BenchmarkId::new(format!("r{}_w{}", num_readers, num_writers), ""),
+      BenchmarkId::new(format!("r{num_readers}_w{num_writers}"), ""),
       &(*num_readers, *num_writers),
       |bencher, &(num_readers, num_writers)| {
         let write_counter = Arc::new(AtomicU64::new(0));
@@ -362,7 +362,7 @@ fn bench_reader_writer_contention(c: &mut Criterion) {
               for i in 0..ops_per_thread {
                 let idx = (thread_id * 50 + i) % 500;
                 let ray_guard = ray.read();
-                black_box(ray_guard.get("User", &format!("user{idx}")));
+                let _ = black_box(ray_guard.get("User", &format!("user{idx}")));
               }
             }));
           }
@@ -383,7 +383,7 @@ fn bench_reader_writer_contention(c: &mut Criterion) {
                   "name".to_string(),
                   PropValue::String(format!("BenchUser{writer_id}_{i}")),
                 );
-                black_box(ray_guard.create_node("User", &format!("bench{counter}"), props));
+                let _ = black_box(ray_guard.create_node("User", &format!("bench{counter}"), props));
               }
             }));
           }
@@ -551,7 +551,8 @@ fn bench_edge_check_scaling(c: &mut Criterion) {
                   let src_idx = (thread_id * 20 + i) % (node_ids.len() - 1);
                   let dst_idx = src_idx + 1;
                   let ray_guard = ray.read();
-                  black_box(ray_guard.has_edge(node_ids[src_idx], "FOLLOWS", node_ids[dst_idx]));
+                  let _ =
+                    black_box(ray_guard.has_edge(node_ids[src_idx], "FOLLOWS", node_ids[dst_idx]));
                 }
               })
             })

@@ -812,9 +812,9 @@ mod tests {
 
     // Debug: print sizes if assertion fails
     if size != serialized.len() {
-      eprintln!("Calculated size: {}", size);
+      eprintln!("Calculated size: {size}");
       eprintln!("Actual size: {}", serialized.len());
-      eprintln!("MANIFEST_HEADER_SIZE: {}", MANIFEST_HEADER_SIZE);
+      eprintln!("MANIFEST_HEADER_SIZE: {MANIFEST_HEADER_SIZE}");
       eprintln!("Fragments: {}", manifest.fragments.len());
       eprintln!("node_to_vector len: {}", manifest.node_to_vector.len());
       eprintln!("vector_locations len: {}", manifest.vector_locations.len());

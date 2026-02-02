@@ -886,7 +886,10 @@ impl Kite {
   /// # use kitedb::types::PropValue;
   /// # fn main() -> kitedb::error::Result<()> {
   /// # let mut kite: Kite = unimplemented!();
-  /// let alice = kite.get("User", "alice")?.unwrap();
+  /// let alice = match kite.get("User", "alice")? {
+  ///   Some(node) => node,
+  ///   None => return Ok(()),
+  /// };
   /// kite.update(&alice)?
   ///     .set("name", PropValue::String("Alice Updated".into()))
   ///     .set("age", PropValue::I64(31))

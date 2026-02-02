@@ -542,8 +542,7 @@ mod tests {
     // Reads should not be blocked for more than 100ms (generous threshold)
     assert!(
       *max_read_time < Duration::from_millis(100),
-      "Max read time {:?} exceeded threshold - possible writer starvation",
-      max_read_time
+      "Max read time {max_read_time:?} exceeded threshold - possible writer starvation"
     );
   }
 
@@ -948,8 +947,7 @@ mod tests {
     let ops_per_sec = total as f64 / elapsed.as_secs_f64();
 
     println!(
-      "High concurrency test: {} ops in {:?} ({:.0} ops/sec)",
-      total, elapsed, ops_per_sec
+      "High concurrency test: {total} ops in {elapsed:?} ({ops_per_sec:.0} ops/sec)"
     );
 
     assert_eq!(
@@ -1045,8 +1043,7 @@ mod tests {
     );
 
     println!(
-      "Mixed workload: {} reads, {} writes completed",
-      total_reads, total_writes
+      "Mixed workload: {total_reads} reads, {total_writes} writes completed"
     );
   }
 
@@ -1146,10 +1143,9 @@ mod tests {
         throughput / baseline_throughput
       };
 
-      println!(
-        "{:7} | {:>19.0} | {:>6.2}x",
-        num_threads, throughput, speedup
-      );
+    println!(
+        "{num_threads:7} | {throughput:>19.0} | {speedup:>6.2}x"
+    );
     }
   }
 }
