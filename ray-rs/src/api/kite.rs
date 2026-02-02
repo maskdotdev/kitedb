@@ -20,6 +20,7 @@ use crate::types::*;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 // ============================================================================
 // Single-file transaction wrappers
@@ -502,15 +503,15 @@ pub struct NodeRef {
   /// Full key (if available)
   pub key: Option<String>,
   /// Node type name
-  pub node_type: String,
+  pub node_type: Arc<str>,
 }
 
 impl NodeRef {
-  pub fn new(id: NodeId, key: Option<String>, node_type: &str) -> Self {
+  pub fn new(id: NodeId, key: Option<String>, node_type: impl Into<Arc<str>>) -> Self {
     Self {
       id,
       key,
-      node_type: node_type.to_string(),
+      node_type: node_type.into(),
     }
   }
 }
@@ -1425,12 +1426,12 @@ impl Kite {
       .clone();
 
     let prefix = node_def.key_prefix.clone();
-    let node_type_str = node_type.to_string();
+    let node_type_arc: Arc<str> = node_type.to_string().into();
 
     Ok(list_nodes(&self.db).into_iter().filter_map(move |node_id| {
       let key = self.get_node_key_internal(node_id)?;
       if key.starts_with(&prefix) {
-        Some(NodeRef::new(node_id, Some(key), &node_type_str))
+        Some(NodeRef::new(node_id, Some(key), Arc::clone(&node_type_arc)))
       } else {
         None
       }
@@ -2321,7 +2322,7 @@ impl Kite {
             }
           }
 
-          BatchResult::NodeCreated(NodeRef::new(node_id, Some(full_key), &node_type))
+          BatchResult::NodeCreated(NodeRef::new(node_id, Some(full_key), node_type))
         }
 
         BatchOp::DeleteNode { node_id } => {
@@ -2959,6 +2960,7 @@ pub struct InsertExecutorSingle<'a> {
 impl<'a> InsertExecutorSingle<'a> {
   /// Execute the insert and return the created node reference
   pub fn returning(self) -> Result<NodeRef> {
+    let node_type: Arc<str> = self.node_type.into();
     let mut handle = begin_tx(&self.ray.db)?;
 
     // Create the node
@@ -2973,7 +2975,7 @@ impl<'a> InsertExecutorSingle<'a> {
 
     commit(&mut handle)?;
 
-    Ok(NodeRef::new(node_id, Some(self.full_key), &self.node_type))
+    Ok(NodeRef::new(node_id, Some(self.full_key), node_type))
   }
 
   /// Execute the insert without returning the node reference
@@ -3001,6 +3003,7 @@ impl<'a> InsertExecutorMultiple<'a> {
 
     let mut handle = begin_tx(&self.ray.db)?;
     let mut results = Vec::with_capacity(self.entries.len());
+    let node_type: Arc<str> = self.node_type.into();
 
     for (full_key, props) in self.entries {
       // Create the node
@@ -3013,7 +3016,11 @@ impl<'a> InsertExecutorMultiple<'a> {
         set_node_prop(&mut handle, node_id, prop_key_id, value)?;
       }
 
-      results.push(NodeRef::new(node_id, Some(full_key), &self.node_type));
+      results.push(NodeRef::new(
+        node_id,
+        Some(full_key),
+        Arc::clone(&node_type),
+      ));
     }
 
     commit(&mut handle)?;
@@ -3111,6 +3118,7 @@ pub struct UpsertExecutorSingle<'a> {
 impl<'a> UpsertExecutorSingle<'a> {
   /// Execute the upsert and return the node reference
   pub fn returning(self) -> Result<NodeRef> {
+    let node_type: Arc<str> = self.node_type.into();
     let mut handle = begin_tx(&self.ray.db)?;
 
     let mut updates = Vec::with_capacity(self.props.len());
@@ -3127,7 +3135,7 @@ impl<'a> UpsertExecutorSingle<'a> {
 
     commit(&mut handle)?;
 
-    Ok(NodeRef::new(node_id, Some(self.full_key), &self.node_type))
+    Ok(NodeRef::new(node_id, Some(self.full_key), node_type))
   }
 
   /// Execute the upsert without returning the node reference
@@ -3153,6 +3161,7 @@ impl<'a> UpsertExecutorMultiple<'a> {
 
     let mut handle = begin_tx(&self.ray.db)?;
     let mut results = Vec::with_capacity(self.entries.len());
+    let node_type: Arc<str> = self.node_type.into();
 
     for (full_key, props) in self.entries {
       let mut updates = Vec::with_capacity(props.len());
@@ -3166,7 +3175,11 @@ impl<'a> UpsertExecutorMultiple<'a> {
       }
 
       let (node_id, _) = upsert_node_with_props(&mut handle, &full_key, updates)?;
-      results.push(NodeRef::new(node_id, Some(full_key), &self.node_type));
+      results.push(NodeRef::new(
+        node_id,
+        Some(full_key),
+        Arc::clone(&node_type),
+      ));
     }
 
     commit(&mut handle)?;
@@ -4629,7 +4642,7 @@ mod tests {
     // Verify the returned node
     assert!(alice.id > 0);
     assert_eq!(alice.key, Some("user:alice".to_string()));
-    assert_eq!(alice.node_type, "User");
+    assert_eq!(alice.node_type.as_ref(), "User");
 
     // Verify properties were set
     let name = ray.get_prop(alice.id, "name");

@@ -127,7 +127,10 @@ pub(crate) fn node_filter_data(
 ) -> NodeFilterData {
   let node_ref = ray.get_by_id(node_id).ok().flatten();
   let (key, node_type) = match node_ref {
-    Some(node_ref) => (node_ref.key.unwrap_or_default(), node_ref.node_type),
+    Some(node_ref) => (
+      node_ref.key.unwrap_or_default(),
+      node_ref.node_type.to_string(),
+    ),
     None => ("".to_string(), "unknown".to_string()),
   };
 

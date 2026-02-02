@@ -16,10 +16,10 @@ use std::thread;
 use tempfile::tempdir;
 
 extern crate kitedb;
-use kitedb::api::kite::{EdgeDef, NodeDef, PropDef, Kite, KiteOptions};
+use kitedb::api::kite::{EdgeDef, Kite, KiteOptions, NodeDef, PropDef};
 use kitedb::core::single_file::{open_single_file, SingleFileOpenOptions};
 use kitedb::mvcc::TxManager;
-use kitedb::types::PropValue;
+use kitedb::types::{PropValue, TxKey};
 
 // ============================================================================
 // Setup Helpers
@@ -36,9 +36,13 @@ fn create_test_schema() -> KiteOptions {
   KiteOptions::new().node(user).edge(follows)
 }
 
+fn temp_db_path(temp_dir: &tempfile::TempDir) -> std::path::PathBuf {
+  temp_dir.path().join("bench")
+}
+
 fn setup_ray_db(node_count: usize, edge_count: usize) -> (tempfile::TempDir, Kite) {
   let temp_dir = tempdir().unwrap();
-  let mut ray = Kite::open(temp_dir.path(), create_test_schema()).unwrap();
+  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
 
   let mut node_ids = Vec::with_capacity(node_count);
   for i in 0..node_count {
@@ -48,6 +52,11 @@ fn setup_ray_db(node_count: usize, edge_count: usize) -> (tempfile::TempDir, Kit
     props.insert("score".to_string(), PropValue::F64(i as f64 * 0.1));
     let node = ray.create_node("User", &format!("user{i}"), props).unwrap();
     node_ids.push(node.id);
+
+    // Optimize periodically to avoid WAL overflow
+    if (i + 1) % 1000 == 0 {
+      ray.optimize().unwrap();
+    }
   }
 
   let edges_to_create = std::cmp::min(edge_count, node_count.saturating_sub(1));
@@ -57,8 +66,13 @@ fn setup_ray_db(node_count: usize, edge_count: usize) -> (tempfile::TempDir, Kit
     if src != dst {
       let _ = ray.link(src, "FOLLOWS", dst);
     }
+    // Optimize periodically to avoid WAL overflow
+    if (i + 1) % 1000 == 0 {
+      ray.optimize().unwrap();
+    }
   }
 
+  ray.optimize().unwrap();
   (temp_dir, ray)
 }
 
@@ -396,9 +410,9 @@ fn bench_mvcc_transaction_overhead(c: &mut Criterion) {
   // Benchmark transaction begin/commit cycle
   group.bench_function("begin_commit_cycle", |bencher| {
     bencher.iter_with_setup(TxManager::new, |mut tx_mgr| {
-      for _ in 0..100 {
+      for i in 0..100 {
         let (txid, _) = tx_mgr.begin_tx();
-        tx_mgr.record_read(txid, "key".to_string());
+        tx_mgr.record_read(txid, TxKey::Node(i as u64));
         black_box(tx_mgr.commit_tx(txid).unwrap());
       }
     });
@@ -409,7 +423,7 @@ fn bench_mvcc_transaction_overhead(c: &mut Criterion) {
     bencher.iter_with_setup(TxManager::new, |mut tx_mgr| {
       for i in 0..100 {
         let (txid, _) = tx_mgr.begin_tx();
-        tx_mgr.record_write(txid, format!("key{i}"));
+        tx_mgr.record_write(txid, TxKey::Node(i as u64));
         black_box(tx_mgr.commit_tx(txid).unwrap());
       }
     });
@@ -420,7 +434,7 @@ fn bench_mvcc_transaction_overhead(c: &mut Criterion) {
     bencher.iter_with_setup(TxManager::new, |mut tx_mgr| {
       let (txid, _) = tx_mgr.begin_tx();
       for i in 0..1000 {
-        tx_mgr.record_read(txid, format!("key{i}"));
+        tx_mgr.record_read(txid, TxKey::Node(i as u64));
       }
       black_box(tx_mgr.commit_tx(txid).unwrap());
     });
@@ -431,7 +445,7 @@ fn bench_mvcc_transaction_overhead(c: &mut Criterion) {
     bencher.iter_with_setup(TxManager::new, |mut tx_mgr| {
       let (txid, _) = tx_mgr.begin_tx();
       for i in 0..1000 {
-        tx_mgr.record_write(txid, format!("key{i}"));
+        tx_mgr.record_write(txid, TxKey::Node(i as u64));
       }
       black_box(tx_mgr.commit_tx(txid).unwrap());
     });
