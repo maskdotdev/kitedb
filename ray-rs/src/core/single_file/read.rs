@@ -5,7 +5,9 @@
 
 use std::collections::HashMap;
 
-use crate::mvcc::visibility::get_visible_version;
+use crate::mvcc::visibility::{
+  edge_exists as mvcc_edge_exists, get_visible_version, node_exists as mvcc_node_exists,
+};
 use crate::types::*;
 
 use super::SingleFileDB;
@@ -28,12 +30,18 @@ impl SingleFileDB {
       return None;
     }
 
-    let delta = self.delta.read();
-
-    // Check if node is deleted in committed state
-    if delta.is_node_deleted(node_id) {
-      return None;
+    let mut txid = 0;
+    let mut tx_snapshot_ts = 0;
+    if let Some(mvcc) = self.mvcc.as_ref() {
+      if let Some(tx) = tx_guard.as_ref() {
+        txid = tx.txid;
+        tx_snapshot_ts = tx.snapshot_ts;
+      } else {
+        tx_snapshot_ts = mvcc.tx_manager.lock().get_next_commit_ts();
+      }
     }
+
+    let delta = self.delta.read();
 
     let mut props = HashMap::new();
     let snapshot = self.snapshot.read();
@@ -63,6 +71,28 @@ impl SingleFileDB {
       }
     }
 
+    let mut mvcc_node_visible = None;
+    if let Some(mvcc) = self.mvcc.as_ref() {
+      let vc = mvcc.version_chain.lock();
+      if let Some(version) = vc.get_node_version(node_id) {
+        mvcc_node_visible = Some(mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+      }
+      for key_id in vc.node_prop_keys(node_id) {
+        if let Some(prop_version) = vc.get_node_prop_version(node_id, key_id) {
+          if let Some(visible) = get_visible_version(&prop_version, tx_snapshot_ts, txid) {
+            match &visible.data {
+              Some(v) => {
+                props.insert(key_id, v.clone());
+              }
+              None => {
+                props.remove(&key_id);
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Apply pending modifications (overlay)
     if let Some(pending_delta) = pending {
       if let Some(node_delta) = pending_delta.get_node_delta(node_id) {
@@ -84,15 +114,34 @@ impl SingleFileDB {
     // Check if node exists at all
     let node_exists_in_pending =
       pending.is_some_and(|p| p.is_node_created(node_id) || p.get_node_delta(node_id).is_some());
-    let node_exists_in_delta =
-      delta.is_node_created(node_id) || delta.get_node_delta(node_id).is_some();
-
-    if !node_exists_in_pending && !node_exists_in_delta {
-      if let Some(ref snap) = *snapshot {
-        snap.get_phys_node(node_id)?;
+    let node_exists = if node_exists_in_pending {
+      true
+    } else if let Some(visible) = mvcc_node_visible {
+      visible
+    } else if delta.is_node_deleted(node_id) {
+      false
+    } else {
+      let node_exists_in_delta =
+        delta.is_node_created(node_id) || delta.get_node_delta(node_id).is_some();
+      if node_exists_in_delta {
+        true
+      } else if let Some(ref snap) = *snapshot {
+        snap.get_phys_node(node_id).is_some()
       } else {
-        // No snapshot and node not in delta
-        return None;
+        false
+      }
+    };
+
+    if !node_exists {
+      return None;
+    }
+
+    if let Some(mvcc) = self.mvcc.as_ref() {
+      if txid != 0 {
+        let mut tx_mgr = mvcc.tx_manager.lock();
+        for key_id in props.keys() {
+          tx_mgr.record_read(txid, format!("nodeprop:{node_id}:{key_id}"));
+        }
       }
     }
 
@@ -121,6 +170,7 @@ impl SingleFileDB {
       }
     }
 
+    let mut mvcc_node_visible = None;
     if let Some(mvcc) = self.mvcc.as_ref() {
       let (txid, tx_snapshot_ts) = if let Some(handle) = tx_handle.as_ref() {
         let tx = handle.lock();
@@ -133,6 +183,9 @@ impl SingleFileDB {
         tx_mgr.record_read(txid, format!("nodeprop:{node_id}:{key_id}"));
       }
       let vc = mvcc.version_chain.lock();
+      if let Some(version) = vc.get_node_version(node_id) {
+        mvcc_node_visible = Some(mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+      }
       if let Some(prop_version) = vc.get_node_prop_version(node_id, key_id) {
         if let Some(visible) = get_visible_version(&prop_version, tx_snapshot_ts, txid) {
           return visible.data.clone();
@@ -142,8 +195,11 @@ impl SingleFileDB {
 
     let delta = self.delta.read();
 
-    // Check if node is deleted
-    if delta.is_node_deleted(node_id) {
+    // Check if node is deleted (unless MVCC snapshot says otherwise)
+    if mvcc_node_visible == Some(false) {
+      return None;
+    }
+    if mvcc_node_visible.is_none() && delta.is_node_deleted(node_id) {
       return None;
     }
 
@@ -199,17 +255,22 @@ impl SingleFileDB {
       return None;
     }
 
+    let mut txid = 0;
+    let mut tx_snapshot_ts = 0;
+    if let Some(mvcc) = self.mvcc.as_ref() {
+      if let Some(tx) = tx_guard.as_ref() {
+        txid = tx.txid;
+        tx_snapshot_ts = tx.snapshot_ts;
+      } else {
+        tx_snapshot_ts = mvcc.tx_manager.lock().get_next_commit_ts();
+      }
+    }
+
     let delta = self.delta.read();
 
-    // Check if either node is deleted
-    if delta.is_node_deleted(src) || delta.is_node_deleted(dst) {
-      return None;
-    }
-
-    // Check if edge is deleted in committed delta
-    if delta.is_edge_deleted(src, etype, dst) {
-      return None;
-    }
+    let mut mvcc_src_visible = None;
+    let mut mvcc_dst_visible = None;
+    let mut mvcc_edge_visible = None;
 
     let mut props = HashMap::new();
     let snapshot = self.snapshot.read();
@@ -234,8 +295,55 @@ impl SingleFileDB {
       }
     }
 
-    // Edge must exist either in delta or snapshot
-    if !edge_added_in_delta && !edge_added_in_pending && !edge_exists_in_snapshot {
+    if let Some(mvcc) = self.mvcc.as_ref() {
+      let vc = mvcc.version_chain.lock();
+      if let Some(version) = vc.get_node_version(src) {
+        mvcc_src_visible = Some(mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+      }
+      if let Some(version) = vc.get_node_version(dst) {
+        mvcc_dst_visible = Some(mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+      }
+      if let Some(version) = vc.get_edge_version(src, etype, dst) {
+        mvcc_edge_visible = Some(mvcc_edge_exists(Some(version), tx_snapshot_ts, txid));
+      }
+      for key_id in vc.edge_prop_keys(src, etype, dst) {
+        if let Some(prop_version) = vc.get_edge_prop_version(src, etype, dst, key_id) {
+          if let Some(visible) = get_visible_version(&prop_version, tx_snapshot_ts, txid) {
+            match &visible.data {
+              Some(v) => {
+                props.insert(key_id, v.clone());
+              }
+              None => {
+                props.remove(&key_id);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if mvcc_src_visible == Some(false) || mvcc_dst_visible == Some(false) {
+      return None;
+    }
+    if mvcc_src_visible.is_none() && delta.is_node_deleted(src) {
+      return None;
+    }
+    if mvcc_dst_visible.is_none() && delta.is_node_deleted(dst) {
+      return None;
+    }
+    if mvcc_edge_visible == Some(false) {
+      return None;
+    }
+    if mvcc_edge_visible.is_none() && delta.is_edge_deleted(src, etype, dst) {
+      return None;
+    }
+
+    // Edge must exist either in delta or snapshot (unless MVCC says visible)
+    if mvcc_edge_visible != Some(true)
+      && !edge_added_in_delta
+      && !edge_added_in_pending
+      && !edge_exists_in_snapshot
+    {
       return None;
     }
 
@@ -269,6 +377,15 @@ impl SingleFileDB {
       }
     }
 
+    if let Some(mvcc) = self.mvcc.as_ref() {
+      if txid != 0 {
+        let mut tx_mgr = mvcc.tx_manager.lock();
+        for key_id in props.keys() {
+          tx_mgr.record_read(txid, format!("edgeprop:{src}:{etype}:{dst}:{key_id}"));
+        }
+      }
+    }
+
     Some(props)
   }
 
@@ -298,6 +415,9 @@ impl SingleFileDB {
       }
     }
 
+    let mut mvcc_src_visible = None;
+    let mut mvcc_dst_visible = None;
+    let mut mvcc_edge_visible = None;
     if let Some(mvcc) = self.mvcc.as_ref() {
       let (txid, tx_snapshot_ts) = if let Some(handle) = tx_handle.as_ref() {
         let tx = handle.lock();
@@ -310,6 +430,15 @@ impl SingleFileDB {
         tx_mgr.record_read(txid, format!("edgeprop:{src}:{etype}:{dst}:{key_id}"));
       }
       let vc = mvcc.version_chain.lock();
+      if let Some(version) = vc.get_node_version(src) {
+        mvcc_src_visible = Some(mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+      }
+      if let Some(version) = vc.get_node_version(dst) {
+        mvcc_dst_visible = Some(mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+      }
+      if let Some(version) = vc.get_edge_version(src, etype, dst) {
+        mvcc_edge_visible = Some(mvcc_edge_exists(Some(version), tx_snapshot_ts, txid));
+      }
       if let Some(prop_version) = vc.get_edge_prop_version(src, etype, dst, key_id) {
         if let Some(visible) = get_visible_version(&prop_version, tx_snapshot_ts, txid) {
           return visible.data.clone();
@@ -319,13 +448,23 @@ impl SingleFileDB {
 
     let delta = self.delta.read();
 
+    if mvcc_src_visible == Some(false) || mvcc_dst_visible == Some(false) {
+      return None;
+    }
+
     // Check if either node is deleted
-    if delta.is_node_deleted(src) || delta.is_node_deleted(dst) {
+    if mvcc_src_visible.is_none() && delta.is_node_deleted(src) {
+      return None;
+    }
+    if mvcc_dst_visible.is_none() && delta.is_node_deleted(dst) {
       return None;
     }
 
     // Check if edge is deleted in delta
-    if delta.is_edge_deleted(src, etype, dst) {
+    if mvcc_edge_visible == Some(false) {
+      return None;
+    }
+    if mvcc_edge_visible.is_none() && delta.is_edge_deleted(src, etype, dst) {
       return None;
     }
 
@@ -351,7 +490,11 @@ impl SingleFileDB {
     };
 
     // Edge must exist either in delta or snapshot
-    if !edge_added_in_delta && !edge_added_in_pending && !edge_exists_in_snapshot {
+    if mvcc_edge_visible != Some(true)
+      && !edge_added_in_delta
+      && !edge_added_in_pending
+      && !edge_exists_in_snapshot
+    {
       return None;
     }
 

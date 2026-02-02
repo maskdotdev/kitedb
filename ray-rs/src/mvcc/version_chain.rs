@@ -99,6 +99,10 @@ impl<T: Clone> SoaPropertyVersions<T> {
     })
   }
 
+  pub fn keys(&self) -> impl Iterator<Item = u64> + '_ {
+    self.heads.keys().copied()
+  }
+
   /// Prune old versions older than the given timestamp
   /// Returns the number of versions pruned
   pub fn prune_old_versions(&mut self, horizon_ts: Timestamp) -> usize {
@@ -520,6 +524,65 @@ impl VersionChainManager {
         .get(&key)
         .map(|b| Self::clone_versioned_record(b.as_ref()))
     }
+  }
+
+  pub fn node_prop_keys(&self, node_id: NodeId) -> Vec<PropKeyId> {
+    let mut keys = Vec::new();
+    let node_prefix = node_id;
+
+    if self.use_soa {
+      for key in self.soa_node_props.keys() {
+        if (key >> 24) == node_prefix {
+          keys.push((key & 0xFFFFFF) as PropKeyId);
+        }
+      }
+    } else {
+      for &key in self.legacy_node_props.keys() {
+        if (key >> 24) == node_prefix {
+          keys.push((key & 0xFFFFFF) as PropKeyId);
+        }
+      }
+    }
+
+    keys.sort_unstable();
+    keys.dedup();
+    keys
+  }
+
+  pub fn edge_prop_keys(
+    &self,
+    src: NodeId,
+    etype: ETypeId,
+    dst: NodeId,
+  ) -> Vec<PropKeyId> {
+    let src_mask = src & 0xFFFFF;
+    let dst_mask = dst & 0xFFFFF;
+    let etype_mask = etype as u64 & 0xFFF;
+    let mut keys = Vec::new();
+
+    let matches_edge = |key: u64| {
+      ((key >> 44) & 0xFFFFF) == src_mask
+        && ((key >> 32) & 0xFFF) == etype_mask
+        && ((key >> 12) & 0xFFFFF) == dst_mask
+    };
+
+    if self.use_soa {
+      for key in self.soa_edge_props.keys() {
+        if matches_edge(key) {
+          keys.push((key & 0xFFF) as PropKeyId);
+        }
+      }
+    } else {
+      for &key in self.legacy_edge_props.keys() {
+        if matches_edge(key) {
+          keys.push((key & 0xFFF) as PropKeyId);
+        }
+      }
+    }
+
+    keys.sort_unstable();
+    keys.dedup();
+    keys
   }
 
   // ========================================================================

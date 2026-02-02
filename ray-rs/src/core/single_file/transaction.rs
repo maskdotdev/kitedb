@@ -115,8 +115,8 @@ impl SingleFileDB {
 
     let pending = tx.pending;
 
-    // Serialize commit by holding the delta write lock while we finalize WAL + state.
-    let mut delta = self.delta.write();
+    // Serialize commit to preserve WAL ordering without holding the delta lock during I/O.
+    let _commit_guard = self.commit_lock.lock();
 
     // Write COMMIT record to WAL
     let record = WalRecord::new(WalRecordType::Commit, tx.txid, build_commit_payload());
@@ -164,6 +164,8 @@ impl SingleFileDB {
         }
       }
     }
+
+    let mut delta = self.delta.write();
 
     if let (Some((commit_ts, has_active_readers)), Some(mvcc)) =
       (commit_ts_for_mvcc, self.mvcc.as_ref())

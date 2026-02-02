@@ -107,6 +107,9 @@ pub struct SingleFileDB {
   /// Current active transaction
   pub current_tx: Mutex<HashMap<ThreadId, std::sync::Arc<Mutex<SingleFileTxState>>>>,
 
+  /// Serialize commit operations to preserve WAL/delta ordering
+  pub(crate) commit_lock: Mutex<()>,
+
   /// MVCC manager (if enabled)
   pub mvcc: Option<std::sync::Arc<MvccManager>>,
 
