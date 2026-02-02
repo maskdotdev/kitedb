@@ -137,6 +137,14 @@ impl FilePager {
   /// Memory-map the entire file (for snapshot access)
   /// Returns a view into mmap'd memory
   pub fn mmap_file(&mut self) -> Result<&Mmap> {
+    if let Some(mmap) = self.mmap.as_ref() {
+      let file_len = self.file.metadata()?.len() as usize;
+      if file_len != mmap.len() {
+        // Drop stale mapping and remap with the current file size.
+        self.mmap = None;
+      }
+    }
+
     if self.mmap.is_none() {
       // SAFETY: The file must not be mutated while this mapping is live.
       // We invalidate the mmap cache on any write path.
