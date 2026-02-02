@@ -147,8 +147,8 @@ pub struct CacheManager {
   enabled: bool,
 }
 
-// CacheManager is mutated via &mut methods and is always guarded by an external lock in the DB.
-// Marking it Send/Sync enables safe sharing through those locks.
+// SAFETY: CacheManager is only accessed behind external synchronization (DB lock).
+// All fields are Send/Sync when used behind that lock, so sharing across threads is safe.
 unsafe impl Send for CacheManager {}
 unsafe impl Sync for CacheManager {}
 

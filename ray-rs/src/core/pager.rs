@@ -138,8 +138,8 @@ impl FilePager {
   /// Returns a view into mmap'd memory
   pub fn mmap_file(&mut self) -> Result<&Mmap> {
     if self.mmap.is_none() {
-      // Safety: The file should not be modified while mmap is active
-      // In practice, we invalidate the mmap on writes
+      // SAFETY: The file must not be mutated while this mapping is live.
+      // We invalidate the mmap cache on any write path.
       let mmap = map_file(&self.file)?;
       self.mmap = Some(mmap);
     }
