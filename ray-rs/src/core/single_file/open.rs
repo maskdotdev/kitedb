@@ -451,7 +451,7 @@ pub fn open_single_file<P: AsRef<Path>>(
           let config = VectorStoreConfig::new(vector.len());
           create_vector_store(config)
         });
-        let _ = vector_store_insert(store, node_id, &vector);
+        let _ = vector_store_insert(store, node_id, vector.as_ref());
       }
       None => {
         // Delete operation
@@ -634,6 +634,37 @@ pub fn open_single_file<P: AsRef<Path>>(
     checkpoint_compression: options.checkpoint_compression.clone(),
     sync_mode: options.sync_mode,
   })
+}
+
+/// Close a single-file database
+pub fn close_single_file(db: SingleFileDB) -> Result<()> {
+  if let Some(ref mvcc) = db.mvcc {
+    mvcc.stop();
+  }
+
+  // Flush WAL and sync to disk
+  let mut pager = db.pager.lock();
+  let mut wal_buffer = db.wal_buffer.lock();
+
+  // Flush any pending WAL writes
+  wal_buffer.flush(&mut pager)?;
+
+  // Update header with current WAL state
+  {
+    let mut header = db.header.write();
+    header.wal_head = wal_buffer.head();
+    header.wal_tail = wal_buffer.tail();
+    header.max_node_id = db.next_node_id.load(Ordering::SeqCst).saturating_sub(1);
+    header.next_tx_id = db.next_tx_id.load(Ordering::SeqCst);
+
+    // Write header
+    let header_bytes = header.serialize_to_page();
+    pager.write_page(0, &header_bytes)?;
+  }
+
+  // Final sync
+  pager.sync()?;
+  Ok(())
 }
 
 #[cfg(test)]

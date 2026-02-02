@@ -505,7 +505,7 @@ impl GraphDB {
             let config = VectorStoreConfig::new(vector.len());
             create_vector_store(config)
           });
-          let _ = vector_store_insert(store, node_id, &vector);
+          let _ = vector_store_insert(store, node_id, vector.as_ref());
         }
         None => {
           if let Some(store) = stores.get_mut(&prop_key_id) {
@@ -800,7 +800,7 @@ pub fn open_graph_db<P: AsRef<Path>>(path: P, options: OpenOptions) -> Result<Gr
             if let Some(data) = parse_set_node_vector_payload(&record.payload) {
               delta
                 .pending_vectors
-                .insert((data.node_id, data.prop_key_id), Some(data.vector));
+                .insert((data.node_id, data.prop_key_id), Some(data.vector.into()));
             }
           }
           WalRecordType::DelNodeVector => {
@@ -825,7 +825,7 @@ pub fn open_graph_db<P: AsRef<Path>>(path: P, options: OpenOptions) -> Result<Gr
           let config = VectorStoreConfig::new(vector.len());
           create_vector_store(config)
         });
-        let _ = vector_store_insert(store, node_id, &vector);
+        let _ = vector_store_insert(store, node_id, vector.as_ref());
       }
       None => {
         if let Some(store) = vector_stores.get_mut(&prop_key_id) {

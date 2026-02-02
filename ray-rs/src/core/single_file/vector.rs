@@ -13,6 +13,7 @@ use crate::vector::store::{
 };
 use crate::vector::types::{VectorManifest, VectorStoreConfig};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use super::SingleFileDB;
 
@@ -55,7 +56,7 @@ impl SingleFileDB {
       let mut tx = tx_handle.lock();
       tx.pending
         .pending_vectors
-        .insert((node_id, prop_key_id), Some(vector.to_vec()));
+        .insert((node_id, prop_key_id), Some(VectorRef::from(vector.to_vec())));
     }
 
     Ok(())
@@ -89,7 +90,7 @@ impl SingleFileDB {
   /// Get a vector embedding for a node
   ///
   /// Checks pending operations first, then falls back to committed storage.
-  pub fn get_node_vector(&self, node_id: NodeId, prop_key_id: PropKeyId) -> Option<Vec<f32>> {
+  pub fn get_node_vector(&self, node_id: NodeId, prop_key_id: PropKeyId) -> Option<VectorRef> {
     let tx_handle = self.current_tx_handle();
     if let Some(handle) = tx_handle.as_ref() {
       let tx = handle.lock();
@@ -97,7 +98,7 @@ impl SingleFileDB {
         return None;
       }
       if let Some(pending) = tx.pending.pending_vectors.get(&(node_id, prop_key_id)) {
-        return pending.clone();
+        return pending.as_ref().map(Arc::clone);
       }
     }
 
@@ -111,13 +112,13 @@ impl SingleFileDB {
     // Check pending operations from committed replay (startup)
     if let Some(pending) = delta.pending_vectors.get(&(node_id, prop_key_id)) {
       // Some(vec) = set, None = delete
-      return pending.clone();
+      return pending.as_ref().map(Arc::clone);
     }
 
     // Fall back to committed storage
     let stores = self.vector_stores.read();
     let store = stores.get(&prop_key_id)?;
-    vector_store_get(store, node_id).map(|v| v.to_vec())
+    vector_store_get(store, node_id).map(Arc::from)
   }
 
   /// Check if a node has a vector embedding
@@ -185,7 +186,7 @@ impl SingleFileDB {
   /// Apply pending vector operations (called during commit)
   pub(crate) fn apply_pending_vectors(
     &self,
-    pending_vectors: &HashMap<(NodeId, PropKeyId), Option<Vec<f32>>>,
+    pending_vectors: &HashMap<(NodeId, PropKeyId), Option<VectorRef>>,
   ) {
     let mut stores = self.vector_stores.write();
 
@@ -199,7 +200,7 @@ impl SingleFileDB {
           });
 
           // Insert (this handles replacement of existing vectors)
-          let _ = vector_store_insert(store, node_id, vector);
+          let _ = vector_store_insert(store, node_id, vector.as_ref());
         }
         None => {
           // Delete operation

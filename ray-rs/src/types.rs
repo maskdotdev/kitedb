@@ -335,6 +335,9 @@ pub enum PropValue {
 /// Shared property value for internal storage
 pub type PropValueRef = std::sync::Arc<PropValue>;
 
+/// Shared vector storage for pending operations
+pub type VectorRef = std::sync::Arc<[f32]>;
+
 impl PropValue {
   pub fn tag(&self) -> PropValueTag {
     match self {
@@ -429,7 +432,7 @@ pub struct DeltaState {
 
   // Pending vector operations (keyed by (node_id, prop_key_id))
   // Some(vec) = set, None = delete
-  pub pending_vectors: HashMap<(NodeId, PropKeyId), Option<Vec<f32>>>,
+  pub pending_vectors: HashMap<(NodeId, PropKeyId), Option<VectorRef>>,
 }
 
 // ============================================================================
