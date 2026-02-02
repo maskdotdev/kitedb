@@ -2727,16 +2727,16 @@ impl<'a> KiteUpdateNodeBuilder<'a> {
   /// Set a node property value
   ///
   /// The property will be set when `execute()` is called.
-  pub fn set(mut self, prop_name: &str, value: PropValue) -> Self {
-    self.updates.insert(prop_name.to_string(), Some(value));
+  pub fn set(mut self, prop_name: impl Into<String>, value: PropValue) -> Self {
+    self.updates.insert(prop_name.into(), Some(value));
     self
   }
 
   /// Remove a node property
   ///
   /// The property will be deleted when `execute()` is called.
-  pub fn unset(mut self, prop_name: &str) -> Self {
-    self.updates.insert(prop_name.to_string(), None);
+  pub fn unset(mut self, prop_name: impl Into<String>) -> Self {
+    self.updates.insert(prop_name.into(), None);
     self
   }
 
@@ -2799,14 +2799,14 @@ pub struct KiteUpsertByIdBuilder<'a> {
 
 impl<'a> KiteUpsertByIdBuilder<'a> {
   /// Set a node property value
-  pub fn set(mut self, prop_name: &str, value: PropValue) -> Self {
-    self.updates.insert(prop_name.to_string(), Some(value));
+  pub fn set(mut self, prop_name: impl Into<String>, value: PropValue) -> Self {
+    self.updates.insert(prop_name.into(), Some(value));
     self
   }
 
   /// Remove a node property
-  pub fn unset(mut self, prop_name: &str) -> Self {
-    self.updates.insert(prop_name.to_string(), None);
+  pub fn unset(mut self, prop_name: impl Into<String>) -> Self {
+    self.updates.insert(prop_name.into(), None);
     self
   }
 
@@ -3218,16 +3218,16 @@ impl<'a> KiteUpdateEdgeBuilder<'a> {
   /// Set an edge property value
   ///
   /// The property will be set when `execute()` is called.
-  pub fn set(mut self, prop_name: &str, value: PropValue) -> Self {
-    self.updates.insert(prop_name.to_string(), Some(value));
+  pub fn set(mut self, prop_name: impl Into<String>, value: PropValue) -> Self {
+    self.updates.insert(prop_name.into(), Some(value));
     self
   }
 
   /// Remove an edge property
   ///
   /// The property will be deleted when `execute()` is called.
-  pub fn unset(mut self, prop_name: &str) -> Self {
-    self.updates.insert(prop_name.to_string(), None);
+  pub fn unset(mut self, prop_name: impl Into<String>) -> Self {
+    self.updates.insert(prop_name.into(), None);
     self
   }
 
@@ -3301,14 +3301,14 @@ pub struct KiteUpsertEdgeBuilder<'a> {
 
 impl<'a> KiteUpsertEdgeBuilder<'a> {
   /// Set an edge property value
-  pub fn set(mut self, prop_name: &str, value: PropValue) -> Self {
-    self.updates.insert(prop_name.to_string(), Some(value));
+  pub fn set(mut self, prop_name: impl Into<String>, value: PropValue) -> Self {
+    self.updates.insert(prop_name.into(), Some(value));
     self
   }
 
   /// Remove an edge property
-  pub fn unset(mut self, prop_name: &str) -> Self {
-    self.updates.insert(prop_name.to_string(), None);
+  pub fn unset(mut self, prop_name: impl Into<String>) -> Self {
+    self.updates.insert(prop_name.into(), None);
     self
   }
 
