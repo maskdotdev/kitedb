@@ -366,8 +366,12 @@ impl SingleFileDB {
 
           // Try to write header
           let header_bytes = header.serialize_to_page();
-          let _ = pager.write_page(0, &header_bytes);
-          let _ = pager.sync();
+          if let Err(err) = pager.write_page(0, &header_bytes) {
+            eprintln!("Warning: Failed to write checkpoint header during recovery: {err}");
+          }
+          if let Err(err) = pager.sync() {
+            eprintln!("Warning: Failed to sync checkpoint header during recovery: {err}");
+          }
         }
       }
     }
