@@ -9,7 +9,7 @@
 //!
 //! Ported from src/core/compactor.ts
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -121,156 +121,236 @@ pub fn collect_graph_data(
 
   // First, add data from snapshot
   if let Some(snap) = snapshot {
-    let num_nodes = snap.header.num_nodes as usize;
-
-    // Copy labels from snapshot
-    for label_id in 1..=snap.header.num_labels as LabelId {
-      if let Some(name) = snap.get_label_name(label_id) {
-        labels.insert(label_id, name.to_string());
-      }
-    }
-
-    // Copy etypes from snapshot
-    for etype_id in 1..=snap.header.num_etypes as ETypeId {
-      if let Some(name) = snap.get_etype_name(etype_id) {
-        etypes.insert(etype_id, name.to_string());
-      }
-    }
-
-    // Copy propkeys from snapshot
-    for propkey_id in 1..=snap.header.num_propkeys as PropKeyId {
-      if let Some(name) = snap.get_propkey_name(propkey_id) {
-        propkeys.insert(propkey_id, name.to_string());
-      }
-    }
-
-    // Collect nodes from snapshot
-    for phys in 0..num_nodes {
-      let node_id = match snap.get_node_id(phys as PhysNode) {
-        Some(id) => id,
-        None => continue,
-      };
-
-      // Skip deleted nodes
-      if delta.deleted_nodes.contains(&node_id) {
-        continue;
-      }
-
-      // Get key
-      let key = snap.get_node_key(phys as PhysNode);
-
-      // Get properties from snapshot
-      let mut props: HashMap<PropKeyId, PropValue> = HashMap::new();
-      if let Some(snapshot_props) = snap.get_node_props(phys as PhysNode) {
-        for (key_id, value) in snapshot_props {
-          props.insert(key_id, value);
-        }
-      }
-
-      // Apply delta modifications
-      let mut node_labels: std::collections::HashSet<LabelId> = std::collections::HashSet::new();
-
-      if let Some(snapshot_labels) = snap.get_node_labels(phys as PhysNode) {
-        node_labels.extend(snapshot_labels.into_iter());
-      }
-
-      if let Some(node_delta) = delta.modified_nodes.get(&node_id) {
-        // Apply property changes
-        if let Some(delta_props) = &node_delta.props {
-          for (key_id, value) in delta_props {
-            if let Some(v) = value {
-              props.insert(*key_id, v.as_ref().clone());
-            } else {
-              props.remove(key_id);
-            }
-          }
-        }
-        // Apply label changes
-        if let Some(delta_labels) = &node_delta.labels {
-          node_labels.extend(delta_labels.iter().copied());
-        }
-        if let Some(deleted) = &node_delta.labels_deleted {
-          for label_id in deleted {
-            node_labels.remove(label_id);
-          }
-        }
-      }
-
-      let mut node_labels: Vec<LabelId> = node_labels.into_iter().collect();
-      node_labels.sort_unstable();
-
-      nodes.push(NodeData {
-        node_id,
-        key,
-        labels: node_labels,
-        props,
-      });
-
-      // Collect edges from this node (from snapshot)
-      for edge in snap.get_out_edges(phys as PhysNode) {
-        let dst_node_id = match snap.get_node_id(edge.dst) {
-          Some(id) => id,
-          None => continue,
-        };
-
-        // Skip edges to deleted nodes
-        if delta.deleted_nodes.contains(&dst_node_id) {
-          continue;
-        }
-
-        // Skip deleted edges
-        if delta.is_edge_deleted(node_id, edge.etype, dst_node_id) {
-          continue;
-        }
-
-        // Collect edge props from snapshot
-        let mut edge_props: HashMap<PropKeyId, PropValue> = HashMap::new();
-        if let Some(edge_idx) = snap.find_edge_index(phys as PhysNode, edge.etype, edge.dst) {
-          if let Some(snapshot_edge_props) = snap.get_edge_props(edge_idx) {
-            for (key_id, value) in snapshot_edge_props {
-              edge_props.insert(key_id, value);
-            }
-          }
-        }
-
-        // Apply delta edge prop modifications
-        let edge_key = (node_id, edge.etype, dst_node_id);
-        if let Some(delta_edge_props) = delta.edge_props.get(&edge_key) {
-          for (key_id, value) in delta_edge_props {
-            if let Some(v) = value {
-              edge_props.insert(*key_id, v.as_ref().clone());
-            } else {
-              edge_props.remove(key_id);
-            }
-          }
-        }
-
-        edges.push(EdgeData {
-          src: node_id,
-          etype: edge.etype,
-          dst: dst_node_id,
-          props: edge_props,
-        });
-      }
-    }
+    copy_snapshot_schema(snap, &mut labels, &mut etypes, &mut propkeys);
+    collect_snapshot_nodes_and_edges(snap, delta, &mut nodes, &mut edges);
   }
 
   // Add new labels from delta
+  apply_delta_schema(delta, &mut labels, &mut etypes, &mut propkeys);
+
+  // Add nodes created in delta
+  collect_delta_nodes(delta, &mut nodes);
+
+  // Add edges from delta
+  collect_delta_edges(delta, &mut edges);
+
+  Ok(CollectedGraphData {
+    nodes,
+    edges,
+    labels,
+    etypes,
+    propkeys,
+  })
+}
+
+fn copy_snapshot_schema(
+  snap: &SnapshotData,
+  labels: &mut HashMap<LabelId, String>,
+  etypes: &mut HashMap<ETypeId, String>,
+  propkeys: &mut HashMap<PropKeyId, String>,
+) {
+  for label_id in 1..=snap.header.num_labels as LabelId {
+    if let Some(name) = snap.get_label_name(label_id) {
+      labels.insert(label_id, name.to_string());
+    }
+  }
+
+  for etype_id in 1..=snap.header.num_etypes as ETypeId {
+    if let Some(name) = snap.get_etype_name(etype_id) {
+      etypes.insert(etype_id, name.to_string());
+    }
+  }
+
+  for propkey_id in 1..=snap.header.num_propkeys as PropKeyId {
+    if let Some(name) = snap.get_propkey_name(propkey_id) {
+      propkeys.insert(propkey_id, name.to_string());
+    }
+  }
+}
+
+fn apply_delta_schema(
+  delta: &DeltaState,
+  labels: &mut HashMap<LabelId, String>,
+  etypes: &mut HashMap<ETypeId, String>,
+  propkeys: &mut HashMap<PropKeyId, String>,
+) {
   for (label_id, name) in &delta.new_labels {
     labels.insert(*label_id, name.clone());
   }
 
-  // Add new etypes from delta
   for (etype_id, name) in &delta.new_etypes {
     etypes.insert(*etype_id, name.clone());
   }
 
-  // Add new propkeys from delta
   for (propkey_id, name) in &delta.new_propkeys {
     propkeys.insert(*propkey_id, name.clone());
   }
+}
 
-  // Add nodes created in delta
+fn collect_snapshot_nodes_and_edges(
+  snap: &SnapshotData,
+  delta: &DeltaState,
+  nodes: &mut Vec<NodeData>,
+  edges: &mut Vec<EdgeData>,
+) {
+  let num_nodes = snap.header.num_nodes as usize;
+
+  for phys in 0..num_nodes {
+    let phys_node = phys as PhysNode;
+    let node_id = match snap.get_node_id(phys_node) {
+      Some(id) => id,
+      None => continue,
+    };
+
+    if delta.deleted_nodes.contains(&node_id) {
+      continue;
+    }
+
+    let node = build_snapshot_node(snap, phys_node, node_id, delta);
+    nodes.push(node);
+
+    collect_snapshot_edges_for_node(snap, phys_node, node_id, delta, edges);
+  }
+}
+
+fn build_snapshot_node(
+  snap: &SnapshotData,
+  phys_node: PhysNode,
+  node_id: NodeId,
+  delta: &DeltaState,
+) -> NodeData {
+  let key = snap.get_node_key(phys_node);
+  let mut props = snapshot_node_props(snap, phys_node);
+  let mut labels = snapshot_node_labels(snap, phys_node);
+
+  if let Some(node_delta) = delta.modified_nodes.get(&node_id) {
+    apply_node_delta(node_delta, &mut props, &mut labels);
+  }
+
+  let mut labels: Vec<LabelId> = labels.into_iter().collect();
+  labels.sort_unstable();
+
+  NodeData {
+    node_id,
+    key,
+    labels,
+    props,
+  }
+}
+
+fn snapshot_node_props(snap: &SnapshotData, phys_node: PhysNode) -> HashMap<PropKeyId, PropValue> {
+  let mut props = HashMap::new();
+  if let Some(snapshot_props) = snap.get_node_props(phys_node) {
+    for (key_id, value) in snapshot_props {
+      props.insert(key_id, value);
+    }
+  }
+  props
+}
+
+fn snapshot_node_labels(snap: &SnapshotData, phys_node: PhysNode) -> HashSet<LabelId> {
+  let mut labels = HashSet::new();
+  if let Some(snapshot_labels) = snap.get_node_labels(phys_node) {
+    labels.extend(snapshot_labels.into_iter());
+  }
+  labels
+}
+
+fn apply_node_delta(
+  node_delta: &NodeDelta,
+  props: &mut HashMap<PropKeyId, PropValue>,
+  labels: &mut HashSet<LabelId>,
+) {
+  if let Some(delta_props) = &node_delta.props {
+    for (key_id, value) in delta_props {
+      if let Some(v) = value {
+        props.insert(*key_id, v.as_ref().clone());
+      } else {
+        props.remove(key_id);
+      }
+    }
+  }
+
+  if let Some(delta_labels) = &node_delta.labels {
+    labels.extend(delta_labels.iter().copied());
+  }
+  if let Some(deleted) = &node_delta.labels_deleted {
+    for label_id in deleted {
+      labels.remove(label_id);
+    }
+  }
+}
+
+fn collect_snapshot_edges_for_node(
+  snap: &SnapshotData,
+  phys_node: PhysNode,
+  node_id: NodeId,
+  delta: &DeltaState,
+  edges: &mut Vec<EdgeData>,
+) {
+  for edge in snap.get_out_edges(phys_node) {
+    let dst_node_id = match snap.get_node_id(edge.dst) {
+      Some(id) => id,
+      None => continue,
+    };
+
+    if delta.deleted_nodes.contains(&dst_node_id) {
+      continue;
+    }
+
+    if delta.is_edge_deleted(node_id, edge.etype, dst_node_id) {
+      continue;
+    }
+
+    let mut edge_props = snapshot_edge_props(snap, phys_node, edge.etype, edge.dst);
+    apply_delta_edge_props(delta, node_id, edge.etype, dst_node_id, &mut edge_props);
+
+    edges.push(EdgeData {
+      src: node_id,
+      etype: edge.etype,
+      dst: dst_node_id,
+      props: edge_props,
+    });
+  }
+}
+
+fn snapshot_edge_props(
+  snap: &SnapshotData,
+  phys_node: PhysNode,
+  etype: ETypeId,
+  dst_phys: PhysNode,
+) -> HashMap<PropKeyId, PropValue> {
+  let mut edge_props = HashMap::new();
+  if let Some(edge_idx) = snap.find_edge_index(phys_node, etype, dst_phys) {
+    if let Some(snapshot_edge_props) = snap.get_edge_props(edge_idx) {
+      for (key_id, value) in snapshot_edge_props {
+        edge_props.insert(key_id, value);
+      }
+    }
+  }
+  edge_props
+}
+
+fn apply_delta_edge_props(
+  delta: &DeltaState,
+  src: NodeId,
+  etype: ETypeId,
+  dst: NodeId,
+  edge_props: &mut HashMap<PropKeyId, PropValue>,
+) {
+  let edge_key = (src, etype, dst);
+  if let Some(delta_edge_props) = delta.edge_props.get(&edge_key) {
+    for (key_id, value) in delta_edge_props {
+      if let Some(v) = value {
+        edge_props.insert(*key_id, v.as_ref().clone());
+      } else {
+        edge_props.remove(key_id);
+      }
+    }
+  }
+}
+
+fn collect_delta_nodes(delta: &DeltaState, nodes: &mut Vec<NodeData>) {
   for (node_id, node_delta) in &delta.created_nodes {
     let mut props: HashMap<PropKeyId, PropValue> = HashMap::new();
     if let Some(delta_props) = &node_delta.props {
@@ -281,30 +361,29 @@ pub fn collect_graph_data(
       }
     }
 
-    let mut node_labels: Vec<LabelId> = node_delta
+    let mut labels: Vec<LabelId> = node_delta
       .labels
       .as_ref()
       .map(|l| l.iter().copied().collect())
       .unwrap_or_default();
-    node_labels.sort_unstable();
+    labels.sort_unstable();
 
     nodes.push(NodeData {
       node_id: *node_id,
       key: node_delta.key.clone(),
-      labels: node_labels,
+      labels,
       props,
     });
   }
+}
 
-  // Add edges from delta
+fn collect_delta_edges(delta: &DeltaState, edges: &mut Vec<EdgeData>) {
   for (src, patches) in &delta.out_add {
     for patch in patches {
-      // Check if either endpoint is deleted
       if delta.deleted_nodes.contains(src) || delta.deleted_nodes.contains(&patch.other) {
         continue;
       }
 
-      // Collect edge props from delta
       let edge_key = (*src, patch.etype, patch.other);
       let mut edge_props: HashMap<PropKeyId, PropValue> = HashMap::new();
 
@@ -324,14 +403,6 @@ pub fn collect_graph_data(
       });
     }
   }
-
-  Ok(CollectedGraphData {
-    nodes,
-    edges,
-    labels,
-    etypes,
-    propkeys,
-  })
 }
 
 // ============================================================================
