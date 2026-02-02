@@ -242,6 +242,36 @@ impl SingleFileDB {
           None
         };
 
+        let old_node_label = |node_id: NodeId, label_id: LabelId| -> bool {
+          if delta.is_node_deleted(node_id) {
+            return false;
+          }
+          if let Some(node_delta) = delta.get_node_delta(node_id) {
+            if node_delta
+              .labels_deleted
+              .as_ref()
+              .is_some_and(|labels| labels.contains(&label_id))
+            {
+              return false;
+            }
+            if node_delta
+              .labels
+              .as_ref()
+              .is_some_and(|labels| labels.contains(&label_id))
+            {
+              return true;
+            }
+          }
+          if let Some(ref snap) = *snapshot {
+            if let Some(phys) = snap.get_phys_node(node_id) {
+              if let Some(labels) = snap.get_node_labels(phys) {
+                return labels.contains(&label_id);
+              }
+            }
+          }
+          false
+        };
+
         for (node_id, node_delta) in pending
           .created_nodes
           .iter()
@@ -267,6 +297,44 @@ impl SingleFileDB {
                 txid,
                 commit_ts,
               );
+            }
+          }
+
+          if let Some(added_labels) = node_delta.labels.as_ref() {
+            for label_id in added_labels {
+              let before_value = old_node_label(*node_id, *label_id);
+              if before_value {
+                continue;
+              }
+              if vc.get_node_label_version(*node_id, *label_id).is_none() {
+                vc.append_node_label_version(
+                  *node_id,
+                  *label_id,
+                  if before_value { Some(true) } else { None },
+                  0,
+                  0,
+                );
+              }
+              vc.append_node_label_version(*node_id, *label_id, Some(true), txid, commit_ts);
+            }
+          }
+
+          if let Some(removed_labels) = node_delta.labels_deleted.as_ref() {
+            for label_id in removed_labels {
+              let before_value = old_node_label(*node_id, *label_id);
+              if !before_value {
+                continue;
+              }
+              if vc.get_node_label_version(*node_id, *label_id).is_none() {
+                vc.append_node_label_version(
+                  *node_id,
+                  *label_id,
+                  if before_value { Some(true) } else { None },
+                  0,
+                  0,
+                );
+              }
+              vc.append_node_label_version(*node_id, *label_id, None, txid, commit_ts);
             }
           }
         }

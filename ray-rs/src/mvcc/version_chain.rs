@@ -9,8 +9,8 @@ use std::collections::HashMap;
 
 use crate::mvcc::visibility::VersionedRecord;
 use crate::types::{
-  ETypeId, EdgeVersionData, NodeDelta, NodeId, NodeVersionData, PropKeyId, PropValue, Timestamp,
-  TxId,
+  ETypeId, EdgeVersionData, LabelId, NodeDelta, NodeId, NodeVersionData, PropKeyId, PropValue,
+  Timestamp, TxId,
 };
 
 // ============================================================================
@@ -276,12 +276,16 @@ pub struct VersionChainManager {
   soa_node_props: SoaPropertyVersions<Option<PropValue>>,
   /// SOA-backed storage for edge property versions
   soa_edge_props: SoaPropertyVersions<Option<PropValue>>,
+  /// SOA-backed storage for node label versions
+  soa_node_labels: SoaPropertyVersions<Option<bool>>,
   /// Whether SOA storage is enabled (for benchmarking/compatibility)
   use_soa: bool,
   /// Legacy node property versions (when SOA is disabled)
   legacy_node_props: HashMap<u64, Box<VersionedRecord<Option<PropValue>>>>,
   /// Legacy edge property versions (when SOA is disabled)
   legacy_edge_props: HashMap<u64, Box<VersionedRecord<Option<PropValue>>>>,
+  /// Legacy node label versions (when SOA is disabled)
+  legacy_node_labels: HashMap<u64, Box<VersionedRecord<Option<bool>>>>,
 }
 
 impl VersionChainManager {
@@ -297,9 +301,11 @@ impl VersionChainManager {
       edge_versions: HashMap::new(),
       soa_node_props: SoaPropertyVersions::new(),
       soa_edge_props: SoaPropertyVersions::new(),
+      soa_node_labels: SoaPropertyVersions::new(),
       use_soa,
       legacy_node_props: HashMap::new(),
       legacy_edge_props: HashMap::new(),
+      legacy_node_labels: HashMap::new(),
     }
   }
 
@@ -320,6 +326,13 @@ impl VersionChainManager {
   #[inline]
   pub fn node_prop_key(node_id: NodeId, prop_key_id: PropKeyId) -> u64 {
     (node_id << 24) | (prop_key_id as u64)
+  }
+
+  /// Compute numeric composite key for node label lookups
+  /// Uses bit packing: nodeId (40 bits) | labelId (24 bits)
+  #[inline]
+  pub fn node_label_key(node_id: NodeId, label_id: LabelId) -> u64 {
+    (node_id << 24) | (label_id as u64)
   }
 
   /// Compute numeric composite key for edge property lookups
@@ -526,6 +539,57 @@ impl VersionChainManager {
     }
   }
 
+  // ========================================================================
+  // Node label versions
+  // ========================================================================
+
+  /// Append a new version to a node label's version chain
+  pub fn append_node_label_version(
+    &mut self,
+    node_id: NodeId,
+    label_id: LabelId,
+    value: Option<bool>,
+    txid: TxId,
+    commit_ts: Timestamp,
+  ) {
+    let key = Self::node_label_key(node_id, label_id);
+
+    if self.use_soa {
+      self.soa_node_labels.append(key, value, txid, commit_ts);
+    } else {
+      let existing = self.legacy_node_labels.remove(&key);
+      let new_version = Box::new(VersionedRecord {
+        data: value,
+        txid,
+        commit_ts,
+        prev: existing,
+        deleted: false,
+      });
+      self.legacy_node_labels.insert(key, new_version);
+    }
+  }
+
+  /// Get the latest version for a node label
+  pub fn get_node_label_version(
+    &self,
+    node_id: NodeId,
+    label_id: LabelId,
+  ) -> Option<VersionedRecord<Option<bool>>> {
+    let key = Self::node_label_key(node_id, label_id);
+
+    if self.use_soa {
+      self
+        .soa_node_labels
+        .get_head(key)
+        .map(|pooled| Self::pooled_to_versioned(&self.soa_node_labels, pooled))
+    } else {
+      self.legacy_node_labels.get(&key).map(|b| {
+        // Clone the versioned record for API compatibility
+        Self::clone_versioned_record(b.as_ref())
+      })
+    }
+  }
+
   pub fn node_prop_keys(&self, node_id: NodeId) -> Vec<PropKeyId> {
     let mut keys = Vec::new();
     let node_prefix = node_id;
@@ -540,6 +604,29 @@ impl VersionChainManager {
       for &key in self.legacy_node_props.keys() {
         if (key >> 24) == node_prefix {
           keys.push((key & 0xFFFFFF) as PropKeyId);
+        }
+      }
+    }
+
+    keys.sort_unstable();
+    keys.dedup();
+    keys
+  }
+
+  pub fn node_label_keys(&self, node_id: NodeId) -> Vec<LabelId> {
+    let mut keys = Vec::new();
+    let node_prefix = node_id;
+
+    if self.use_soa {
+      for key in self.soa_node_labels.keys() {
+        if (key >> 24) == node_prefix {
+          keys.push((key & 0xFFFFFF) as LabelId);
+        }
+      }
+    } else {
+      for &key in self.legacy_node_labels.keys() {
+        if (key >> 24) == node_prefix {
+          keys.push((key & 0xFFFFFF) as LabelId);
         }
       }
     }
@@ -590,10 +677,10 @@ impl VersionChainManager {
   // ========================================================================
 
   /// Convert a pooled version to a VersionedRecord (for API compatibility)
-  fn pooled_to_versioned(
-    store: &SoaPropertyVersions<Option<PropValue>>,
-    pooled: PooledVersion<&Option<PropValue>>,
-  ) -> VersionedRecord<Option<PropValue>> {
+  fn pooled_to_versioned<T: Clone>(
+    store: &SoaPropertyVersions<Option<T>>,
+    pooled: PooledVersion<&Option<T>>,
+  ) -> VersionedRecord<Option<T>> {
     let prev = if pooled.prev_idx != NULL_IDX {
       store
         .get_at(pooled.prev_idx)
@@ -612,9 +699,9 @@ impl VersionChainManager {
   }
 
   /// Clone a versioned record (for API compatibility)
-  fn clone_versioned_record(
-    record: &VersionedRecord<Option<PropValue>>,
-  ) -> VersionedRecord<Option<PropValue>> {
+  fn clone_versioned_record<T: Clone>(
+    record: &VersionedRecord<Option<T>>,
+  ) -> VersionedRecord<Option<T>> {
     VersionedRecord {
       data: record.data.clone(),
       txid: record.txid,
@@ -869,8 +956,10 @@ impl VersionChainManager {
     self.edge_versions.clear();
     self.soa_node_props.clear();
     self.soa_edge_props.clear();
+    self.soa_node_labels.clear();
     self.legacy_node_props.clear();
     self.legacy_edge_props.clear();
+    self.legacy_node_labels.clear();
   }
 
   /// Get counts for statistics
@@ -887,6 +976,11 @@ impl VersionChainManager {
         self.soa_edge_props.len()
       } else {
         self.legacy_edge_props.len()
+      },
+      node_label_versions: if self.use_soa {
+        self.soa_node_labels.len()
+      } else {
+        self.legacy_node_labels.len()
       },
     }
   }
@@ -905,6 +999,7 @@ pub struct VersionChainCounts {
   pub edge_versions: usize,
   pub node_prop_versions: usize,
   pub edge_prop_versions: usize,
+  pub node_label_versions: usize,
 }
 
 // ============================================================================
@@ -1108,6 +1203,7 @@ mod tests {
     assert_eq!(counts.node_versions, 0);
     assert_eq!(counts.edge_versions, 0);
     assert_eq!(counts.node_prop_versions, 0);
+    assert_eq!(counts.node_label_versions, 0);
   }
 
   #[test]

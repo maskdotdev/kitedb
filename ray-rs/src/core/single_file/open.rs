@@ -482,9 +482,10 @@ pub fn open_single_file<P: AsRef<Path>>(
 
     if !committed_in_order.is_empty() {
       use crate::core::wal::record::{
-        parse_add_edge_payload, parse_create_node_payload, parse_del_edge_prop_payload,
-        parse_del_node_prop_payload, parse_delete_edge_payload, parse_delete_node_payload,
-        parse_set_edge_prop_payload, parse_set_node_prop_payload,
+        parse_add_edge_payload, parse_add_node_label_payload, parse_create_node_payload,
+        parse_del_edge_prop_payload, parse_del_node_prop_payload, parse_delete_edge_payload,
+        parse_delete_node_payload, parse_remove_node_label_payload, parse_set_edge_prop_payload,
+        parse_set_node_prop_payload,
       };
 
       let mut commit_ts: u64 = 1;
@@ -569,6 +570,24 @@ pub fn open_single_file<P: AsRef<Path>>(
                   *txid,
                   commit_ts,
                 );
+              }
+            }
+            WalRecordType::AddNodeLabel => {
+              if let Some(data) = parse_add_node_label_payload(&record.payload) {
+                let mut vc = mvcc.version_chain.lock();
+                vc.append_node_label_version(
+                  data.node_id,
+                  data.label_id,
+                  Some(true),
+                  *txid,
+                  commit_ts,
+                );
+              }
+            }
+            WalRecordType::RemoveNodeLabel => {
+              if let Some(data) = parse_remove_node_label_payload(&record.payload) {
+                let mut vc = mvcc.version_chain.lock();
+                vc.append_node_label_version(data.node_id, data.label_id, None, *txid, commit_ts);
               }
             }
             _ => {}

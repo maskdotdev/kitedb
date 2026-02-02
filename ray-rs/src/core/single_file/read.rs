@@ -538,6 +538,19 @@ impl SingleFileDB {
     let tx_handle = self.current_tx_handle();
     let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
     let pending = tx_guard.as_ref().map(|tx| &tx.pending);
+    let mut txid = 0;
+    let mut tx_snapshot_ts = 0;
+    let vc_guard = if let Some(mvcc) = self.mvcc.as_ref() {
+      if let Some(tx) = tx_guard.as_ref() {
+        txid = tx.txid;
+        tx_snapshot_ts = tx.snapshot_ts;
+      } else {
+        tx_snapshot_ts = mvcc.tx_manager.lock().get_next_commit_ts();
+      }
+      Some(mvcc.version_chain.lock())
+    } else {
+      None
+    };
 
     // If node is deleted, no edges
     if pending.is_some_and(|p| p.is_node_deleted(node_id)) {
@@ -547,7 +560,11 @@ impl SingleFileDB {
     let delta = self.delta.read();
 
     // If node is deleted in committed state, no edges
-    if delta.is_node_deleted(node_id) {
+    let node_visible = vc_guard
+      .as_ref()
+      .and_then(|vc| vc.get_node_version(node_id))
+      .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+    if node_visible == Some(false) || (node_visible.is_none() && delta.is_node_deleted(node_id)) {
       return Vec::new();
     }
 
@@ -561,14 +578,24 @@ impl SingleFileDB {
           // Convert physical dst to NodeId
           if let Some(dst_node_id) = snap.get_node_id(dst_phys) {
             // Skip edges to deleted nodes
-            if delta.is_node_deleted(dst_node_id)
+            let dst_visible = vc_guard
+              .as_ref()
+              .and_then(|vc| vc.get_node_version(dst_node_id))
+              .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+            if dst_visible == Some(false)
               || pending.is_some_and(|p| p.is_node_deleted(dst_node_id))
+              || (dst_visible.is_none() && delta.is_node_deleted(dst_node_id))
             {
               continue;
             }
             // Skip edges deleted in delta
-            if delta.is_edge_deleted(node_id, etype, dst_node_id)
+            let edge_visible = vc_guard
+              .as_ref()
+              .and_then(|vc| vc.get_edge_version(node_id, etype, dst_node_id))
+              .map(|version| mvcc_edge_exists(Some(version), tx_snapshot_ts, txid));
+            if edge_visible == Some(false)
               || pending.is_some_and(|p| p.is_edge_deleted(node_id, etype, dst_node_id))
+              || (edge_visible.is_none() && delta.is_edge_deleted(node_id, etype, dst_node_id))
             {
               continue;
             }
@@ -582,12 +609,23 @@ impl SingleFileDB {
     if let Some(added_edges) = delta.out_add.get(&node_id) {
       for edge_patch in added_edges {
         // Skip edges to deleted nodes
-        if delta.is_node_deleted(edge_patch.other)
+        let dst_visible = vc_guard
+          .as_ref()
+          .and_then(|vc| vc.get_node_version(edge_patch.other))
+          .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+        if dst_visible == Some(false)
           || pending.is_some_and(|p| p.is_node_deleted(edge_patch.other))
+          || (dst_visible.is_none() && delta.is_node_deleted(edge_patch.other))
         {
           continue;
         }
-        if pending.is_some_and(|p| p.is_edge_deleted(node_id, edge_patch.etype, edge_patch.other))
+        let edge_visible = vc_guard
+          .as_ref()
+          .and_then(|vc| vc.get_edge_version(node_id, edge_patch.etype, edge_patch.other))
+          .map(|version| mvcc_edge_exists(Some(version), tx_snapshot_ts, txid));
+        if edge_visible == Some(false)
+          || pending
+            .is_some_and(|p| p.is_edge_deleted(node_id, edge_patch.etype, edge_patch.other))
         {
           continue;
         }
@@ -597,8 +635,13 @@ impl SingleFileDB {
 
     if let Some(added_edges) = pending.and_then(|p| p.out_add.get(&node_id)) {
       for edge_patch in added_edges {
-        if delta.is_node_deleted(edge_patch.other)
+        let dst_visible = vc_guard
+          .as_ref()
+          .and_then(|vc| vc.get_node_version(edge_patch.other))
+          .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+        if dst_visible == Some(false)
           || pending.is_some_and(|p| p.is_node_deleted(edge_patch.other))
+          || (dst_visible.is_none() && delta.is_node_deleted(edge_patch.other))
         {
           continue;
         }
@@ -621,6 +664,19 @@ impl SingleFileDB {
     let tx_handle = self.current_tx_handle();
     let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
     let pending = tx_guard.as_ref().map(|tx| &tx.pending);
+    let mut txid = 0;
+    let mut tx_snapshot_ts = 0;
+    let vc_guard = if let Some(mvcc) = self.mvcc.as_ref() {
+      if let Some(tx) = tx_guard.as_ref() {
+        txid = tx.txid;
+        tx_snapshot_ts = tx.snapshot_ts;
+      } else {
+        tx_snapshot_ts = mvcc.tx_manager.lock().get_next_commit_ts();
+      }
+      Some(mvcc.version_chain.lock())
+    } else {
+      None
+    };
 
     // If node is deleted, no edges
     if pending.is_some_and(|p| p.is_node_deleted(node_id)) {
@@ -630,7 +686,11 @@ impl SingleFileDB {
     let delta = self.delta.read();
 
     // If node is deleted, no edges
-    if delta.is_node_deleted(node_id) {
+    let node_visible = vc_guard
+      .as_ref()
+      .and_then(|vc| vc.get_node_version(node_id))
+      .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+    if node_visible == Some(false) || (node_visible.is_none() && delta.is_node_deleted(node_id)) {
       return Vec::new();
     }
 
@@ -644,14 +704,24 @@ impl SingleFileDB {
           // Convert physical src to NodeId
           if let Some(src_node_id) = snap.get_node_id(src_phys) {
             // Skip edges from deleted nodes
-            if delta.is_node_deleted(src_node_id)
+            let src_visible = vc_guard
+              .as_ref()
+              .and_then(|vc| vc.get_node_version(src_node_id))
+              .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+            if src_visible == Some(false)
               || pending.is_some_and(|p| p.is_node_deleted(src_node_id))
+              || (src_visible.is_none() && delta.is_node_deleted(src_node_id))
             {
               continue;
             }
             // Skip edges deleted in delta
-            if delta.is_edge_deleted(src_node_id, etype, node_id)
+            let edge_visible = vc_guard
+              .as_ref()
+              .and_then(|vc| vc.get_edge_version(src_node_id, etype, node_id))
+              .map(|version| mvcc_edge_exists(Some(version), tx_snapshot_ts, txid));
+            if edge_visible == Some(false)
               || pending.is_some_and(|p| p.is_edge_deleted(src_node_id, etype, node_id))
+              || (edge_visible.is_none() && delta.is_edge_deleted(src_node_id, etype, node_id))
             {
               continue;
             }
@@ -665,12 +735,23 @@ impl SingleFileDB {
     if let Some(added_edges) = delta.in_add.get(&node_id) {
       for edge_patch in added_edges {
         // Skip edges from deleted nodes
-        if delta.is_node_deleted(edge_patch.other)
+        let src_visible = vc_guard
+          .as_ref()
+          .and_then(|vc| vc.get_node_version(edge_patch.other))
+          .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+        if src_visible == Some(false)
           || pending.is_some_and(|p| p.is_node_deleted(edge_patch.other))
+          || (src_visible.is_none() && delta.is_node_deleted(edge_patch.other))
         {
           continue;
         }
-        if pending.is_some_and(|p| p.is_edge_deleted(edge_patch.other, edge_patch.etype, node_id))
+        let edge_visible = vc_guard
+          .as_ref()
+          .and_then(|vc| vc.get_edge_version(edge_patch.other, edge_patch.etype, node_id))
+          .map(|version| mvcc_edge_exists(Some(version), tx_snapshot_ts, txid));
+        if edge_visible == Some(false)
+          || pending
+            .is_some_and(|p| p.is_edge_deleted(edge_patch.other, edge_patch.etype, node_id))
         {
           continue;
         }
@@ -680,8 +761,13 @@ impl SingleFileDB {
 
     if let Some(added_edges) = pending.and_then(|p| p.in_add.get(&node_id)) {
       for edge_patch in added_edges {
-        if delta.is_node_deleted(edge_patch.other)
+        let src_visible = vc_guard
+          .as_ref()
+          .and_then(|vc| vc.get_node_version(edge_patch.other))
+          .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+        if src_visible == Some(false)
           || pending.is_some_and(|p| p.is_node_deleted(edge_patch.other))
+          || (src_visible.is_none() && delta.is_node_deleted(edge_patch.other))
         {
           continue;
         }
@@ -777,10 +863,40 @@ impl SingleFileDB {
       return true;
     }
 
+    let mut txid = 0;
+    let mut tx_snapshot_ts = 0;
+    let vc_guard = if let Some(mvcc) = self.mvcc.as_ref() {
+      if let Some(tx) = tx_guard.as_ref() {
+        txid = tx.txid;
+        tx_snapshot_ts = tx.snapshot_ts;
+      } else {
+        tx_snapshot_ts = mvcc.tx_manager.lock().get_next_commit_ts();
+      }
+      Some(mvcc.version_chain.lock())
+    } else {
+      None
+    };
+
+    let node_visible = vc_guard
+      .as_ref()
+      .and_then(|vc| vc.get_node_version(node_id))
+      .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+    if node_visible == Some(false) {
+      return false;
+    }
+
+    if let Some(vc) = vc_guard.as_ref() {
+      if let Some(label_version) = vc.get_node_label_version(node_id, label_id) {
+        if let Some(visible) = get_visible_version(&label_version, tx_snapshot_ts, txid) {
+          return visible.data.unwrap_or(false);
+        }
+      }
+    }
+
     let delta = self.delta.read();
 
     // Check if node is deleted
-    if delta.is_node_deleted(node_id) {
+    if node_visible.is_none() && delta.is_node_deleted(node_id) {
       return false;
     }
 
@@ -816,10 +932,32 @@ impl SingleFileDB {
       return Vec::new();
     }
 
+    let mut txid = 0;
+    let mut tx_snapshot_ts = 0;
+    let vc_guard = if let Some(mvcc) = self.mvcc.as_ref() {
+      if let Some(tx) = tx_guard.as_ref() {
+        txid = tx.txid;
+        tx_snapshot_ts = tx.snapshot_ts;
+      } else {
+        tx_snapshot_ts = mvcc.tx_manager.lock().get_next_commit_ts();
+      }
+      Some(mvcc.version_chain.lock())
+    } else {
+      None
+    };
+
+    let node_visible = vc_guard
+      .as_ref()
+      .and_then(|vc| vc.get_node_version(node_id))
+      .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+    if node_visible == Some(false) {
+      return Vec::new();
+    }
+
     let delta = self.delta.read();
 
     // Check if node is deleted
-    if delta.is_node_deleted(node_id) {
+    if node_visible.is_none() && delta.is_node_deleted(node_id) {
       return Vec::new();
     }
 
@@ -843,6 +981,23 @@ impl SingleFileDB {
     if let Some(removed) = delta.get_removed_labels(node_id) {
       for &label_id in removed {
         labels.remove(&label_id);
+      }
+    }
+
+    if let Some(vc) = vc_guard.as_ref() {
+      for label_id in vc.node_label_keys(node_id) {
+        if let Some(label_version) = vc.get_node_label_version(node_id, label_id) {
+          if let Some(visible) = get_visible_version(&label_version, tx_snapshot_ts, txid) {
+            match visible.data {
+              Some(true) => {
+                labels.insert(label_id);
+              }
+              _ => {
+                labels.remove(&label_id);
+              }
+            }
+          }
+        }
       }
     }
 
@@ -875,6 +1030,17 @@ impl SingleFileDB {
     let tx_handle = self.current_tx_handle();
     let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
     let pending = tx_guard.as_ref().map(|tx| &tx.pending);
+    let mut txid = 0;
+    let mut tx_snapshot_ts = 0;
+    if let Some(mvcc) = self.mvcc.as_ref() {
+      if let Some(handle) = tx_handle.as_ref() {
+        let tx = handle.lock();
+        txid = tx.txid;
+        tx_snapshot_ts = tx.snapshot_ts;
+      } else {
+        tx_snapshot_ts = mvcc.tx_manager.lock().get_next_commit_ts();
+      }
+    }
 
     if let Some(mvcc) = self.mvcc.as_ref() {
       if let Some(handle) = tx_handle.as_ref() {
@@ -884,6 +1050,12 @@ impl SingleFileDB {
       }
     }
 
+    let vc_guard = if let Some(mvcc) = self.mvcc.as_ref() {
+      Some(mvcc.version_chain.lock())
+    } else {
+      None
+    };
+
     let delta = self.delta.read();
 
     // Check pending key index first
@@ -892,11 +1064,17 @@ impl SingleFileDB {
     }
 
     if let Some(&node_id) = pending.and_then(|p| p.key_index.get(key)) {
-      if !pending.is_some_and(|p| p.is_node_deleted(node_id))
-        && !delta.is_node_deleted(node_id)
-      {
-        return Some(node_id);
+      if pending.is_some_and(|p| p.is_node_deleted(node_id)) {
+        return None;
       }
+      let node_visible = vc_guard
+        .as_ref()
+        .and_then(|vc| vc.get_node_version(node_id))
+        .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+      if node_visible == Some(false) {
+        return None;
+      }
+      return Some(node_id);
     }
 
     // Check committed delta key index
@@ -906,9 +1084,17 @@ impl SingleFileDB {
 
     if let Some(&node_id) = delta.key_index.get(key) {
       // Verify node isn't deleted
-      if !delta.is_node_deleted(node_id)
-        && !pending.is_some_and(|p| p.is_node_deleted(node_id))
-      {
+      if pending.is_some_and(|p| p.is_node_deleted(node_id)) {
+        return None;
+      }
+      let node_visible = vc_guard
+        .as_ref()
+        .and_then(|vc| vc.get_node_version(node_id))
+        .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+      if node_visible == Some(false) {
+        return None;
+      }
+      if node_visible == Some(true) || !delta.is_node_deleted(node_id) {
         return Some(node_id);
       }
     }
@@ -917,10 +1103,17 @@ impl SingleFileDB {
     let snapshot = self.snapshot.read();
     if let Some(ref snap) = *snapshot {
       if let Some(node_id) = snap.lookup_by_key(key) {
-        // Verify node isn't deleted in delta
-        if !delta.is_node_deleted(node_id)
-          && !pending.is_some_and(|p| p.is_node_deleted(node_id))
-        {
+        if pending.is_some_and(|p| p.is_node_deleted(node_id)) {
+          return None;
+        }
+        let node_visible = vc_guard
+          .as_ref()
+          .and_then(|vc| vc.get_node_version(node_id))
+          .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+        if node_visible == Some(false) {
+          return None;
+        }
+        if node_visible == Some(true) || !delta.is_node_deleted(node_id) {
           return Some(node_id);
         }
       }
@@ -936,6 +1129,19 @@ impl SingleFileDB {
     let tx_handle = self.current_tx_handle();
     let tx_guard = tx_handle.as_ref().map(|tx| tx.lock());
     let pending = tx_guard.as_ref().map(|tx| &tx.pending);
+    let mut txid = 0;
+    let mut tx_snapshot_ts = 0;
+    let vc_guard = if let Some(mvcc) = self.mvcc.as_ref() {
+      if let Some(tx) = tx_guard.as_ref() {
+        txid = tx.txid;
+        tx_snapshot_ts = tx.snapshot_ts;
+      } else {
+        tx_snapshot_ts = mvcc.tx_manager.lock().get_next_commit_ts();
+      }
+      Some(mvcc.version_chain.lock())
+    } else {
+      None
+    };
 
     if pending.is_some_and(|p| p.is_node_deleted(node_id)) {
       return None;
@@ -945,10 +1151,15 @@ impl SingleFileDB {
       return node_delta.key.clone();
     }
 
+    let node_visible = vc_guard
+      .as_ref()
+      .and_then(|vc| vc.get_node_version(node_id))
+      .map(|version| mvcc_node_exists(Some(version), tx_snapshot_ts, txid));
+
     let delta = self.delta.read();
 
     // Check if node is deleted
-    if delta.is_node_deleted(node_id) {
+    if node_visible == Some(false) || (node_visible.is_none() && delta.is_node_deleted(node_id)) {
       return None;
     }
 
