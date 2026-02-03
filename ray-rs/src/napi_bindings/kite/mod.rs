@@ -856,6 +856,17 @@ impl Kite {
     self.with_kite(|ray| Ok(ray.raw().has_transaction()))
   }
 
+  /// Perform a checkpoint (compact WAL into snapshot)
+  #[napi]
+  pub fn checkpoint(&self) -> Result<()> {
+    self.with_kite_mut(|ray| {
+      ray
+        .raw()
+        .checkpoint()
+        .map_err(|e| Error::from_reason(format!("Failed to checkpoint: {e}")))
+    })
+  }
+
   /// Execute a batch of operations atomically
   #[napi]
   pub fn batch(&self, env: Env, ops: Vec<Object>) -> Result<Vec<Object>> {

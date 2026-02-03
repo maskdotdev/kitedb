@@ -602,8 +602,8 @@ export declare class Kite {
   getEdgeProps(src: number, edgeType: string, dst: number): Record<string, JsPropValue>
   /** Set an edge property value */
   setEdgeProp(src: number, edgeType: string, dst: number, propName: string, value: unknown): void
-  /** Set multiple edge property values */
-  setEdgeProps(src: number, edgeType: string, dst: number, props: object): void
+  /** Set multiple edge properties */
+  setEdgeProps(src: number, edgeType: string, dst: number, props?: object | undefined | null): void
   /** Delete an edge property */
   delEdgeProp(src: number, edgeType: string, dst: number, propName: string): void
   /** Update edge properties with a builder */
@@ -640,13 +640,10 @@ export declare class Kite {
   rollback(): void
   /** Check if there's an active transaction */
   hasTransaction(): boolean
+  /** Perform a checkpoint (compact WAL into snapshot) */
+  checkpoint(): void
   /** Execute a batch of operations atomically */
   batch(ops: Array<object>): Array<object>
-  /**
-   * Execute batch operations with adaptive splitting on WAL buffer full.
-   * Non-atomic across the full list; opt-in.
-   */
-  batchAdaptive(ops: Array<object>, options?: { maxBatch?: number; minBatch?: number } | undefined | null): Array<object>
   /** Begin a traversal from a node ID */
   from(nodeId: number): KiteTraversal
   /** Begin a traversal from multiple nodes */

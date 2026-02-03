@@ -548,6 +548,10 @@ export class Kite extends NativeKite {
     }
   }
 
+  checkpoint(): void {
+    return super.checkpoint()
+  }
+
   batch(operations: Array<any>): any[] {
     if (operations.length === 0) {
       return []
@@ -620,7 +624,7 @@ export class Kite extends NativeKite {
 
   batchAdaptive(
     operations: Array<any>,
-    options?: { maxBatch?: number; minBatch?: number } | null,
+    options?: { maxBatch?: number; minBatch?: number; autoCheckpointOnWalFull?: boolean } | null,
   ): any[] {
     if (operations.length === 0) {
       return []
@@ -628,6 +632,7 @@ export class Kite extends NativeKite {
 
     let maxBatch = options?.maxBatch ?? 3000
     let minBatch = options?.minBatch ?? 1
+    const autoCheckpointOnWalFull = options?.autoCheckpointOnWalFull ?? true
     if (maxBatch < 1) maxBatch = 1
     if (minBatch < 1) minBatch = 1
     if (minBatch > maxBatch) minBatch = maxBatch
@@ -635,6 +640,7 @@ export class Kite extends NativeKite {
     const results: any[] = []
     let cursor = 0
     let batchSize = Math.min(maxBatch, operations.length)
+    let checkpointed = false
 
     while (cursor < operations.length) {
       const end = Math.min(cursor + batchSize, operations.length)
@@ -643,11 +649,23 @@ export class Kite extends NativeKite {
         const out = this.batch(slice)
         results.push(...out)
         cursor = end
+        checkpointed = false
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err)
-        if (/wal buffer full/i.test(message) && batchSize > minBatch) {
-          batchSize = Math.max(minBatch, Math.floor(batchSize / 2))
-          continue
+        if (/wal buffer full/i.test(message)) {
+          if (autoCheckpointOnWalFull && !this.hasTransaction() && !checkpointed) {
+            try {
+              this.checkpoint()
+              checkpointed = true
+              continue
+            } catch {
+              // fall through to size reduction
+            }
+          }
+          if (batchSize > minBatch) {
+            batchSize = Math.max(minBatch, Math.floor(batchSize / 2))
+            continue
+          }
         }
         throw err
       }
@@ -870,8 +888,9 @@ export interface Kite {
   ): void
   batchAdaptive(
     operations: Array<any>,
-    options?: { maxBatch?: number; minBatch?: number } | null,
+    options?: { maxBatch?: number; minBatch?: number; autoCheckpointOnWalFull?: boolean } | null,
   ): Array<any>
+  checkpoint(): void
   setEdgeProps(
     src: NodeIdLike,
     edgeType: EdgeLike,
