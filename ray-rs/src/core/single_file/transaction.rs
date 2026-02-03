@@ -9,6 +9,11 @@ use crate::error::{KiteError, Result};
 use crate::types::*;
 use parking_lot::Mutex;
 use std::sync::Arc;
+use std::time::Duration;
+#[cfg(feature = "bench-profile")]
+use std::sync::atomic::Ordering;
+#[cfg(feature = "bench-profile")]
+use std::time::Instant;
 
 use super::open::SyncMode;
 use super::{SingleFileDB, SingleFileTxState};
@@ -117,20 +122,35 @@ impl SingleFileDB {
       commit_ts_for_mvcc = Some((commit_ts, tx_mgr.get_active_count() > 0));
     }
 
-    // Serialize commit to preserve WAL ordering without holding the delta lock during I/O.
-    let _commit_guard = self.commit_lock.lock();
+    let group_commit_active = self.group_commit_enabled && self.sync_mode == SyncMode::Normal;
+    let mut group_commit_seq = 0u64;
 
-    // Write COMMIT record to WAL
-    let record = WalRecord::new(WalRecordType::Commit, txid, build_commit_payload());
     {
+      // Serialize commit to preserve WAL ordering without holding the delta lock during I/O.
+      #[cfg(feature = "bench-profile")]
+      let commit_lock_start = Instant::now();
+      let _commit_guard = self.commit_lock.lock();
+      #[cfg(feature = "bench-profile")]
+      self
+        .commit_lock_wait_ns
+        .fetch_add(commit_lock_start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+
+      // Write COMMIT record to WAL
+      let record = WalRecord::new(WalRecordType::Commit, txid, build_commit_payload());
       let mut pager = self.pager.lock();
       let mut wal = self.wal_buffer.lock();
       wal.write_record(&record, &mut pager)?;
 
       // Flush WAL to disk based on sync mode
       let should_flush = matches!(self.sync_mode, SyncMode::Full | SyncMode::Normal);
-      if should_flush {
+      if should_flush && !group_commit_active {
+        #[cfg(feature = "bench-profile")]
+        let flush_start = Instant::now();
         wal.flush(&mut pager)?;
+        #[cfg(feature = "bench-profile")]
+        self
+          .wal_flush_ns
+          .fetch_add(flush_start.elapsed().as_nanos() as u64, Ordering::Relaxed);
       }
 
       // Update header with current WAL state and commit metadata
@@ -161,10 +181,26 @@ impl SingleFileDB {
         pager.write_page(0, &header_bytes)?;
 
         if self.sync_mode == SyncMode::Full {
+          #[cfg(feature = "bench-profile")]
+          let sync_start = Instant::now();
           // Full durability: fsync after WAL + header updates
           pager.sync()?;
+          #[cfg(feature = "bench-profile")]
+          self
+            .wal_flush_ns
+            .fetch_add(sync_start.elapsed().as_nanos() as u64, Ordering::Relaxed);
         }
       }
+
+      if group_commit_active {
+        let mut state = self.group_commit_state.lock();
+        state.next_seq = state.next_seq.saturating_add(1);
+        group_commit_seq = state.next_seq;
+      }
+    }
+
+    if group_commit_active {
+      self.wait_for_group_commit(group_commit_seq)?;
     }
 
     let mut delta = self.delta.write();
@@ -442,6 +478,69 @@ impl SingleFileDB {
     let mut wal = self.wal_buffer.lock();
     wal.write_record(&record, &mut pager)?;
     Ok(())
+  }
+
+  fn wait_for_group_commit(&self, seq: u64) -> Result<()> {
+    let window_ms = self.group_commit_window_ms;
+
+    {
+      let mut state = self.group_commit_state.lock();
+      if state.flushing {
+        while state.flushed_seq < seq && state.last_error_seq < seq {
+          self.group_commit_cv.wait(&mut state);
+        }
+        if state.last_error_seq >= seq {
+          let message = state
+            .last_error
+            .as_deref()
+            .unwrap_or("group commit flush failed");
+          return Err(KiteError::Internal(message.to_string()));
+        }
+        return Ok(());
+      }
+      state.flushing = true;
+    }
+
+    if window_ms > 0 {
+      std::thread::sleep(Duration::from_millis(window_ms));
+    }
+
+    #[cfg(feature = "bench-profile")]
+    let commit_lock_start = Instant::now();
+    let _commit_guard = self.commit_lock.lock();
+    #[cfg(feature = "bench-profile")]
+    self
+      .commit_lock_wait_ns
+      .fetch_add(commit_lock_start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+
+    #[cfg(feature = "bench-profile")]
+    let flush_start = Instant::now();
+    let flush_result = {
+      let mut pager = self.pager.lock();
+      let mut wal = self.wal_buffer.lock();
+      wal.flush(&mut pager)
+    };
+    #[cfg(feature = "bench-profile")]
+    self
+      .wal_flush_ns
+      .fetch_add(flush_start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+
+    let mut state = self.group_commit_state.lock();
+    state.flushed_seq = state.next_seq;
+    state.flushing = false;
+    match &flush_result {
+      Ok(_) => {
+        state.last_error_seq = 0;
+        state.last_error = None;
+      }
+      Err(err) => {
+        state.last_error_seq = state.next_seq;
+        state.last_error = Some(err.to_string());
+      }
+    }
+    self.group_commit_cv.notify_all();
+
+    flush_result
   }
 
   /// Get current transaction ID or error

@@ -144,26 +144,18 @@ bun test tests/snapshot.test.ts
 bun test tests/mvcc.test.ts
 
 # Run benchmarks
-bun run bench/benchmark.ts
-bun run bench/benchmark-mvcc-v2.ts
+cd ray-rs
+cargo run --release --example single_file_raw_bench --no-default-features -- \
+  --nodes 10000 --edges 50000 --iterations 10000
+node --import @oxc-node/core/register benchmark/bench-fluent-vs-lowlevel.ts
+cargo run --release --example vector_bench --no-default-features -- \
+  --vectors 10000 --dimensions 768 --iterations 1000 --k 10 --n-probe 10
+python3 python/benchmarks/benchmark_single_file_raw.py \
+  --nodes 10000 --edges 50000 --iterations 10000
 
 # Type check
 bun run tsc --noEmit
 ```
-
-### Benchmark memory usage
-
-The MVCC v2 benchmark (`bench/benchmark-mvcc-v2.ts`) includes a `scale` scenario
-that deliberately builds a ~1M node / 5M edge graph fully in memory to stress
-snapshot layout and MVCC. On typical machines this will use several GB of RAM.
-For local runs, you can reduce memory pressure by lowering `--scale-nodes`
-(e.g. `--scale-nodes 200000`) or disabling the `scale` scenario via
-`--scenarios warm,contested,version-chain`.
-
-This benchmark measures the in-memory engine; it does **not** mean your
-application must keep all data resident. You can `db.close()` to flush and
-unmap the snapshot/WAL data, and later `Database.open(...)` on the same path to
-read from the embedded on-disk snapshot again.
 
 ## License
 

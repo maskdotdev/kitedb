@@ -556,7 +556,7 @@ db.link(doc, discusses, topic, relevance=0.95)
 
 						<div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
 							<ConsoleStat label="NODE_LOOKUP" value="~125" unit="ns" />
-							<ConsoleStat label="1_HOP_TRAVERSAL" value="~1.1" unit="μs" />
+							<ConsoleStat label="1_HOP_TRAVERSAL" value="~208" unit="ns" />
 							<ConsoleStat label="DEPENDENCIES" value="0" />
 							<ConsoleStat label="CORE" value="Rust" />
 						</div>
@@ -565,7 +565,7 @@ db.link(doc, discusses, topic, relevance=0.95)
 						<div class="mt-8 max-w-2xl mx-auto">
 							<div class="flex items-center justify-between text-xs font-mono text-slate-500 mb-2">
 								<span>PERFORMANCE_LEVEL</span>
-								<span class="text-[#00d4ff]">118× faster than Memgraph</span>
+								<span class="text-[#00d4ff]">Benchmark snapshot: 2026-02-03</span>
 							</div>
 							<div class="voltage-bar relative">
 								<div class="voltage-bar-fill" style="width: 95%" />
@@ -636,7 +636,7 @@ db.link(doc, discusses, topic, relevance=0.95)
 								<div class="grid sm:grid-cols-2 gap-4">
 									<ElectricCard
 										title="~125ns Lookups"
-										description="~125ns node lookups, ~1.1μs traversals. 118× faster than Memgraph."
+										description="~125ns node lookups, ~208ns traversals (p50, Apple M4)."
 										icon={<Zap class="w-5 h-5" aria-hidden="true" />}
 									/>
 									<ElectricCard

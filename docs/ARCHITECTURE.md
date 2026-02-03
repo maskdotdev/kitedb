@@ -522,20 +522,16 @@ const path = await db
 | **Writes** | WAL + async checkpoint | Durable without blocking reads |
 | **Concurrency** | Lazy MVCC | No overhead in serial workloads |
 
-### Benchmark Results (vs Memgraph)
+### Benchmark Snapshot (2026-02-03)
 
-At 100k nodes / 1M edges scale:
+Single-file raw bench (Rust core, 10k nodes / 50k edges, p50):
 
-| Operation | RayDB Speedup |
-|-----------|---------------|
-| Key Lookups | ~624x faster |
-| Traversals | ~52x faster |
-| Edge Checks | ~164x faster |
-| Multi-Hop | ~252x faster |
-| Writes | ~1.5x faster |
-| **Overall** | **~118x faster** |
+| Operation | p50 |
+|-----------|-----|
+| Key lookup (random existing) | 125ns |
+| 1-hop traversal (out) | 208ns |
+| Edge exists (random) | 83ns |
+| Batch write (100 nodes) | 45.62us |
 
-The performance advantage comes primarily from:
-1. **No network overhead** - embedded vs client-server
-2. **Zero-copy mmap** - OS page cache vs application-level serialization
-3. **CSR format** - optimal memory layout for graph traversal
+See `docs/BENCHMARKS.md` and the raw logs in
+`docs/benchmarks/results/` for full details and run commands.

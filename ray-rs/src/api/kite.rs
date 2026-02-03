@@ -521,7 +521,7 @@ impl NodeRef {
 // ============================================================================
 
 /// Options for opening a Kite database
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct KiteOptions {
   /// Node type definitions
   pub nodes: Vec<NodeDef>,
@@ -533,6 +533,10 @@ pub struct KiteOptions {
   pub create_if_missing: bool,
   /// Synchronization mode for WAL writes (default: Full)
   pub sync_mode: SyncMode,
+  /// Enable group commit (coalesce WAL flushes across commits)
+  pub group_commit_enabled: bool,
+  /// Group commit window in milliseconds
+  pub group_commit_window_ms: u64,
   /// Enable MVCC (snapshot isolation + conflict detection)
   pub mvcc: bool,
   /// MVCC GC interval in ms
@@ -551,6 +555,8 @@ impl KiteOptions {
       read_only: false,
       create_if_missing: true,
       sync_mode: SyncMode::Full,
+      group_commit_enabled: false,
+      group_commit_window_ms: 2,
       mvcc: false,
       mvcc_gc_interval_ms: None,
       mvcc_retention_ms: None,
@@ -575,6 +581,18 @@ impl KiteOptions {
 
   pub fn sync_mode(mut self, mode: SyncMode) -> Self {
     self.sync_mode = mode;
+    self
+  }
+
+  /// Enable or disable group commit (coalesce WAL flushes across commits)
+  pub fn group_commit_enabled(mut self, value: bool) -> Self {
+    self.group_commit_enabled = value;
+    self
+  }
+
+  /// Set the group commit window in milliseconds
+  pub fn group_commit_window_ms(mut self, value: u64) -> Self {
+    self.group_commit_window_ms = value;
     self
   }
 
@@ -608,6 +626,12 @@ impl KiteOptions {
   pub fn mvcc_max_chain_depth(mut self, value: usize) -> Self {
     self.mvcc_max_chain_depth = Some(value);
     self
+  }
+}
+
+impl Default for KiteOptions {
+  fn default() -> Self {
+    Self::new()
   }
 }
 
@@ -662,6 +686,8 @@ impl Kite {
       .read_only(options.read_only)
       .create_if_missing(options.create_if_missing)
       .sync_mode(options.sync_mode)
+      .group_commit_enabled(options.group_commit_enabled)
+      .group_commit_window_ms(options.group_commit_window_ms)
       .mvcc(options.mvcc);
     if let Some(v) = options.mvcc_gc_interval_ms {
       db_options = db_options.mvcc_gc_interval_ms(v);
@@ -1438,6 +1464,11 @@ impl Kite {
       .ok_or_else(|| KiteError::InvalidSchema("Edge type not initialized".into()))?;
 
     Ok(count_edges(&self.db, Some(etype_id)))
+  }
+
+  #[cfg(feature = "bench-profile")]
+  pub fn take_profile_snapshot(&self) -> (u64, u64) {
+    self.db.take_profile_snapshot()
   }
 
   /// List all node IDs

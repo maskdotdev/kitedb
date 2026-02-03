@@ -426,11 +426,9 @@ class CacheManager {
 When implementing optimizations, benchmark with:
 
 ```bash
-# Multi-file baseline
-bun run bench/benchmark.ts --nodes 10000 --edges 50000 --iterations 10000
-
-# Single-file comparison
-bun run bench/benchmark-single-file.ts --nodes 10000 --edges 50000 --iterations 10000
+cd ray-rs
+cargo run --release --example single_file_raw_bench --no-default-features -- \
+  --nodes 10000 --edges 50000 --iterations 10000
 ```
 
 Key metrics to track:

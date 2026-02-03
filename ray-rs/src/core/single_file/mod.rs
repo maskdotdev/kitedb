@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::thread::ThreadId;
 
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Condvar, Mutex, RwLock};
 
 use crate::cache::manager::CacheManager;
 use crate::constants::*;
@@ -110,6 +110,10 @@ pub struct SingleFileDB {
   /// Serialize commit operations to preserve WAL/delta ordering
   pub(crate) commit_lock: Mutex<()>,
 
+  /// Group commit state (coalesces WAL flushes)
+  pub(crate) group_commit_state: Mutex<GroupCommitState>,
+  pub(crate) group_commit_cv: Condvar,
+
   /// MVCC manager (if enabled)
   pub mvcc: Option<std::sync::Arc<MvccManager>>,
 
@@ -147,6 +151,16 @@ pub struct SingleFileDB {
 
   /// Synchronization mode for WAL writes
   pub(crate) sync_mode: open::SyncMode,
+
+  /// Enable group commit (coalesce WAL flushes across commits)
+  pub(crate) group_commit_enabled: bool,
+  /// Group commit window in milliseconds
+  pub(crate) group_commit_window_ms: u64,
+
+  #[cfg(feature = "bench-profile")]
+  pub(crate) commit_lock_wait_ns: AtomicU64,
+  #[cfg(feature = "bench-profile")]
+  pub(crate) wal_flush_ns: AtomicU64,
 }
 
 /// Checkpoint state for background checkpointing
@@ -158,6 +172,15 @@ pub enum CheckpointStatus {
   Running,
   /// Completing checkpoint (brief lock for final updates)
   Completing,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct GroupCommitState {
+  pub next_seq: u64,
+  pub flushed_seq: u64,
+  pub flushing: bool,
+  pub last_error_seq: u64,
+  pub last_error: Option<String>,
 }
 
 // ============================================================================
@@ -206,6 +229,14 @@ impl SingleFileDB {
   /// Allocate a new transaction ID
   pub fn alloc_tx_id(&self) -> TxId {
     self.next_tx_id.fetch_add(1, Ordering::SeqCst)
+  }
+
+  #[cfg(feature = "bench-profile")]
+  pub fn take_profile_snapshot(&self) -> (u64, u64) {
+    (
+      self.commit_lock_wait_ns.swap(0, Ordering::Relaxed),
+      self.wal_flush_ns.swap(0, Ordering::Relaxed),
+    )
   }
 
   /// Check if a node exists

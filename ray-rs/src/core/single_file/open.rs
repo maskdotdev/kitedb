@@ -91,6 +91,10 @@ pub struct SingleFileOpenOptions {
   pub checkpoint_compression: Option<CompressionOptions>,
   /// Synchronization mode for WAL writes (default: Full)
   pub sync_mode: SyncMode,
+  /// Enable group commit (coalesce WAL flushes across commits)
+  pub group_commit_enabled: bool,
+  /// Group commit window in milliseconds
+  pub group_commit_window_ms: u64,
   /// Snapshot parse behavior (default: Strict)
   pub snapshot_parse_mode: SnapshotParseMode,
 }
@@ -115,6 +119,8 @@ impl Default for SingleFileOpenOptions {
         ..Default::default()
       }),
       sync_mode: SyncMode::Full,
+      group_commit_enabled: false,
+      group_commit_window_ms: 2,
       snapshot_parse_mode: SnapshotParseMode::Strict,
     }
   }
@@ -205,6 +211,18 @@ impl SingleFileOpenOptions {
 
   pub fn sync_mode(mut self, mode: SyncMode) -> Self {
     self.sync_mode = mode;
+    self
+  }
+
+  /// Enable or disable group commit (coalesce WAL flushes across commits)
+  pub fn group_commit_enabled(mut self, value: bool) -> Self {
+    self.group_commit_enabled = value;
+    self
+  }
+
+  /// Set the group commit window in milliseconds
+  pub fn group_commit_window_ms(mut self, value: u64) -> Self {
+    self.group_commit_window_ms = value;
     self
   }
 
@@ -618,6 +636,8 @@ pub fn open_single_file<P: AsRef<Path>>(
     next_tx_id: AtomicU64::new(next_tx_id),
     current_tx: Mutex::new(HashMap::new()),
     commit_lock: Mutex::new(()),
+    group_commit_state: Mutex::new(super::GroupCommitState::default()),
+    group_commit_cv: parking_lot::Condvar::new(),
     mvcc,
     label_names: RwLock::new(label_names),
     label_ids: RwLock::new(label_ids),
@@ -633,6 +653,12 @@ pub fn open_single_file<P: AsRef<Path>>(
     cache: RwLock::new(cache),
     checkpoint_compression: options.checkpoint_compression.clone(),
     sync_mode: options.sync_mode,
+    group_commit_enabled: options.group_commit_enabled,
+    group_commit_window_ms: options.group_commit_window_ms,
+    #[cfg(feature = "bench-profile")]
+    commit_lock_wait_ns: AtomicU64::new(0),
+    #[cfg(feature = "bench-profile")]
+    wal_flush_ns: AtomicU64::new(0),
   })
 }
 
@@ -964,4 +990,3 @@ mod tests {
     close_single_file(db).unwrap();
   }
 }
-

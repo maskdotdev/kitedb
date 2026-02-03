@@ -103,6 +103,7 @@ default = ["napi"]
 napi = ["dep:napi", "dep:napi-derive", "dep:napi-build"]
 python = ["dep:pyo3", "dep:numpy"]
 async = ["tokio"]
+bench-profile = []
 
 [profile.release]
 lto = true

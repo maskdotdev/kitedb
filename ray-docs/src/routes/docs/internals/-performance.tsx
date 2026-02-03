@@ -319,56 +319,39 @@ export function PerformancePage() {
 			<h2 id="benchmarks">Benchmark Results</h2>
 
 			<p>
-				Measured against Memgraph (a fast graph database) at 100K nodes / 1M
-				edges:
+				Latest snapshot (single-file raw, Rust core, 10k nodes / 50k edges,
+				February 3, 2026):
 			</p>
 
 			<table>
 				<thead>
 					<tr>
 						<th>Operation</th>
-						<th>KiteDB</th>
-						<th>Memgraph</th>
-						<th>Speedup</th>
+						<th>p50</th>
 					</tr>
 				</thead>
 				<tbody>
 					<tr>
-						<td>Key lookup</td>
-						<td>160ns</td>
-						<td>100μs</td>
-						<td>624x</td>
+						<td>Key lookup (random existing)</td>
+						<td>125ns</td>
 					</tr>
 					<tr>
-						<td>1-hop traversal</td>
-						<td>1.9μs</td>
-						<td>100μs</td>
-						<td>52x</td>
+						<td>1-hop traversal (out)</td>
+						<td>208ns</td>
 					</tr>
 					<tr>
-						<td>Edge existence</td>
-						<td>610ns</td>
-						<td>100μs</td>
-						<td>164x</td>
+						<td>Edge exists (random)</td>
+						<td>83ns</td>
 					</tr>
 					<tr>
-						<td>2-hop traversal</td>
-						<td>397μs</td>
-						<td>100ms</td>
-						<td>252x</td>
-					</tr>
-					<tr>
-						<td>Batch insert</td>
-						<td>6.7ms</td>
-						<td>10ms</td>
-						<td>1.5x</td>
+						<td>Batch write (100 nodes)</td>
+						<td>45.62us</td>
 					</tr>
 				</tbody>
 			</table>
 
 			<p>
-				The large speedups come from eliminating network overhead and using
-				cache-friendly data structures.
+				Full logs and run commands are in <code>docs/benchmarks/results/</code>.
 			</p>
 
 			<h2 id="best-practices">Best Practices</h2>
