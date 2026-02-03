@@ -26,6 +26,8 @@ import { MultiLangCode } from "~/components/multi-lang-code";
 import { MultiLangTabs } from "~/components/multi-lang-tabs";
 import { searchDialog } from "~/components/search-dialog";
 
+const KITE_VERSION = __KITE_VERSION__;
+
 export const Route = createFileRoute("/")({
 	component: HomePage,
 });
@@ -469,7 +471,7 @@ db.link(doc, discusses, topic, relevance=0.95)
 
 								{/* Version info */}
 								<div class="flex items-center justify-center gap-4 text-sm text-slate-500">
-									<span>v0.1.0</span>
+									<span>{`v${KITE_VERSION}`}</span>
 									<span class="text-[#28c840]">● online</span>
 									<span>rust core</span>
 								</div>
@@ -1027,7 +1029,7 @@ db.link(doc, discusses, topic, relevance=0.95)
 							<span class="text-[#00d4ff]">❯</span>
 							<Logo size={20} />
 							<span class="text-slate-400">kitedb</span>
-							<span class="text-slate-600">v0.1.0</span>
+							<span class="text-slate-600">{`v${KITE_VERSION}`}</span>
 						</div>
 
 						<p class="text-slate-500">
