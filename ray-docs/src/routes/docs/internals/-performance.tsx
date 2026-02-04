@@ -367,6 +367,30 @@ export function PerformancePage() {
 				Full logs and run commands are in <code>docs/benchmarks/results/</code>.
 			</p>
 
+			<h3>Write Durability vs Throughput</h3>
+			<ul class="space-y-2 text-sm text-slate-400">
+				<li>
+					<b class="text-slate-200">Defaults stay safe:</b> <code>sync_mode=Full</code>,{" "}
+					<code>group_commit=false</code>.
+				</li>
+				<li>
+					<b class="text-slate-200">Single-writer, low latency:</b>{" "}
+					<code>sync_mode=Normal</code> + <code>group_commit=false</code>.
+				</li>
+				<li>
+					<b class="text-slate-200">Multi-writer throughput:</b>{" "}
+					<code>sync_mode=Normal</code> + <code>group_commit=true</code> (1-2ms).
+				</li>
+				<li>
+					<b class="text-slate-200">Highest speed, weakest durability:</b>{" "}
+					<code>sync_mode=Off</code> (testing/throwaway only).
+				</li>
+			</ul>
+			<p class="text-sm text-slate-500 mt-3">
+				Group commit adds intentional latency to coalesce commits; it improves
+				throughput under concurrency, but can slow single-threaded benchmarks.
+			</p>
+
 			<h2 id="best-practices">Best Practices</h2>
 
 			<h3>Batch Writes</h3>
