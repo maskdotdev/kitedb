@@ -133,17 +133,14 @@ fn bench_write_concurrent_variant(
     group.throughput(Throughput::Elements(total_ops as u64));
 
     group.bench_with_input(
-      BenchmarkId::new(
-        if group_commit { "gc_on" } else { "gc_off" },
-        num_threads,
-      ),
+      BenchmarkId::new(if group_commit { "gc_on" } else { "gc_off" }, num_threads),
       &num_threads,
       move |bencher, &num_threads| {
         bencher.iter_batched(
           || {
             let temp_dir = tempdir().unwrap();
-            let kite = Kite::open(temp_db_path(&temp_dir), create_write_schema(group_commit))
-              .unwrap();
+            let kite =
+              Kite::open(temp_db_path(&temp_dir), create_write_schema(group_commit)).unwrap();
             let kite = Arc::new(parking_lot::RwLock::new(kite));
             (temp_dir, kite)
           },
@@ -190,10 +187,7 @@ fn bench_write_concurrent_variant(
               let kite_ref = kite.read();
               maybe_log_profile(
                 &kite_ref,
-                &format!(
-                  "concurrent threads={num_threads} mode={:?} gc={group_commit}",
-                  lock_mode
-                ),
+                &format!("concurrent threads={num_threads} mode={lock_mode:?} gc={group_commit}"),
               );
             }
 
@@ -226,8 +220,8 @@ fn bench_write_single(c: &mut Criterion) {
           bencher.iter_batched(
             || {
               let temp_dir = tempdir().unwrap();
-              let kite = Kite::open(temp_db_path(&temp_dir), create_write_schema(group_commit))
-                .unwrap();
+              let kite =
+                Kite::open(temp_db_path(&temp_dir), create_write_schema(group_commit)).unwrap();
               (temp_dir, kite)
             },
             |(_temp_dir, mut kite)| {
@@ -254,7 +248,7 @@ fn bench_write_batch_tx(c: &mut Criterion) {
   group.sample_size(10);
 
   for &total_ops in [1_000usize, 5_000usize].iter() {
-    for &batch_size in [10usize, 100usize].iter() {
+    for &batch_size in [10usize, 100usize, 500usize, 1000usize].iter() {
       for &group_commit in [false, true].iter() {
         let label = if group_commit { "gc_on" } else { "gc_off" };
         let bench_id = format!("bs{batch_size}_{label}");
@@ -266,8 +260,8 @@ fn bench_write_batch_tx(c: &mut Criterion) {
             bencher.iter_batched(
               || {
                 let temp_dir = tempdir().unwrap();
-                let kite = Kite::open(temp_db_path(&temp_dir), create_write_schema(group_commit))
-                  .unwrap();
+                let kite =
+                  Kite::open(temp_db_path(&temp_dir), create_write_schema(group_commit)).unwrap();
                 (temp_dir, kite)
               },
               |(_temp_dir, mut kite)| {
@@ -280,9 +274,7 @@ fn bench_write_batch_tx(c: &mut Criterion) {
                 #[cfg(feature = "bench-profile")]
                 maybe_log_profile(
                   &kite,
-                  &format!(
-                    "batch total={total_ops} batch_size={batch_size} gc={group_commit}"
-                  ),
+                  &format!("batch total={total_ops} batch_size={batch_size} gc={group_commit}"),
                 );
                 kite.close().unwrap();
                 black_box(());

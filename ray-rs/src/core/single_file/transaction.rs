@@ -563,15 +563,6 @@ impl SingleFileDB {
     }
 
     #[cfg(feature = "bench-profile")]
-    let commit_lock_start = Instant::now();
-    let _commit_guard = self.commit_lock.lock();
-    #[cfg(feature = "bench-profile")]
-    self.commit_lock_wait_ns.fetch_add(
-      commit_lock_start.elapsed().as_nanos() as u64,
-      Ordering::Relaxed,
-    );
-
-    #[cfg(feature = "bench-profile")]
     let flush_start = Instant::now();
     let flush_result = {
       let mut pager = self.pager.lock();
