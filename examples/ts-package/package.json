@@ -10,7 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@kitedb/core": "0.2.7"
+    "@kitedb/core": "0.2.12"
   },
   "devDependencies": {
     "tsx": "^4.20.0",

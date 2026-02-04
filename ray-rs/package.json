@@ -1,6 +1,6 @@
 {
   "name": "@kitedb/core",
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "KiteDB - High-performance embedded graph database with vector search",
   "author": "mask <mask@mask.dev>",
   "homepage": "https://kitedb.vercel.com/",
@@ -138,9 +138,9 @@
   },
   "packageManager": "bun@1.2.4",
   "optionalDependencies": {
-    "@kitedb/core-win32-x64-msvc": "0.2.11",
-    "@kitedb/core-darwin-x64": "0.2.11",
-    "@kitedb/core-linux-x64-gnu": "0.2.11",
-    "@kitedb/core-darwin-arm64": "0.2.11"
+    "@kitedb/core-win32-x64-msvc": "0.2.12",
+    "@kitedb/core-darwin-x64": "0.2.12",
+    "@kitedb/core-linux-x64-gnu": "0.2.12",
+    "@kitedb/core-darwin-arm64": "0.2.12"
   }
 }
