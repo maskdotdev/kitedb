@@ -208,8 +208,9 @@ impl Kite {
 
       match node_ref {
         Some(node_ref) => {
-          let props = get_node_props_selected(ray, node_ref.id, selected_props.as_ref());
-          let obj = node_to_js(&env, node_ref.id, node_ref.key, &node_ref.node_type, props)?;
+          let (node_id, node_key, node_type) = node_ref.into_parts();
+          let props = get_node_props_selected(ray, node_id, selected_props.as_ref());
+          let obj = node_to_js(&env, node_id, node_key, &node_type, props)?;
           Ok(Some(obj))
         }
         None => Ok(None),
@@ -228,12 +229,13 @@ impl Kite {
     let selected_props = props.map(|props| props.into_iter().collect::<HashSet<String>>());
     self.with_kite(move |ray| {
       let node_ref = ray
-        .get_by_id(node_id as NodeId)
+        .node_by_id(node_id as NodeId)
         .map_err(|e| Error::from_reason(e.to_string()))?;
       match node_ref {
         Some(node_ref) => {
-          let props = get_node_props_selected(ray, node_ref.id, selected_props.as_ref());
-          let obj = node_to_js(&env, node_ref.id, node_ref.key, &node_ref.node_type, props)?;
+          let (node_id, node_key, node_type) = node_ref.into_parts();
+          let props = get_node_props_selected(ray, node_id, selected_props.as_ref());
+          let obj = node_to_js(&env, node_id, node_key, &node_type, props)?;
           Ok(Some(obj))
         }
         None => Ok(None),
@@ -250,18 +252,13 @@ impl Kite {
     };
     self.with_kite(move |ray| {
       let node_ref = ray
-        .get_ref(&node_type, &key_suffix)
+        .node_ref(&node_type, &key_suffix)
         .map_err(|e| Error::from_reason(e.to_string()))?;
 
       match node_ref {
         Some(node_ref) => {
-          let obj = node_to_js(
-            &env,
-            node_ref.id,
-            node_ref.key,
-            &node_ref.node_type,
-            HashMap::new(),
-          )?;
+          let (node_id, node_key, node_type) = node_ref.into_parts();
+          let obj = node_to_js(&env, node_id, node_key, &node_type, HashMap::new())?;
           Ok(Some(obj))
         }
         None => Ok(None),
@@ -281,7 +278,7 @@ impl Kite {
         ray
           .get(&node_type, &key_suffix)
           .map_err(|e| Error::from_reason(e.to_string()))?
-          .map(|node| node.id as i64),
+          .map(|node| node.id() as i64),
       )
     })
   }
@@ -303,17 +300,12 @@ impl Kite {
       let mut out = Vec::with_capacity(node_ids.len());
       for node_id in node_ids {
         let node_ref = ray
-          .get_by_id(node_id as NodeId)
+          .node_by_id(node_id as NodeId)
           .map_err(|e| Error::from_reason(e.to_string()))?;
         if let Some(node_ref) = node_ref {
-          let props = get_node_props_selected(ray, node_ref.id, selected_props.as_ref());
-          out.push(node_to_js(
-            &env,
-            node_ref.id,
-            node_ref.key,
-            &node_ref.node_type,
-            props,
-          )?);
+          let (node_id, node_key, node_type) = node_ref.into_parts();
+          let props = get_node_props_selected(ray, node_id, selected_props.as_ref());
+          out.push(node_to_js(&env, node_id, node_key, &node_type, props)?);
         }
       }
       Ok(out)
@@ -323,7 +315,7 @@ impl Kite {
   /// Get a node property value
   #[napi]
   pub fn get_prop(&self, node_id: i64, prop_name: String) -> Result<Option<JsPropValue>> {
-    let value = self.with_kite(|ray| Ok(ray.get_prop(node_id as NodeId, &prop_name)))?;
+    let value = self.with_kite(|ray| Ok(ray.prop(node_id as NodeId, &prop_name)))?;
     Ok(value.map(JsPropValue::from))
   }
 
@@ -377,7 +369,7 @@ impl Kite {
         .node_def(&node_type)
         .ok_or_else(|| Error::from_reason(format!("Unknown node type: {node_type}")))?
         .key(&key_suffix);
-      let node_id = ray.raw().get_node_by_key(&full_key);
+      let node_id = ray.raw().node_by_key(&full_key);
       match node_id {
         Some(id) => {
           let res = ray
@@ -452,7 +444,7 @@ impl Kite {
         .get(&node_type, &key_suffix)
         .map_err(|e| Error::from_reason(e.to_string()))?;
       match node_ref {
-        Some(node_ref) => Ok(KiteUpdateBuilder::new(self.inner.clone(), node_ref.id)),
+        Some(node_ref) => Ok(KiteUpdateBuilder::new(self.inner.clone(), node_ref.id())),
         None => Err(Error::from_reason("Key not found")),
       }
     })
@@ -513,7 +505,7 @@ impl Kite {
   ) -> Result<Option<JsPropValue>> {
     let value = self.with_kite(|ray| {
       ray
-        .get_edge_prop(src as NodeId, &edge_type, dst as NodeId, &prop_name)
+        .edge_prop(src as NodeId, &edge_type, dst as NodeId, &prop_name)
         .map_err(|e| Error::from_reason(e.to_string()))
     })?;
     Ok(value.map(JsPropValue::from))
@@ -530,7 +522,7 @@ impl Kite {
     let props = self
       .with_kite(|ray| {
         ray
-          .get_edge_props(src as NodeId, &edge_type, dst as NodeId)
+          .edge_props(src as NodeId, &edge_type, dst as NodeId)
           .map_err(|e| Error::from_reason(e.to_string()))
       })?
       .unwrap_or_default();
@@ -657,14 +649,9 @@ impl Kite {
         .map_err(|e| Error::from_reason(e.to_string()))?;
       let mut out = Vec::new();
       for node_ref in nodes {
-        let props = get_node_props(ray, node_ref.id);
-        out.push(node_to_js(
-          &env,
-          node_ref.id,
-          node_ref.key,
-          &node_ref.node_type,
-          props,
-        )?);
+        let (node_id, node_key, node_type) = node_ref.into_parts();
+        let props = get_node_props(ray, node_id);
+        out.push(node_to_js(&env, node_id, node_key, &node_type, props)?);
       }
       Ok(out)
     })

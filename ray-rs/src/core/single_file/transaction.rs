@@ -102,6 +102,207 @@ impl SingleFileDB {
     self.begin_with_mode(false, true)
   }
 
+  fn apply_mvcc_commit(
+    &self,
+    commit_ts_for_mvcc: Option<(u64, bool)>,
+    txid: TxId,
+    pending: &DeltaState,
+    delta: &DeltaState,
+  ) {
+    let Some((commit_ts, has_active_readers)) = commit_ts_for_mvcc else {
+      return;
+    };
+    let Some(mvcc) = self.mvcc.as_ref() else {
+      return;
+    };
+    if !has_active_readers {
+      return;
+    }
+
+    let snapshot = self.snapshot.read();
+    let mut vc = mvcc.version_chain.lock();
+
+    for (&node_id, node_delta) in &pending.created_nodes {
+      vc.append_node_version(
+        node_id,
+        NodeVersionData {
+          node_id,
+          delta: node_delta.for_version(),
+        },
+        txid,
+        commit_ts,
+      );
+    }
+
+    for &node_id in &pending.deleted_nodes {
+      vc.delete_node_version(node_id, txid, commit_ts);
+    }
+
+    for (&src, patches) in &pending.out_add {
+      for patch in patches {
+        vc.append_edge_version(src, patch.etype, patch.other, true, txid, commit_ts);
+      }
+    }
+
+    for (&src, patches) in &pending.out_del {
+      for patch in patches {
+        vc.append_edge_version(src, patch.etype, patch.other, false, txid, commit_ts);
+      }
+    }
+
+    let old_node_prop = |node_id: NodeId, key_id: PropKeyId| -> Option<PropValue> {
+      if delta.is_node_deleted(node_id) {
+        return None;
+      }
+      if let Some(value_opt) = delta.node_prop(node_id, key_id) {
+        return value_opt.cloned();
+      }
+      if let Some(ref snap) = *snapshot {
+        if let Some(phys) = snap.phys_node(node_id) {
+          return snap.node_prop(phys, key_id);
+        }
+      }
+      None
+    };
+
+    let old_edge_prop = |src: NodeId, etype: ETypeId, dst: NodeId, key_id: PropKeyId| {
+      if delta.is_node_deleted(src) || delta.is_node_deleted(dst) {
+        return None;
+      }
+      if delta.is_edge_deleted(src, etype, dst) {
+        return None;
+      }
+      if let Some(value_opt) = delta.edge_prop(src, etype, dst, key_id) {
+        return value_opt.cloned();
+      }
+      if let Some(ref snap) = *snapshot {
+        if let (Some(src_phys), Some(dst_phys)) = (snap.phys_node(src), snap.phys_node(dst)) {
+          if let Some(edge_idx) = snap.find_edge_index(src_phys, etype, dst_phys) {
+            if let Some(snapshot_props) = snap.edge_props(edge_idx) {
+              return snapshot_props.get(&key_id).cloned();
+            }
+          }
+        }
+      }
+      None
+    };
+
+    let old_node_label = |node_id: NodeId, label_id: LabelId| -> bool {
+      if delta.is_node_deleted(node_id) {
+        return false;
+      }
+      if let Some(node_delta) = delta.node_delta(node_id) {
+        if node_delta
+          .labels_deleted
+          .as_ref()
+          .is_some_and(|labels| labels.contains(&label_id))
+        {
+          return false;
+        }
+        if node_delta
+          .labels
+          .as_ref()
+          .is_some_and(|labels| labels.contains(&label_id))
+        {
+          return true;
+        }
+      }
+      if let Some(ref snap) = *snapshot {
+        if let Some(phys) = snap.phys_node(node_id) {
+          if let Some(labels) = snap.node_labels(phys) {
+            return labels.contains(&label_id);
+          }
+        }
+      }
+      false
+    };
+
+    for (node_id, node_delta) in pending
+      .created_nodes
+      .iter()
+      .chain(pending.modified_nodes.iter())
+    {
+      if pending.deleted_nodes.contains(node_id) {
+        continue;
+      }
+
+      if let Some(after_map) = node_delta.props.as_ref() {
+        for (key_id, after_value) in after_map {
+          let mut before_value = old_node_prop(*node_id, *key_id);
+          if before_value.as_ref() == after_value.as_deref() {
+            continue;
+          }
+          if vc.node_prop_version(*node_id, *key_id).is_none() {
+            let before_shared = before_value.take().map(std::sync::Arc::new);
+            vc.append_node_prop_version(*node_id, *key_id, before_shared, 0, 0);
+          }
+          vc.append_node_prop_version(*node_id, *key_id, after_value.clone(), txid, commit_ts);
+        }
+      }
+
+      if let Some(added_labels) = node_delta.labels.as_ref() {
+        for label_id in added_labels {
+          let before_value = old_node_label(*node_id, *label_id);
+          if before_value {
+            continue;
+          }
+          if vc.node_label_version(*node_id, *label_id).is_none() {
+            vc.append_node_label_version(
+              *node_id,
+              *label_id,
+              if before_value { Some(true) } else { None },
+              0,
+              0,
+            );
+          }
+          vc.append_node_label_version(*node_id, *label_id, Some(true), txid, commit_ts);
+        }
+      }
+
+      if let Some(removed_labels) = node_delta.labels_deleted.as_ref() {
+        for label_id in removed_labels {
+          let before_value = old_node_label(*node_id, *label_id);
+          if !before_value {
+            continue;
+          }
+          if vc.node_label_version(*node_id, *label_id).is_none() {
+            vc.append_node_label_version(
+              *node_id,
+              *label_id,
+              if before_value { Some(true) } else { None },
+              0,
+              0,
+            );
+          }
+          vc.append_node_label_version(*node_id, *label_id, None, txid, commit_ts);
+        }
+      }
+    }
+
+    for (edge_key, after_props) in &pending.edge_props {
+      for (key_id, after_value) in after_props {
+        let (src, etype, dst) = *edge_key;
+        let mut before_value = old_edge_prop(src, etype, dst, *key_id);
+        if before_value.as_ref() == after_value.as_deref() {
+          continue;
+        }
+        if vc.edge_prop_version(src, etype, dst, *key_id).is_none() {
+          let before_shared = before_value.take().map(std::sync::Arc::new);
+          vc.append_edge_prop_version(src, etype, dst, *key_id, before_shared, 0, 0);
+        }
+        vc.append_edge_prop_version(
+          src,
+          etype,
+          dst,
+          *key_id,
+          after_value.clone(),
+          txid,
+          commit_ts,
+        );
+      }
+    }
+  }
+
   /// Commit the current transaction
   pub fn commit(&self) -> Result<()> {
     let tx_handle = {
@@ -142,7 +343,7 @@ impl SingleFileDB {
       let commit_ts = tx_mgr
         .commit_tx(txid)
         .map_err(|e| KiteError::Internal(e.to_string()))?;
-      commit_ts_for_mvcc = Some((commit_ts, tx_mgr.get_active_count() > 0));
+      commit_ts_for_mvcc = Some((commit_ts, tx_mgr.active_count() > 0));
     }
 
     let group_commit_active = self.group_commit_enabled && self.sync_mode == SyncMode::Normal;
@@ -239,195 +440,7 @@ impl SingleFileDB {
 
     let mut delta = self.delta.write();
 
-    if let (Some((commit_ts, has_active_readers)), Some(mvcc)) =
-      (commit_ts_for_mvcc, self.mvcc.as_ref())
-    {
-      if has_active_readers {
-        let snapshot = self.snapshot.read();
-        let mut vc = mvcc.version_chain.lock();
-        for (&node_id, node_delta) in &pending.created_nodes {
-          vc.append_node_version(
-            node_id,
-            NodeVersionData {
-              node_id,
-              delta: node_delta.for_version(),
-            },
-            txid,
-            commit_ts,
-          );
-        }
-
-        for &node_id in &pending.deleted_nodes {
-          vc.delete_node_version(node_id, txid, commit_ts);
-        }
-
-        for (&src, patches) in &pending.out_add {
-          for patch in patches {
-            vc.append_edge_version(src, patch.etype, patch.other, true, txid, commit_ts);
-          }
-        }
-
-        for (&src, patches) in &pending.out_del {
-          for patch in patches {
-            vc.append_edge_version(src, patch.etype, patch.other, false, txid, commit_ts);
-          }
-        }
-
-        let old_node_prop = |node_id: NodeId, key_id: PropKeyId| -> Option<PropValue> {
-          if delta.is_node_deleted(node_id) {
-            return None;
-          }
-          if let Some(value_opt) = delta.get_node_prop(node_id, key_id) {
-            return value_opt.cloned();
-          }
-          if let Some(ref snap) = *snapshot {
-            if let Some(phys) = snap.get_phys_node(node_id) {
-              return snap.get_node_prop(phys, key_id);
-            }
-          }
-          None
-        };
-
-        let old_edge_prop = |src: NodeId, etype: ETypeId, dst: NodeId, key_id: PropKeyId| {
-          if delta.is_node_deleted(src) || delta.is_node_deleted(dst) {
-            return None;
-          }
-          if delta.is_edge_deleted(src, etype, dst) {
-            return None;
-          }
-          if let Some(value_opt) = delta.get_edge_prop(src, etype, dst, key_id) {
-            return value_opt.cloned();
-          }
-          if let Some(ref snap) = *snapshot {
-            if let (Some(src_phys), Some(dst_phys)) =
-              (snap.get_phys_node(src), snap.get_phys_node(dst))
-            {
-              if let Some(edge_idx) = snap.find_edge_index(src_phys, etype, dst_phys) {
-                if let Some(snapshot_props) = snap.get_edge_props(edge_idx) {
-                  return snapshot_props.get(&key_id).cloned();
-                }
-              }
-            }
-          }
-          None
-        };
-
-        let old_node_label = |node_id: NodeId, label_id: LabelId| -> bool {
-          if delta.is_node_deleted(node_id) {
-            return false;
-          }
-          if let Some(node_delta) = delta.get_node_delta(node_id) {
-            if node_delta
-              .labels_deleted
-              .as_ref()
-              .is_some_and(|labels| labels.contains(&label_id))
-            {
-              return false;
-            }
-            if node_delta
-              .labels
-              .as_ref()
-              .is_some_and(|labels| labels.contains(&label_id))
-            {
-              return true;
-            }
-          }
-          if let Some(ref snap) = *snapshot {
-            if let Some(phys) = snap.get_phys_node(node_id) {
-              if let Some(labels) = snap.get_node_labels(phys) {
-                return labels.contains(&label_id);
-              }
-            }
-          }
-          false
-        };
-
-        for (node_id, node_delta) in pending
-          .created_nodes
-          .iter()
-          .chain(pending.modified_nodes.iter())
-        {
-          if pending.deleted_nodes.contains(node_id) {
-            continue;
-          }
-
-          if let Some(after_map) = node_delta.props.as_ref() {
-            for (key_id, after_value) in after_map {
-              let mut before_value = old_node_prop(*node_id, *key_id);
-              if before_value.as_ref() == after_value.as_deref() {
-                continue;
-              }
-              if vc.get_node_prop_version(*node_id, *key_id).is_none() {
-                let before_shared = before_value.take().map(std::sync::Arc::new);
-                vc.append_node_prop_version(*node_id, *key_id, before_shared, 0, 0);
-              }
-              vc.append_node_prop_version(*node_id, *key_id, after_value.clone(), txid, commit_ts);
-            }
-          }
-
-          if let Some(added_labels) = node_delta.labels.as_ref() {
-            for label_id in added_labels {
-              let before_value = old_node_label(*node_id, *label_id);
-              if before_value {
-                continue;
-              }
-              if vc.get_node_label_version(*node_id, *label_id).is_none() {
-                vc.append_node_label_version(
-                  *node_id,
-                  *label_id,
-                  if before_value { Some(true) } else { None },
-                  0,
-                  0,
-                );
-              }
-              vc.append_node_label_version(*node_id, *label_id, Some(true), txid, commit_ts);
-            }
-          }
-
-          if let Some(removed_labels) = node_delta.labels_deleted.as_ref() {
-            for label_id in removed_labels {
-              let before_value = old_node_label(*node_id, *label_id);
-              if !before_value {
-                continue;
-              }
-              if vc.get_node_label_version(*node_id, *label_id).is_none() {
-                vc.append_node_label_version(
-                  *node_id,
-                  *label_id,
-                  if before_value { Some(true) } else { None },
-                  0,
-                  0,
-                );
-              }
-              vc.append_node_label_version(*node_id, *label_id, None, txid, commit_ts);
-            }
-          }
-        }
-
-        for (edge_key, after_props) in &pending.edge_props {
-          for (key_id, after_value) in after_props {
-            let (src, etype, dst) = *edge_key;
-            let mut before_value = old_edge_prop(src, etype, dst, *key_id);
-            if before_value.as_ref() == after_value.as_deref() {
-              continue;
-            }
-            if vc.get_edge_prop_version(src, etype, dst, *key_id).is_none() {
-              let before_shared = before_value.take().map(std::sync::Arc::new);
-              vc.append_edge_prop_version(src, etype, dst, *key_id, before_shared, 0, 0);
-            }
-            vc.append_edge_prop_version(
-              src,
-              etype,
-              dst,
-              *key_id,
-              after_value.clone(),
-              txid,
-              commit_ts,
-            );
-          }
-        }
-      }
-    }
+    self.apply_mvcc_commit(commit_ts_for_mvcc, txid, &pending, &delta);
 
     // Apply pending vector operations
     self.apply_pending_vectors(&pending.pending_vectors);
@@ -561,15 +574,6 @@ impl SingleFileDB {
     if window_ms > 0 && self.active_writers.load(Ordering::SeqCst) > 0 {
       std::thread::sleep(Duration::from_millis(window_ms));
     }
-
-    #[cfg(feature = "bench-profile")]
-    let commit_lock_start = Instant::now();
-    let _commit_guard = self.commit_lock.lock();
-    #[cfg(feature = "bench-profile")]
-    self.commit_lock_wait_ns.fetch_add(
-      commit_lock_start.elapsed().as_nanos() as u64,
-      Ordering::Relaxed,
-    );
 
     #[cfg(feature = "bench-profile")]
     let flush_start = Instant::now();

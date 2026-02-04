@@ -101,7 +101,7 @@ mod tests {
       props.insert("age".to_string(), PropValue::I64(20 + (i % 50) as i64));
       props.insert("score".to_string(), PropValue::F64(i as f64 * 0.1));
       let node = ray.create_node("User", &format!("user{i}"), props).unwrap();
-      node_ids.push(node.id);
+      node_ids.push(node.id());
     }
 
     // Create edges (chain + random)
@@ -221,7 +221,7 @@ mod tests {
             .get("User", &format!("user{i}"))
             .ok()
             .flatten()
-            .map(|n| n.id)
+            .map(|n| n.id())
         })
         .collect()
     };
@@ -241,10 +241,10 @@ mod tests {
           for i in 0..reads_per_thread {
             let node_id = node_ids[i % node_ids.len()];
             let ray_guard = ray.read();
-            if ray_guard.get_prop(node_id, "name").is_some() {
+            if ray_guard.prop(node_id, "name").is_some() {
               success_count += 1;
             }
-            if ray_guard.get_prop(node_id, "age").is_some() {
+            if ray_guard.prop(node_id, "age").is_some() {
               success_count += 1;
             }
           }
@@ -280,7 +280,7 @@ mod tests {
             .get("User", &format!("user{i}"))
             .ok()
             .flatten()
-            .map(|n| n.id)
+            .map(|n| n.id())
         })
         .collect()
     };
@@ -338,7 +338,7 @@ mod tests {
             .get("User", &format!("user{i}"))
             .ok()
             .flatten()
-            .map(|n| n.id)
+            .map(|n| n.id())
         })
         .collect()
     };
@@ -864,7 +864,7 @@ mod tests {
     let mut success_count = 0;
     for i in 0..reads {
       let key = format!("node{}", i % 100);
-      if db.get_node_by_key(&key).is_some() {
+      if db.node_by_key(&key).is_some() {
         success_count += 1;
       }
     }

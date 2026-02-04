@@ -72,7 +72,7 @@ fn setup_ray_db(
     props.insert("age".to_string(), PropValue::I64(20 + (i % 50) as i64));
     props.insert("score".to_string(), PropValue::F64(i as f64 * 0.1));
     let node = ray.create_node("User", &format!("user{i}"), props).unwrap();
-    node_ids.push(node.id);
+    node_ids.push(node.id());
 
     // Optimize periodically to avoid WAL overflow
     if (i + 1) % 1000 == 0 {
@@ -271,7 +271,7 @@ fn bench_property_read_scaling(c: &mut Criterion) {
           .get("User", &format!("user{i}"))
           .ok()
           .flatten()
-          .map(|n| n.id)
+          .map(|n| n.id())
       })
       .collect()
   };
@@ -303,7 +303,7 @@ fn bench_property_read_scaling(c: &mut Criterion) {
                 for i in 0..ops_per_thread {
                   let node_id = node_ids[(thread_id * 50 + i) % node_ids.len()];
                   let ray_guard = ray.read();
-                  black_box(ray_guard.get_prop(node_id, "name"));
+                  black_box(ray_guard.prop(node_id, "name"));
                 }
               })
             })
@@ -340,7 +340,7 @@ fn bench_traversal_scaling(c: &mut Criterion) {
           .get("User", &format!("user{i}"))
           .ok()
           .flatten()
-          .map(|n| n.id)
+          .map(|n| n.id())
       })
       .collect()
   };
@@ -774,7 +774,7 @@ fn bench_single_file_sequential_reads(c: &mut Criterion) {
   group.bench_function("key_lookup_1000", |bencher| {
     bencher.iter(|| {
       for i in 0..1000 {
-        black_box(db.get_node_by_key(&format!("node{i}")));
+        black_box(db.node_by_key(&format!("node{i}")));
       }
     });
   });
@@ -802,7 +802,7 @@ fn bench_edge_check_scaling(c: &mut Criterion) {
           .get("User", &format!("user{i}"))
           .ok()
           .flatten()
-          .map(|n| n.id)
+          .map(|n| n.id())
       })
       .collect()
   };

@@ -14,7 +14,7 @@ use crate::core::single_file::{
   VacuumOptions as RustVacuumOptions,
 };
 use crate::metrics as core_metrics;
-use crate::types::{ETypeId, NodeId, PropKeyId};
+use crate::types::{ETypeId, EdgeWithProps as CoreEdgeWithProps, NodeId, PropKeyId};
 
 // Import from modular structure
 use super::ops::{
@@ -31,6 +31,8 @@ use super::traversal::{PyPathEdge, PyPathResult, PyTraversalResult};
 use super::types::{
   Edge, EdgePage, EdgeWithProps, FullEdge, NodePage, NodeProp, NodeWithProps, PropValue,
 };
+
+type EdgePropsInput = (i64, u32, i64, Vec<(u32, PropValue)>);
 
 // ============================================================================
 // Database Inner Enum
@@ -124,7 +126,7 @@ macro_rules! dispatch_tx {
 /// from concurrent.futures import ThreadPoolExecutor
 ///
 /// def read_node(key):
-///     return db.get_node_by_key(key)
+///     return db.node_by_key(key)
 ///
 /// # These execute concurrently
 /// with ThreadPoolExecutor(max_workers=4) as executor:
@@ -245,11 +247,9 @@ impl PyDatabase {
 
   /// Begin a bulk-load transaction (fast path, MVCC disabled)
   fn begin_bulk(&self) -> PyResult<i64> {
-    dispatch!(
-      self,
-      |db| transaction::begin_bulk_single_file(db),
-      |_db| { unreachable!("multi-file database support removed") }
-    )
+    dispatch!(self, |db| transaction::begin_bulk_single_file(db), |_db| {
+      unreachable!("multi-file database support removed")
+    })
   }
 
   fn commit(&self) -> PyResult<()> {
@@ -427,32 +427,23 @@ impl PyDatabase {
   }
 
   /// Add multiple edges with props in a single WAL record (fast path)
-  fn add_edges_with_props_batch(
-    &self,
-    edges: Vec<(i64, u32, i64, Vec<(u32, PropValue)>)>,
-  ) -> PyResult<()> {
+  fn add_edges_with_props_batch(&self, edges: Vec<EdgePropsInput>) -> PyResult<()> {
     let guard = self
       .inner
       .read()
       .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     match guard.as_ref() {
       Some(DatabaseInner::SingleFile(db)) => {
-        let core_edges: Vec<(NodeId, ETypeId, NodeId, Vec<(PropKeyId, crate::types::PropValue)>)> =
-          edges
-            .into_iter()
-            .map(|(src, etype, dst, props)| {
-              let core_props = props
-                .into_iter()
-                .map(|(key_id, value)| (key_id as PropKeyId, value.into()))
-                .collect();
-              (
-                src as NodeId,
-                etype as ETypeId,
-                dst as NodeId,
-                core_props,
-              )
-            })
-            .collect();
+        let core_edges: Vec<CoreEdgeWithProps> = edges
+          .into_iter()
+          .map(|(src, etype, dst, props)| {
+            let core_props = props
+              .into_iter()
+              .map(|(key_id, value)| (key_id as PropKeyId, value.into()))
+              .collect();
+            (src as NodeId, etype as ETypeId, dst as NodeId, core_props)
+          })
+          .collect();
         db.add_edges_with_props_batch(core_edges)
           .map_err(|e| PyRuntimeError::new_err(format!("Failed to add edges: {e}")))
       }
@@ -852,8 +843,8 @@ impl PyDatabase {
   }
 
   fn get_etype_name(&self, id: u32) -> PyResult<Option<String>> {
-    dispatch_ok!(self, |db| schema::get_etype_name_single(db, id), |db| {
-      schema::get_etype_name_single(db, id)
+    dispatch_ok!(self, |db| schema::etype_name_single(db, id), |db| {
+      schema::etype_name_single(db, id)
     })
   }
 
@@ -1451,8 +1442,8 @@ impl PyDatabase {
     };
     dispatch_ok!(
       self,
-      |db| streaming_ops::get_nodes_page_single(db, opts.clone()),
-      |db| streaming_ops::get_nodes_page_single(db, opts.clone())
+      |db| streaming_ops::nodes_page_single(db, opts.clone()),
+      |db| streaming_ops::nodes_page_single(db, opts.clone())
     )
   }
 
@@ -1464,8 +1455,8 @@ impl PyDatabase {
     };
     dispatch_ok!(
       self,
-      |db| streaming_ops::get_edges_page_single(db, opts.clone()),
-      |db| streaming_ops::get_edges_page_single(db, opts.clone())
+      |db| streaming_ops::edges_page_single(db, opts.clone()),
+      |db| streaming_ops::edges_page_single(db, opts.clone())
     )
   }
 
@@ -1585,8 +1576,8 @@ pub fn restore_backup(
 }
 
 #[pyfunction]
-pub fn get_backup_info(backup_path: String) -> PyResult<BackupResult> {
-  core_backup::get_backup_info(backup_path)
+pub fn backup_info(backup_path: String) -> PyResult<BackupResult> {
+  core_backup::backup_info(backup_path)
     .map(BackupResult::from)
     .map_err(|e| PyRuntimeError::new_err(e.to_string()))
 }

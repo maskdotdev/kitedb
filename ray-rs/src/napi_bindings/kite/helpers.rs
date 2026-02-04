@@ -40,13 +40,8 @@ pub(crate) fn batch_result_to_js(env: &Env, result: BatchResult) -> Result<Objec
   match result {
     BatchResult::NodeCreated(node_ref) => {
       obj.set_named_property("type", "nodeCreated")?;
-      let node_obj = node_to_js(
-        env,
-        node_ref.id,
-        node_ref.key,
-        &node_ref.node_type,
-        HashMap::new(),
-      )?;
+      let (node_id, node_key, node_type) = node_ref.into_parts();
+      let node_obj = node_to_js(env, node_id, node_key, &node_type, HashMap::new())?;
       obj.set_named_property("node", node_obj)?;
     }
     BatchResult::NodeDeleted(deleted) => {
@@ -125,12 +120,12 @@ pub(crate) fn node_filter_data(
   node_id: NodeId,
   selected_props: Option<&HashSet<String>>,
 ) -> NodeFilterData {
-  let node_ref = ray.get_by_id(node_id).ok().flatten();
+  let node_ref = ray.node_by_id(node_id).ok().flatten();
   let (key, node_type) = match node_ref {
-    Some(node_ref) => (
-      node_ref.key.unwrap_or_default(),
-      node_ref.node_type.to_string(),
-    ),
+    Some(node_ref) => {
+      let (_id, key, node_type) = node_ref.into_parts();
+      (key.unwrap_or_default(), node_type.to_string())
+    }
     None => ("".to_string(), "unknown".to_string()),
   };
 
@@ -147,9 +142,9 @@ pub(crate) fn node_filter_data(
 /// Create edge filter data from an edge
 pub(crate) fn edge_filter_data(ray: &RustKite, edge: &Edge) -> EdgeFilterData {
   let mut props = HashMap::new();
-  if let Some(props_by_id) = ray.raw().get_edge_props(edge.src, edge.etype, edge.dst) {
+  if let Some(props_by_id) = ray.raw().edge_props(edge.src, edge.etype, edge.dst) {
     for (key_id, value) in props_by_id {
-      if let Some(name) = ray.raw().get_propkey_name(key_id) {
+      if let Some(name) = ray.raw().propkey_name(key_id) {
         props.insert(name, value);
       }
     }
@@ -219,9 +214,9 @@ pub(crate) fn get_node_props_selected(
   selected_props: Option<&HashSet<String>>,
 ) -> HashMap<String, PropValue> {
   let mut props = HashMap::new();
-  if let Some(props_by_id) = ray.raw().get_node_props(node_id) {
+  if let Some(props_by_id) = ray.raw().node_props(node_id) {
     for (key_id, value) in props_by_id {
-      if let Some(name) = ray.raw().get_propkey_name(key_id) {
+      if let Some(name) = ray.raw().propkey_name(key_id) {
         if should_include_prop(selected_props, &name) {
           props.insert(name, value);
         }
@@ -276,7 +271,7 @@ pub(crate) fn get_neighbors(
   let mut edges = Vec::new();
   match direction {
     TraversalDirection::Out => {
-      for (edge_type, dst) in db.get_out_edges(node_id) {
+      for (edge_type, dst) in db.out_edges(node_id) {
         if etype.is_none() || etype == Some(edge_type) {
           edges.push(Edge {
             src: node_id,
@@ -287,7 +282,7 @@ pub(crate) fn get_neighbors(
       }
     }
     TraversalDirection::In => {
-      for (edge_type, src) in db.get_in_edges(node_id) {
+      for (edge_type, src) in db.in_edges(node_id) {
         if etype.is_none() || etype == Some(edge_type) {
           edges.push(Edge {
             src,
