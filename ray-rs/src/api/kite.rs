@@ -561,7 +561,7 @@ pub struct KiteOptions {
   pub mvcc_retention_ms: Option<u64>,
   /// MVCC max version chain depth
   pub mvcc_max_chain_depth: Option<usize>,
-  /// WAL size in bytes (default: 1MB)
+  /// WAL size in bytes (default: 4MB)
   pub wal_size: Option<usize>,
   /// WAL usage threshold (0.0-1.0) to trigger auto-checkpoint
   pub checkpoint_threshold: Option<f64>,
@@ -1167,7 +1167,7 @@ impl Kite {
   /// let mut props = HashMap::new();
   /// props.insert("weight".to_string(), PropValue::F64(0.5));
   /// props.insert("since".to_string(), PropValue::String("2024".into()));
-  /// kite.link_with_props(alice.id, "FOLLOWS", bob.id, props)?;
+  /// kite.link_with_props(alice.id(), "FOLLOWS", bob.id(), props)?;
   /// # Ok(())
   /// # }
   /// ```
@@ -1653,7 +1653,7 @@ impl Kite {
   /// # let kite: Kite = unimplemented!();
   /// let user_ref = kite.node_ref("User", "alice")?;
   /// if let Some(node) = user_ref {
-  ///     // Can now use node.id for edges, traversals, etc.
+  ///     // Can now use node.id() for edges, traversals, etc.
   /// }
   /// # Ok(())
   /// # }
@@ -1670,8 +1670,8 @@ impl Kite {
   /// # let kite: Kite = unimplemented!();
   /// // Fast: only gets reference (~85ns)
   /// if let Some(node) = kite.node_ref("User", "alice")? {
-  ///     // Can now use node.id for edges, traversals, etc.
-  ///     let friends = kite.from(node.id).out(Some("FOLLOWS"))?.to_vec();
+  ///     // Can now use node.id() for edges, traversals, etc.
+  ///     let friends = kite.from(node.id()).out(Some("FOLLOWS"))?.to_vec();
   /// }
   /// # Ok(())
   /// # }
@@ -1738,7 +1738,7 @@ impl Kite {
   /// # let kite: Kite = unimplemented!();
   /// # let alice: NodeRef = unimplemented!();
   /// let friends = kite
-  ///     .from(alice.id)
+  ///     .from(alice.id())
   ///     .out(Some("FOLLOWS"))?
   ///     .out(Some("FOLLOWS"))?
   ///     .to_vec();
@@ -1772,7 +1772,7 @@ impl Kite {
   /// # let alice: NodeRef = unimplemented!();
   /// # let bob: NodeRef = unimplemented!();
   /// let path = kite
-  ///     .shortest_path(alice.id, bob.id)
+  ///     .shortest_path(alice.id(), bob.id())
   ///     .via("FOLLOWS")?
   ///     .max_depth(5)
   ///     .find();
@@ -1821,7 +1821,7 @@ impl Kite {
   /// # fn main() -> kitedb::error::Result<()> {
   /// # let kite: Kite = unimplemented!();
   /// # let alice: NodeRef = unimplemented!();
-  /// let reachable = kite.reachable_from(alice.id, 3, Some("FOLLOWS"))?;
+  /// let reachable = kite.reachable_from(alice.id(), 3, Some("FOLLOWS"))?;
   /// println!("Alice can reach {} nodes in 3 hops", reachable.len());
   /// # Ok(())
   /// # }
@@ -2853,7 +2853,7 @@ impl Kite {
   /// let result = kite.transaction(|ctx| {
   ///   let alice = ctx.create_node("User", "alice", HashMap::new())?;
   ///   let bob = ctx.create_node("User", "bob", HashMap::new())?;
-  ///   ctx.link(alice.id, "FOLLOWS", bob.id)?;
+  ///   ctx.link(alice.id(), "FOLLOWS", bob.id())?;
   ///   Ok((alice, bob))
   /// })?;
   /// # Ok(())
