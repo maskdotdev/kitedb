@@ -1,0 +1,53 @@
+========================================================================================================================
+Single-file Raw Benchmark (Rust)
+========================================================================================================================
+Nodes: 10,000
+Edges: 0
+Edge types: 1
+Edge props: 0
+Iterations: 10,000
+WAL size: 268,435,456 bytes
+Sync mode: Normal
+Group commit: false (window 2ms)
+Auto-checkpoint: false
+Checkpoint threshold: 0.8
+Vector dims: 128
+Vector count: 1,000
+Skip checkpoint: true
+Reopen read-only: false
+========================================================================================================================
+
+[1/6] Building graph...
+  Creating nodes...
+  Created 5000 / 10000 nodes  Created 10000 / 10000 nodes
+  Creating edges...
+
+  Built in 11ms
+
+[2/6] Vector setup...
+
+--- Vector Operations ---
+Set vectors (batch 100)                       p50=  102.71us p95=  231.62us p99=  231.62us max=  231.62us (8787 ops/sec)
+
+[3/6] Checkpointing...
+  Skipped checkpoint
+
+[4/6] Key lookup benchmarks...
+
+--- Key Lookups (get_node_by_key) ---
+Random existing keys                          p50=      42ns p95=     167ns p99=     250ns max=     541ns (15703764 ops/sec)
+
+[5/6] Traversal and edge benchmarks...
+
+--- 1-Hop Traversals (out) ---
+Random nodes                                  p50=      41ns p95=      42ns p99=      42ns max=     375ns (42917166 ops/sec)
+
+--- Edge Exists ---
+Random edge exists                            p50=      41ns p95=      42ns p99=      42ns max=     375ns (42923982 ops/sec)
+get_node_vector() random                      p50=     125ns p95=     209ns p99=     417ns max=    4.12us (7352428 ops/sec)
+has_node_vector() random                      p50=      42ns p95=      84ns p99=     125ns max=    1.04us (16866848 ops/sec)
+
+[6/6] Write benchmarks...
+
+--- Batch Writes (100 nodes) ---
+Batch of 100 nodes                            p50=   46.12us p95=   82.17us p99=  609.62us max=  609.62us (15314 ops/sec)

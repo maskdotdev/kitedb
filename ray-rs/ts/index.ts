@@ -1110,6 +1110,10 @@ export interface KiteOptions {
   createIfMissing?: boolean
   /** Sync mode for durability (default: "Full") */
   syncMode?: SyncMode
+  /** Enable group commit (coalesce WAL flushes across commits) */
+  groupCommitEnabled?: boolean
+  /** Group commit window in milliseconds */
+  groupCommitWindowMs?: number
   /** Acquire file lock (default: true) */
   lockFile?: boolean
   /** WAL size in megabytes (default: 1MB) */
@@ -1170,6 +1174,8 @@ function optionsToNative(options: KiteOptions): JsKiteOptions {
     readOnly: options.readOnly,
     createIfMissing: options.createIfMissing,
     syncMode: options.syncMode,
+    groupCommitEnabled: options.groupCommitEnabled,
+    groupCommitWindowMs: options.groupCommitWindowMs,
     lockFile: options.lockFile,
     walSizeMb: options.walSizeMb,
     checkpointThreshold: options.checkpointThreshold,

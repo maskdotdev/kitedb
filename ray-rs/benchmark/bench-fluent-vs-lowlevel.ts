@@ -10,7 +10,12 @@
  * Options:
  *   --nodes N         Number of nodes (default: 1000)
  *   --edges M         Number of edges (default: 5000)
+ *   --edge-types N    Number of edge types (default: 3)
+ *   --edge-props N    Number of props per edge (default: 10)
  *   --iterations I    Iterations for latency benchmarks (default: 1000)
+ *   --sync-mode MODE  Sync mode: full|normal|off (default: normal)
+ *   --group-commit-enabled    Enable group commit (default: false)
+ *   --group-commit-window-ms  Group commit window in ms (default: 2)
  */
 
 import fs from "node:fs";
@@ -21,6 +26,7 @@ import { Bench } from "tinybench";
 // Low-level API (native bindings)
 import {
 	Database,
+	JsSyncMode,
 	JsTraversalDirection,
 	PropType,
 	pathConfig,
@@ -37,7 +43,12 @@ import { edge, int, kiteSync, node, optional, string } from "../dist/index.js";
 interface BenchConfig {
 	nodes: number;
 	edges: number;
+	edgeTypes: number;
+	edgeProps: number;
 	iterations: number;
+	syncMode: string;
+	groupCommitEnabled: boolean;
+	groupCommitWindowMs: number;
 }
 
 function parseArgs(): BenchConfig {
@@ -45,7 +56,12 @@ function parseArgs(): BenchConfig {
 	const config: BenchConfig = {
 		nodes: 1000,
 		edges: 5000,
+		edgeTypes: 3,
+		edgeProps: 10,
 		iterations: 1000,
+		syncMode: "normal",
+		groupCommitEnabled: false,
+		groupCommitWindowMs: 2,
 	};
 
 	for (let i = 0; i < args.length; i++) {
@@ -57,6 +73,20 @@ function parseArgs(): BenchConfig {
 			i++;
 		} else if (args[i] === "--iterations" && args[i + 1]) {
 			config.iterations = Number.parseInt(args[i + 1], 10);
+			i++;
+		} else if (args[i] === "--edge-types" && args[i + 1]) {
+			config.edgeTypes = Math.max(1, Number.parseInt(args[i + 1], 10));
+			i++;
+		} else if (args[i] === "--edge-props" && args[i + 1]) {
+			config.edgeProps = Math.max(0, Number.parseInt(args[i + 1], 10));
+			i++;
+		} else if (args[i] === "--sync-mode" && args[i + 1]) {
+			config.syncMode = args[i + 1].toLowerCase();
+			i++;
+		} else if (args[i] === "--group-commit-enabled") {
+			config.groupCommitEnabled = true;
+		} else if (args[i] === "--group-commit-window-ms" && args[i + 1]) {
+			config.groupCommitWindowMs = Number.parseInt(args[i + 1], 10);
 			i++;
 		}
 	}
@@ -77,9 +107,23 @@ const User = node("user", {
 	},
 });
 
-const knows = edge("knows", {
-	since: int("since"),
-});
+function buildEdgePropSpec(count: number): Record<string, ReturnType<typeof int>> {
+	const props: Record<string, ReturnType<typeof int>> = {};
+	for (let i = 0; i < count; i++) {
+		const name = i === 0 ? "since" : `p${i}`;
+		props[name] = int(name);
+	}
+	return props;
+}
+
+function buildEdgePropValues(count: number, seed: number): Record<string, number> {
+	const props: Record<string, number> = {};
+	for (let i = 0; i < count; i++) {
+		const name = i === 0 ? "since" : `p${i}`;
+		props[name] = seed + i;
+	}
+	return props;
+}
 
 // =============================================================================
 // Helpers
@@ -313,6 +357,7 @@ function benchmarkLowLevelTraversal(
 function benchmarkFluentTraversal(
 	db: ReturnType<typeof kiteSync>,
 	userRefs: Array<{ id: number }>,
+	edgePrimary: ReturnType<typeof edge>,
 	iterations: number,
 ): LatencyStats {
 	const tracker = new LatencyTracker();
@@ -320,7 +365,7 @@ function benchmarkFluentTraversal(
 	for (let i = 0; i < iterations; i++) {
 		const userRef = userRefs[Math.floor(Math.random() * userRefs.length)];
 		const start = process.hrtime.bigint();
-		db.from(userRef).out(knows).count();
+		db.from(userRef).out(edgePrimary).count();
 		tracker.record(Number(process.hrtime.bigint() - start));
 	}
 
@@ -330,6 +375,7 @@ function benchmarkFluentTraversal(
 function benchmarkFluentTraversalNodes(
 	db: ReturnType<typeof kiteSync>,
 	userRefs: Array<{ id: number }>,
+	edgePrimary: ReturnType<typeof edge>,
 	iterations: number,
 ): LatencyStats {
 	const tracker = new LatencyTracker();
@@ -337,7 +383,7 @@ function benchmarkFluentTraversalNodes(
 	for (let i = 0; i < iterations; i++) {
 		const userRef = userRefs[Math.floor(Math.random() * userRefs.length)];
 		const start = process.hrtime.bigint();
-		db.from(userRef).out(knows).nodes();
+		db.from(userRef).out(edgePrimary).nodes();
 		tracker.record(Number(process.hrtime.bigint() - start));
 	}
 
@@ -347,6 +393,7 @@ function benchmarkFluentTraversalNodes(
 function benchmarkFluentTraversalToArray(
 	db: ReturnType<typeof kiteSync>,
 	userRefs: Array<{ id: number }>,
+	edgePrimary: ReturnType<typeof edge>,
 	iterations: number,
 ): LatencyStats {
 	const tracker = new LatencyTracker();
@@ -354,7 +401,7 @@ function benchmarkFluentTraversalToArray(
 	for (let i = 0; i < iterations; i++) {
 		const userRef = userRefs[Math.floor(Math.random() * userRefs.length)];
 		const start = process.hrtime.bigint();
-		db.from(userRef).out(knows).toArray();
+		db.from(userRef).out(edgePrimary).toArray();
 		tracker.record(Number(process.hrtime.bigint() - start));
 	}
 
@@ -390,6 +437,7 @@ function benchmarkLowLevelPathfinding(
 function benchmarkFluentPathfinding(
 	db: ReturnType<typeof kiteSync>,
 	userRefs: Array<{ id: number }>,
+	edgePrimary: ReturnType<typeof edge>,
 	iterations: number,
 ): LatencyStats {
 	const tracker = new LatencyTracker();
@@ -402,7 +450,7 @@ function benchmarkFluentPathfinding(
 		}
 
 		const start = process.hrtime.bigint();
-		db.path(src, dst).via(knows).maxDepth(5).bfs();
+		db.path(src, dst).via(edgePrimary).maxDepth(5).bfs();
 		tracker.record(Number(process.hrtime.bigint() - start));
 	}
 
@@ -421,7 +469,13 @@ async function runBenchmarks(config: BenchConfig): Promise<void> {
 	console.log(`Date: ${now.toISOString()}`);
 	console.log(`Nodes: ${formatNumber(config.nodes)}`);
 	console.log(`Edges: ${formatNumber(config.edges)}`);
+	console.log(`Edge types: ${formatNumber(config.edgeTypes)}`);
+	console.log(`Edge props: ${formatNumber(config.edgeProps)}`);
 	console.log(`Iterations: ${formatNumber(config.iterations)}`);
+	console.log(`Sync mode: ${config.syncMode}`);
+	console.log(
+		`Group commit: ${config.groupCommitEnabled} (window ${config.groupCommitWindowMs}ms)`,
+	);
 	console.log("=".repeat(100));
 
 	// Create temporary directories for both databases
@@ -432,20 +486,50 @@ async function runBenchmarks(config: BenchConfig): Promise<void> {
 		// =================================================================
 		// Setup Phase
 		// =================================================================
-		console.log("\n[1/7] Setting up databases...");
+	console.log("\n[1/7] Setting up databases...");
 
-		// Low-level database setup
-		const lowLevelDb = Database.open(path.join(lowLevelDir, "test.kitedb"));
-		const knowsEtype = lowLevelDb.getOrCreateEtype("knows");
-		const nameKey = lowLevelDb.getOrCreatePropkey("name");
-		const emailKey = lowLevelDb.getOrCreatePropkey("email");
-		const ageKey = lowLevelDb.getOrCreatePropkey("age");
+	const syncMode =
+		config.syncMode === "full"
+			? JsSyncMode.Full
+			: config.syncMode === "off"
+				? JsSyncMode.Off
+				: JsSyncMode.Normal;
 
-		// Fluent database setup
-		const fluentDb = kiteSync(path.join(fluentDir, "test.kitedb"), {
-			nodes: [User],
-			edges: [knows],
-		});
+	const edgeTypeNames = Array.from({ length: config.edgeTypes }, (_, i) => `knows_${i}`);
+	const edgePropNames = Array.from({ length: config.edgeProps }, (_, i) =>
+		i === 0 ? "since" : `p${i}`,
+	);
+
+	// Low-level database setup
+	const lowLevelDb = Database.open(path.join(lowLevelDir, "test.kitedb"), {
+		syncMode,
+		groupCommitEnabled: config.groupCommitEnabled,
+		groupCommitWindowMs: config.groupCommitWindowMs,
+		walSize: 64 * 1024 * 1024,
+	});
+	const edgeTypeIds = edgeTypeNames.map((name) =>
+		lowLevelDb.getOrCreateEtype(name),
+	);
+	const edgePropKeyIds = edgePropNames.map((name) =>
+		lowLevelDb.getOrCreatePropkey(name),
+	);
+	const nameKey = lowLevelDb.getOrCreatePropkey("name");
+	const emailKey = lowLevelDb.getOrCreatePropkey("email");
+	const ageKey = lowLevelDb.getOrCreatePropkey("age");
+
+	// Fluent database setup
+	const edgeDefs = edgeTypeNames.map((name) =>
+		edge(name, buildEdgePropSpec(config.edgeProps)),
+	);
+	const edgePrimary = edgeDefs[0];
+	const fluentDb = kiteSync(path.join(fluentDir, "test.kitedb"), {
+		nodes: [User],
+		edges: edgeDefs,
+		syncMode,
+		groupCommitEnabled: config.groupCommitEnabled,
+		groupCommitWindowMs: config.groupCommitWindowMs,
+		walSizeMb: 64,
+	});
 
 		// =================================================================
 		// Build Test Data
@@ -477,18 +561,32 @@ async function runBenchmarks(config: BenchConfig): Promise<void> {
 		}
 		lowLevelDb.commit();
 
-		// Low-level: create edges
-		lowLevelDb.begin();
-		for (let i = 0; i < config.edges; i++) {
-			const src =
-				lowLevelNodeIds[Math.floor(Math.random() * lowLevelNodeIds.length)];
-			const dst =
-				lowLevelNodeIds[Math.floor(Math.random() * lowLevelNodeIds.length)];
-			if (src !== dst) {
-				lowLevelDb.addEdge(src, knowsEtype, dst);
+		// Low-level: create edges (batched commits to avoid WAL overflow)
+		const edgeBatchSize = 500;
+		for (let start = 0; start < config.edges; start += edgeBatchSize) {
+			const end = Math.min(start + edgeBatchSize, config.edges);
+			lowLevelDb.begin();
+			for (let i = start; i < end; i++) {
+				const src =
+					lowLevelNodeIds[Math.floor(Math.random() * lowLevelNodeIds.length)];
+				const dst =
+					lowLevelNodeIds[Math.floor(Math.random() * lowLevelNodeIds.length)];
+				if (src !== dst) {
+					const etype =
+						edgeTypeIds[Math.floor(Math.random() * edgeTypeIds.length)];
+					lowLevelDb.addEdge(src, etype, dst);
+					if (edgePropKeyIds.length > 0) {
+						for (let p = 0; p < edgePropKeyIds.length; p++) {
+							lowLevelDb.setEdgeProp(src, etype, dst, edgePropKeyIds[p], {
+								propType: PropType.Int,
+								intValue: i + p,
+							});
+						}
+					}
+				}
 			}
+			lowLevelDb.commit();
 		}
-		lowLevelDb.commit();
 
 		console.log(
 			`  Low-level: ${lowLevelNodeIds.length} nodes, ${config.edges} edges`,
@@ -512,14 +610,27 @@ async function runBenchmarks(config: BenchConfig): Promise<void> {
 			fluentKeyArgs.push(keyArg);
 		}
 
-		// Fluent: create edges
-		for (let i = 0; i < config.edges; i++) {
-			const src =
-				fluentUserRefs[Math.floor(Math.random() * fluentUserRefs.length)];
-			const dst =
-				fluentUserRefs[Math.floor(Math.random() * fluentUserRefs.length)];
-			if (src.id !== dst.id) {
-				fluentDb.link(src, knows, dst, { since: 2020 });
+		// Fluent: create edges (batched commits to avoid WAL overflow)
+		for (let start = 0; start < config.edges; start += edgeBatchSize) {
+			const end = Math.min(start + edgeBatchSize, config.edges);
+			for (let i = start; i < end; i++) {
+				const src =
+					fluentUserRefs[Math.floor(Math.random() * fluentUserRefs.length)];
+				const dst =
+					fluentUserRefs[Math.floor(Math.random() * fluentUserRefs.length)];
+				if (src.id !== dst.id) {
+					const etype = edgeDefs[Math.floor(Math.random() * edgeDefs.length)];
+					if (config.edgeProps > 0) {
+						fluentDb.link(
+							src,
+							etype,
+							dst,
+							buildEdgePropValues(config.edgeProps, i) as any,
+						);
+					} else {
+						fluentDb.link(src, etype, dst);
+					}
+				}
 			}
 		}
 
@@ -572,22 +683,25 @@ async function runBenchmarks(config: BenchConfig): Promise<void> {
 		const lowLevelTraversalStats = benchmarkLowLevelTraversal(
 			lowLevelDb,
 			lowLevelNodeIds,
-			knowsEtype,
+			edgeTypeIds[0],
 			config.iterations,
 		);
 		const fluentTraversalStats = benchmarkFluentTraversal(
 			fluentDb,
 			fluentUserRefs,
+			edgePrimary,
 			config.iterations,
 		);
 		const fluentTraversalNodesStats = benchmarkFluentTraversalNodes(
 			fluentDb,
 			fluentUserRefs,
+			edgePrimary,
 			config.iterations,
 		);
 		const fluentTraversalToArrayStats = benchmarkFluentTraversalToArray(
 			fluentDb,
 			fluentUserRefs,
+			edgePrimary,
 			config.iterations,
 		);
 
@@ -599,12 +713,13 @@ async function runBenchmarks(config: BenchConfig): Promise<void> {
 		const lowLevelPathStats = benchmarkLowLevelPathfinding(
 			lowLevelDb,
 			lowLevelNodeIds,
-			knowsEtype,
+			edgeTypeIds[0],
 			Math.min(config.iterations, 500), // Pathfinding is slower
 		);
 		const fluentPathStats = benchmarkFluentPathfinding(
 			fluentDb,
 			fluentUserRefs,
+			edgePrimary,
 			Math.min(config.iterations, 500),
 		);
 
@@ -754,17 +869,17 @@ async function runBenchmarks(config: BenchConfig): Promise<void> {
 			.add("Low-level: traverseNodeIds", () => {
 				lowLevelDb.traverseNodeIds(
 					[randomNodeId],
-					[traversalStep(JsTraversalDirection.Out, knowsEtype)],
+					[traversalStep(JsTraversalDirection.Out, edgeTypeIds[0])],
 				);
 			})
 			.add("Fluent: from().out().count()", () => {
-				fluentDb.from(randomUserRef).out(knows).count();
+				fluentDb.from(randomUserRef).out(edgePrimary).count();
 			})
 			.add("Fluent: from().out().nodes()", () => {
-				fluentDb.from(randomUserRef).out(knows).nodes();
+				fluentDb.from(randomUserRef).out(edgePrimary).nodes();
 			})
 			.add("Fluent: from().out().nodesWithProps()", () => {
-				fluentDb.from(randomUserRef).out(knows).nodesWithProps();
+				fluentDb.from(randomUserRef).out(edgePrimary).nodesWithProps();
 			});
 
 		await bench.run();

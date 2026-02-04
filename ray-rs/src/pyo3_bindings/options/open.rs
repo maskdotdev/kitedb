@@ -155,6 +155,12 @@ pub struct OpenOptions {
   pub cache_query_ttl_ms: Option<i64>,
   /// Sync mode: "full", "normal", or "off"
   pub sync_mode: Option<SyncMode>,
+  /// Enable group commit (coalesce WAL flushes across commits)
+  #[pyo3(get, set)]
+  pub group_commit_enabled: Option<bool>,
+  /// Group commit window in milliseconds
+  #[pyo3(get, set)]
+  pub group_commit_window_ms: Option<i64>,
   /// Snapshot parse mode: "strict" or "salvage" (single-file only)
   #[pyo3(get, set)]
   pub snapshot_parse_mode: Option<SnapshotParseMode>,
@@ -184,6 +190,8 @@ impl OpenOptions {
         cache_max_query_entries=None,
         cache_query_ttl_ms=None,
         sync_mode=None,
+        group_commit_enabled=None,
+        group_commit_window_ms=None,
         snapshot_parse_mode=None
     ))]
   #[allow(clippy::too_many_arguments)]
@@ -208,6 +216,8 @@ impl OpenOptions {
     cache_max_query_entries: Option<i64>,
     cache_query_ttl_ms: Option<i64>,
     sync_mode: Option<SyncMode>,
+    group_commit_enabled: Option<bool>,
+    group_commit_window_ms: Option<i64>,
     snapshot_parse_mode: Option<SnapshotParseMode>,
   ) -> Self {
     Self {
@@ -231,6 +241,8 @@ impl OpenOptions {
       cache_max_query_entries,
       cache_query_ttl_ms,
       sync_mode,
+      group_commit_enabled,
+      group_commit_window_ms,
       snapshot_parse_mode,
     }
   }
@@ -321,6 +333,14 @@ impl OpenOptions {
     if let Some(sync) = self.sync_mode {
       rust_opts = rust_opts.sync_mode(sync.mode);
     }
+    if let Some(enabled) = self.group_commit_enabled {
+      rust_opts = rust_opts.group_commit_enabled(enabled);
+    }
+    if let Some(window_ms) = self.group_commit_window_ms {
+      if window_ms >= 0 {
+        rust_opts = rust_opts.group_commit_window_ms(window_ms as u64);
+      }
+    }
     if let Some(mode) = self.snapshot_parse_mode {
       rust_opts = rust_opts.snapshot_parse_mode(mode.mode);
     }
@@ -364,10 +384,14 @@ mod tests {
       read_only: Some(true),
       create_if_missing: Some(false),
       page_size: Some(8192),
+      group_commit_enabled: Some(true),
+      group_commit_window_ms: Some(5),
       ..Default::default()
     };
     let rust_opts: RustOpenOptions = opts.try_into().unwrap();
     assert!(rust_opts.read_only);
     assert!(!rust_opts.create_if_missing);
+    assert!(rust_opts.group_commit_enabled);
+    assert_eq!(rust_opts.group_commit_window_ms, 5);
   }
 }

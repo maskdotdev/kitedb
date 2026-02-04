@@ -1,0 +1,85 @@
+====================================================================================================
+KiteDB TypeScript Fluent API vs Low-Level API Benchmark
+====================================================================================================
+Date: 2026-02-04T00:18:08.196Z
+Nodes: 1,000
+Edges: 0
+Edge types: 1
+Edge props: 0
+Iterations: 1,000
+Sync mode: off
+Group commit: true (window 2ms)
+====================================================================================================
+
+[1/7] Setting up databases...
+
+[2/7] Building test data...
+  Low-level: 1000 nodes, 0 edges
+  Fluent: 1000 nodes, 0 edges
+
+[3/7] Benchmarking insert operations...
+
+[4/7] Benchmarking key lookups...
+
+[5/7] Benchmarking traversals...
+
+[6/7] Benchmarking pathfinding...
+
+[7/7] Results
+====================================================================================================
+
+=== Comparison (lower latency is better, overhead closer to 1.0x is better) ===
+
+Insert (single node + props)             low-level p50=    3.58us  fluent p50=    4.38us  overhead=1.22x
+Key lookup (raw vs get with props)       low-level p50=     208ns  fluent p50=    1.50us  overhead=7.21x
+Key lookup (raw vs getRef, no props)     low-level p50=     208ns  fluent p50=     667ns  overhead=3.21x
+Key lookup (raw vs getId, id-only)       low-level p50=     208ns  fluent p50=     333ns  overhead=1.60x
+1-hop traversal (count)                  low-level p50=     625ns  fluent p50=    1.17us  overhead=1.87x
+1-hop traversal (nodes/ids)              low-level p50=     625ns  fluent p50=    1.17us  overhead=1.87x
+1-hop traversal (toArray with props)     low-level p50=     625ns  fluent p50=    1.21us  overhead=1.93x
+Pathfinding BFS (max depth 5)            low-level p50=    1.67us  fluent p50=    1.25us  overhead=0.75x
+
+--- Detailed Statistics ---
+
+Insert Operations:
+  Low-level:  p50=    3.58us  p95=    5.38us  (236,692 ops/sec)
+  Fluent:     p50=    4.38us  p95=    8.08us  (170,883 ops/sec)
+
+Key Lookups:
+  Low-level:  p50=     208ns  p95=     292ns  (4,421,413 ops/sec)
+  Fluent get: p50=    1.50us  p95=    2.08us  (605,312 ops/sec)
+  Fluent ref: p50=     667ns  p95=     792ns  (1,416,374 ops/sec)
+  Fluent id:  p50=     333ns  p95=     375ns  (2,972,678 ops/sec)
+
+Traversals (1-hop):
+  Low-level:      p50=     625ns  p95=     708ns  (1,518,658 ops/sec)
+  Fluent count:   p50=    1.17us  p95=    3.92us  (512,368 ops/sec)
+  Fluent nodes:   p50=    1.17us  p95=    2.13us  (695,369 ops/sec)
+  Fluent toArray: p50=    1.21us  p95=    2.33us  (717,626 ops/sec)
+
+Pathfinding (BFS, max depth 5):
+  Low-level:  p50=    1.67us  p95=    2.04us  (357,261 ops/sec)
+  Fluent:     p50=    1.25us  p95=    2.17us  (628,427 ops/sec)
+
+====================================================================================================
+Tinybench Microbenchmarks (more accurate, with warmup)
+====================================================================================================
+┌─────────┬─────────────────────────────────────────┬───────────────────┬───────────────────┬────────────────────────┬────────────────────────┬─────────┐
+│ (index) │ Task name                               │ Latency avg (ns)  │ Latency med (ns)  │ Throughput avg (ops/s) │ Throughput med (ops/s) │ Samples │
+├─────────┼─────────────────────────────────────────┼───────────────────┼───────────────────┼────────────────────────┼────────────────────────┼─────────┤
+│ 0       │ 'Low-level: key lookup'                 │ '171.86 ± 0.15%'  │ '167.00 ± 1.00'   │ '6280256 ± 0.01%'      │ '5988024 ± 36072'      │ 5818720 │
+│ 1       │ 'Fluent: get (with props)'              │ '1458.7 ± 0.19%'  │ '1375.0 ± 42.00'  │ '724057 ± 0.03%'       │ '727273 ± 22915'       │ 685521  │
+│ 2       │ 'Fluent: getRef (no props)'             │ '684.71 ± 0.17%'  │ '625.00 ± 41.00'  │ '1539804 ± 0.02%'      │ '1600000 ± 98498'      │ 1460477 │
+│ 3       │ 'Fluent: getId (id-only)'               │ '286.55 ± 0.15%'  │ '250.00 ± 0.00'   │ '3697430 ± 0.01%'      │ '4000000 ± 0'          │ 3489733 │
+│ 4       │ 'Fluent: getById (with props)'          │ '1285.8 ± 0.47%'  │ '1167.0 ± 42.00'  │ '837209 ± 0.03%'       │ '856898 ± 29768'       │ 777700  │
+│ 5       │ 'Fluent: getById x16 (loop)'            │ '20061 ± 0.33%'   │ '18500 ± 375.00'  │ '51772 ± 0.11%'        │ '54054 ± 1118'         │ 49849   │
+│ 6       │ 'Fluent: getByIds (batch 16)'           │ '20548 ± 1.51%'   │ '18542 ± 459.00'  │ '51558 ± 0.11%'        │ '53932 ± 1369'         │ 48667   │
+│ 7       │ 'Low-level: traverseNodeIds'            │ '890.94 ± 0.18%'  │ '833.00 ± 41.00'  │ '1186882 ± 0.02%'      │ '1200480 ± 62146'      │ 1122409 │
+│ 8       │ 'Fluent: from().out().count()'          │ '2304.3 ± 9.08%'  │ '1625.0 ± 333.00' │ '584702 ± 0.10%'       │ '615385 ± 134803'      │ 433991  │
+│ 9       │ 'Fluent: from().out().nodes()'          │ '2198.0 ± 10.80%' │ '1458.0 ± 208.00' │ '629300 ± 0.09%'       │ '685871 ± 114129'      │ 454969  │
+│ 10      │ 'Fluent: from().out().nodesWithProps()' │ '2425.1 ± 4.71%'  │ '1792.0 ± 292.00' │ '517724 ± 0.10%'       │ '558036 ± 90894'       │ 412358  │
+└─────────┴─────────────────────────────────────────┴───────────────────┴───────────────────┴────────────────────────┴────────────────────────┴─────────┘
+
+====================================================================================================
+Benchmark complete.
+====================================================================================================

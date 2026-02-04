@@ -14,11 +14,16 @@ Usage:
 Options:
   --nodes N                 Number of nodes (default: 10000)
   --edges M                 Number of edges (default: 50000)
+  --edge-types N            Number of edge types (default: 3)
+  --edge-props N            Number of props per edge (default: 10)
   --iterations I            Iterations for latency benchmarks (default: 10000)
   --output FILE             Output file path (default: auto-generated)
   --no-output               Disable file output
   --keep-db                 Keep the database file after benchmark
   --wal-size BYTES          WAL size in bytes (default: 67108864)
+  --sync-mode MODE          Sync mode: full|normal|off (default: normal)
+  --group-commit-enabled    Enable group commit (default: false)
+  --group-commit-window-ms  Group commit window in ms (default: 2)
   --checkpoint-threshold P  Auto-checkpoint threshold (default: 0.8)
   --no-auto-checkpoint      Disable auto-checkpoint
   --cache-enabled           Enable cache
@@ -42,7 +47,7 @@ from typing import List, Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
-  from kitedb import Database, OpenOptions
+  from kitedb import Database, OpenOptions, PropValue, SyncMode
 except ImportError:
   print("Error: kitedb module not found. Build the Python bindings first:")
   print("  maturin develop --features python")
@@ -53,10 +58,15 @@ except ImportError:
 class BenchConfig:
   nodes: int = 10000
   edges: int = 50000
+  edge_types: int = 3
+  edge_props: int = 10
   iterations: int = 10000
   output_file: Optional[str] = None
   keep_db: bool = False
   wal_size: int = 64 * 1024 * 1024
+  sync_mode: str = "normal"
+  group_commit_enabled: bool = False
+  group_commit_window_ms: int = 2
   checkpoint_threshold: float = 0.8
   auto_checkpoint: bool = True
   cache_enabled: bool = False
@@ -70,11 +80,16 @@ def parse_args() -> BenchConfig:
   parser = argparse.ArgumentParser(description="Single-file Raw Benchmark (Python)")
   parser.add_argument("--nodes", type=int, default=10000)
   parser.add_argument("--edges", type=int, default=50000)
+  parser.add_argument("--edge-types", type=int, default=3)
+  parser.add_argument("--edge-props", type=int, default=10)
   parser.add_argument("--iterations", type=int, default=10000)
   parser.add_argument("--output", type=str, default=None)
   parser.add_argument("--no-output", action="store_true")
   parser.add_argument("--keep-db", action="store_true")
   parser.add_argument("--wal-size", type=int, default=64 * 1024 * 1024)
+  parser.add_argument("--sync-mode", type=str, default="normal")
+  parser.add_argument("--group-commit-enabled", action="store_true")
+  parser.add_argument("--group-commit-window-ms", type=int, default=2)
   parser.add_argument("--checkpoint-threshold", type=float, default=0.8)
   parser.add_argument("--no-auto-checkpoint", action="store_true")
   parser.add_argument("--cache-enabled", action="store_true")
@@ -98,10 +113,15 @@ def parse_args() -> BenchConfig:
   return BenchConfig(
     nodes=args.nodes,
     edges=args.edges,
+    edge_types=max(1, args.edge_types),
+    edge_props=max(0, args.edge_props),
     iterations=args.iterations,
     output_file=output_file,
     keep_db=args.keep_db,
     wal_size=args.wal_size,
+    sync_mode=str(args.sync_mode).lower(),
+    group_commit_enabled=args.group_commit_enabled,
+    group_commit_window_ms=args.group_commit_window_ms,
     checkpoint_threshold=args.checkpoint_threshold,
     auto_checkpoint=not args.no_auto_checkpoint,
     cache_enabled=args.cache_enabled,
@@ -191,7 +211,8 @@ def print_latency_table(name: str, stats: LatencyStats):
 class GraphData:
   node_ids: List[int]
   node_keys: List[str]
-  etype_calls: int
+  edge_types: List[int]
+  edge_prop_keys: List[int]
 
 
 def build_random_vector(dimensions: int) -> List[float]:
@@ -204,11 +225,15 @@ def build_graph(db: Database, config: BenchConfig) -> GraphData:
   batch_size = 5000
 
   logger.log("  Creating nodes...")
-  etype_calls = 0
+  edge_types: List[int] = []
+  edge_prop_keys: List[int] = []
   for batch in range(0, config.nodes, batch_size):
     db.begin()
     if batch == 0:
-      etype_calls = db.get_or_create_etype("CALLS")
+      for idx in range(config.edge_types):
+        edge_types.append(db.get_or_create_etype(f"CALLS_{idx}"))
+      for idx in range(config.edge_props):
+        edge_prop_keys.append(db.get_or_create_propkey(f"edge_prop_{idx}"))
 
     end = min(batch + batch_size, config.nodes)
     for i in range(batch, end):
@@ -235,14 +260,29 @@ def build_graph(db: Database, config: BenchConfig) -> GraphData:
       src = random.choice(node_ids)
       dst = random.choice(node_ids)
       if src != dst:
-        db.add_edge(src, etype_calls, dst)
+        etype = random.choice(edge_types)
+        db.add_edge(src, etype, dst)
+        if edge_prop_keys:
+          for offset, key_id in enumerate(edge_prop_keys):
+            db.set_edge_prop(
+              src,
+              etype,
+              dst,
+              key_id,
+              PropValue.int(edges_created + offset),
+            )
         edges_created += 1
 
     db.commit()
     print(f"\r  Created {edges_created} / {config.edges} edges", end="", flush=True)
   print()
 
-  return GraphData(node_ids=node_ids, node_keys=node_keys, etype_calls=etype_calls)
+  return GraphData(
+    node_ids=node_ids,
+    node_keys=node_keys,
+    edge_types=edge_types,
+    edge_prop_keys=edge_prop_keys,
+  )
 
 
 def benchmark_key_lookups(db: Database, graph: GraphData, iterations: int):
@@ -274,8 +314,9 @@ def benchmark_edge_exists(db: Database, graph: GraphData, iterations: int):
   for _ in range(iterations):
     src = random.choice(graph.node_ids)
     dst = random.choice(graph.node_ids)
+    etype = random.choice(graph.edge_types)
     start = time.perf_counter_ns()
-    db.edge_exists(src, graph.etype_calls, dst)
+    db.edge_exists(src, etype, dst)
     tracker.record(time.perf_counter_ns() - start)
   print_latency_table("Random edge exists", tracker.get_stats())
 
@@ -355,8 +396,12 @@ def run_benchmarks(config: BenchConfig):
   logger.log(f"Date: {datetime.now().isoformat()}")
   logger.log(f"Nodes: {format_number(config.nodes)}")
   logger.log(f"Edges: {format_number(config.edges)}")
+  logger.log(f"Edge types: {format_number(config.edge_types)}")
+  logger.log(f"Edge props: {format_number(config.edge_props)}")
   logger.log(f"Iterations: {format_number(config.iterations)}")
   logger.log(f"WAL size: {format_number(config.wal_size)} bytes")
+  logger.log(f"Sync mode: {config.sync_mode}")
+  logger.log(f"Group commit: {config.group_commit_enabled} (window {config.group_commit_window_ms}ms)")
   logger.log(f"Auto-checkpoint: {config.auto_checkpoint}")
   logger.log(f"Checkpoint threshold: {config.checkpoint_threshold}")
   logger.log(f"Cache enabled: {config.cache_enabled}")
@@ -372,11 +417,20 @@ def run_benchmarks(config: BenchConfig):
   db: Optional[Database] = None
   try:
     logger.log("\n[1/6] Building graph...")
+    sync_mode = SyncMode.normal()
+    if config.sync_mode == "full":
+      sync_mode = SyncMode.full()
+    elif config.sync_mode == "off":
+      sync_mode = SyncMode.off()
+
     options = OpenOptions(
       wal_size=config.wal_size,
       auto_checkpoint=config.auto_checkpoint,
       checkpoint_threshold=config.checkpoint_threshold,
       cache_enabled=config.cache_enabled,
+      sync_mode=sync_mode,
+      group_commit_enabled=config.group_commit_enabled,
+      group_commit_window_ms=config.group_commit_window_ms,
     )
     db = Database(db_path, options)
     start_build = time.perf_counter()

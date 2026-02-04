@@ -29,6 +29,8 @@ class OpenOptions:
     cache_max_query_entries: Optional[int]
     cache_query_ttl_ms: Optional[int]
     sync_mode: Optional["SyncMode"]
+    group_commit_enabled: Optional[bool]
+    group_commit_window_ms: Optional[int]
     
     def __init__(
         self,
@@ -53,6 +55,8 @@ class OpenOptions:
         cache_max_query_entries: Optional[int] = None,
         cache_query_ttl_ms: Optional[int] = None,
         sync_mode: Optional["SyncMode"] = None,
+        group_commit_enabled: Optional[bool] = None,
+        group_commit_window_ms: Optional[int] = None,
     ) -> None: ...
 
 class SyncMode:

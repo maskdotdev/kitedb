@@ -1,0 +1,22 @@
+==================================================================
+Multi-writer Throughput Benchmark (Rust)
+==================================================================
+Threads: 8
+Tx per thread: 200
+Batch size: 200
+Edges per node: 1
+Edge types: 3
+Edge props: 10
+WAL size: 1073741824 bytes
+Sync mode: Normal
+Group commit: true (window 2ms)
+==================================================================
+
+--- Throughput ---
+Elapsed: 1.842s
+Transactions: 1600
+Nodes written: 320000
+Edges written: 320000
+Tx rate: 868.44/s
+Node rate: 173.69K/s
+Edge rate: 173.69K/s

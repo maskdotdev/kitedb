@@ -8,6 +8,11 @@
 //!   --edges M                 Number of edges (default: 50000)
 //!   --iterations I            Iterations for latency benchmarks (default: 10000)
 //!   --wal-size BYTES          WAL size in bytes (default: 67108864)
+//!   --sync-mode MODE          Sync mode: full|normal|off (default: normal)
+//!   --group-commit-enabled    Enable group commit (default: false)
+//!   --group-commit-window-ms  Group commit window in ms (default: 2)
+//!   --edge-types N            Number of edge types (default: 3)
+//!   --edge-props N            Number of props per edge (default: 10)
 //!   --checkpoint-threshold P  Auto-checkpoint threshold (default: 0.8)
 //!   --no-auto-checkpoint      Disable auto-checkpoint
 //!   --vector-dims N            Vector dimensions (default: 128)
@@ -19,14 +24,22 @@ use std::env;
 use std::time::Instant;
 use tempfile::tempdir;
 
-use kitedb::core::single_file::{close_single_file, open_single_file, SingleFileOpenOptions};
+use kitedb::core::single_file::{
+  close_single_file, open_single_file, SingleFileOpenOptions, SyncMode,
+};
+use kitedb::types::PropValue;
 
 #[derive(Debug, Clone)]
 struct BenchConfig {
   nodes: usize,
   edges: usize,
+  edge_types: usize,
+  edge_props: usize,
   iterations: usize,
   wal_size: usize,
+  sync_mode: SyncMode,
+  group_commit_enabled: bool,
+  group_commit_window_ms: u64,
   checkpoint_threshold: f64,
   auto_checkpoint: bool,
   vector_dims: usize,
@@ -41,8 +54,13 @@ impl Default for BenchConfig {
     Self {
       nodes: 10_000,
       edges: 50_000,
+      edge_types: 3,
+      edge_props: 10,
       iterations: 10_000,
       wal_size: 64 * 1024 * 1024,
+      sync_mode: SyncMode::Normal,
+      group_commit_enabled: false,
+      group_commit_window_ms: 2,
       checkpoint_threshold: 0.8,
       auto_checkpoint: true,
       vector_dims: 128,
@@ -73,6 +91,18 @@ fn parse_args() -> BenchConfig {
           i += 1;
         }
       }
+      "--edge-types" => {
+        if let Some(value) = args.get(i + 1) {
+          config.edge_types = value.parse().unwrap_or(config.edge_types);
+          i += 1;
+        }
+      }
+      "--edge-props" => {
+        if let Some(value) = args.get(i + 1) {
+          config.edge_props = value.parse().unwrap_or(config.edge_props);
+          i += 1;
+        }
+      }
       "--iterations" => {
         if let Some(value) = args.get(i + 1) {
           config.iterations = value.parse().unwrap_or(config.iterations);
@@ -82,6 +112,25 @@ fn parse_args() -> BenchConfig {
       "--wal-size" => {
         if let Some(value) = args.get(i + 1) {
           config.wal_size = value.parse().unwrap_or(config.wal_size);
+          i += 1;
+        }
+      }
+      "--sync-mode" => {
+        if let Some(value) = args.get(i + 1) {
+          match value.to_lowercase().as_str() {
+            "full" => config.sync_mode = SyncMode::Full,
+            "off" => config.sync_mode = SyncMode::Off,
+            _ => config.sync_mode = SyncMode::Normal,
+          }
+          i += 1;
+        }
+      }
+      "--group-commit-enabled" => {
+        config.group_commit_enabled = true;
+      }
+      "--group-commit-window-ms" => {
+        if let Some(value) = args.get(i + 1) {
+          config.group_commit_window_ms = value.parse().unwrap_or(config.group_commit_window_ms);
           i += 1;
         }
       }
@@ -118,6 +167,10 @@ fn parse_args() -> BenchConfig {
       _ => {}
     }
     i += 1;
+  }
+
+  if config.edge_types == 0 {
+    config.edge_types = 1;
   }
 
   config
@@ -186,6 +239,14 @@ fn format_number(n: usize) -> String {
   out.chars().rev().collect()
 }
 
+fn format_sync_mode(mode: SyncMode) -> &'static str {
+  match mode {
+    SyncMode::Full => "Full",
+    SyncMode::Normal => "Normal",
+    SyncMode::Off => "Off",
+  }
+}
+
 fn print_latency_table(name: &str, stats: LatencyStats) {
   let ops_per_sec = if stats.sum > 0 {
     stats.count as f64 / (stats.sum as f64 / 1_000_000_000.0)
@@ -214,7 +275,7 @@ fn build_random_vector(rng: &mut StdRng, dimensions: usize) -> Vec<f32> {
 struct GraphData {
   node_ids: Vec<u64>,
   node_keys: Vec<String>,
-  etype_calls: u32,
+  edge_types: Vec<u32>,
 }
 
 fn build_graph(db: &kitedb::core::single_file::SingleFileDB, config: &BenchConfig) -> GraphData {
@@ -223,13 +284,21 @@ fn build_graph(db: &kitedb::core::single_file::SingleFileDB, config: &BenchConfi
   let batch_size = 5_000usize;
 
   println!("  Creating nodes...");
-  let mut etype_calls = 0u32;
+  let mut edge_types: Vec<u32> = Vec::new();
+  let mut edge_prop_keys: Vec<u32> = Vec::new();
   for batch_start in (0..config.nodes).step_by(batch_size) {
     let end = (batch_start + batch_size).min(config.nodes);
     db.begin(false).unwrap();
 
     if batch_start == 0 {
-      etype_calls = db.define_etype("CALLS").unwrap();
+      for idx in 0..config.edge_types {
+        let name = format!("CALLS_{idx}");
+        edge_types.push(db.define_etype(&name).unwrap());
+      }
+      for idx in 0..config.edge_props {
+        let name = format!("edge_prop_{idx}");
+        edge_prop_keys.push(db.define_propkey(&name).unwrap());
+      }
     }
 
     for i in batch_start..end {
@@ -259,7 +328,15 @@ fn build_graph(db: &kitedb::core::single_file::SingleFileDB, config: &BenchConfi
       let src = node_ids[rng.gen_range(0..node_ids.len())];
       let dst = node_ids[rng.gen_range(0..node_ids.len())];
       if src != dst {
-        db.add_edge(src, etype_calls, dst).unwrap();
+        let etype = edge_types[rng.gen_range(0..edge_types.len())];
+        db.add_edge(src, etype, dst).unwrap();
+        if !edge_prop_keys.is_empty() {
+          for (idx, key_id) in edge_prop_keys.iter().enumerate() {
+            let value = PropValue::I64(edges_created.saturating_add(idx) as i64);
+            db.set_edge_prop(src, etype, dst, *key_id, value)
+              .unwrap();
+          }
+        }
         edges_created += 1;
       }
     }
@@ -272,7 +349,7 @@ fn build_graph(db: &kitedb::core::single_file::SingleFileDB, config: &BenchConfi
   GraphData {
     node_ids,
     node_keys,
-    etype_calls,
+    edge_types,
   }
 }
 
@@ -329,8 +406,9 @@ fn benchmark_edge_exists(
   for _ in 0..iterations {
     let src = graph.node_ids[rng.gen_range(0..graph.node_ids.len())];
     let dst = graph.node_ids[rng.gen_range(0..graph.node_ids.len())];
+    let etype = graph.edge_types[rng.gen_range(0..graph.edge_types.len())];
     let start = Instant::now();
-    let _ = db.edge_exists(src, graph.etype_calls, dst);
+    let _ = db.edge_exists(src, etype, dst);
     samples.push(start.elapsed().as_nanos());
   }
 
@@ -442,8 +520,15 @@ fn main() {
   println!("{}", "=".repeat(120));
   println!("Nodes: {}", format_number(config.nodes));
   println!("Edges: {}", format_number(config.edges));
+  println!("Edge types: {}", format_number(config.edge_types));
+  println!("Edge props: {}", format_number(config.edge_props));
   println!("Iterations: {}", format_number(config.iterations));
   println!("WAL size: {} bytes", format_number(config.wal_size));
+  println!("Sync mode: {}", format_sync_mode(config.sync_mode));
+  println!(
+    "Group commit: {} (window {}ms)",
+    config.group_commit_enabled, config.group_commit_window_ms
+  );
   println!("Auto-checkpoint: {}", config.auto_checkpoint);
   println!("Checkpoint threshold: {}", config.checkpoint_threshold);
   println!("Vector dims: {}", format_number(config.vector_dims));
@@ -455,11 +540,17 @@ fn main() {
   let temp = tempdir().expect("failed to create temp dir");
   let db_path = temp.path().join("ray-bench-raw.kitedb");
 
-  let options = SingleFileOpenOptions::new()
+  let mut options = SingleFileOpenOptions::new()
     .wal_size(config.wal_size)
     .auto_checkpoint(config.auto_checkpoint)
     .checkpoint_threshold(config.checkpoint_threshold)
-    .sync_normal();
+    .sync_mode(config.sync_mode);
+
+  if config.group_commit_enabled {
+    options = options
+      .group_commit_enabled(true)
+      .group_commit_window_ms(config.group_commit_window_ms);
+  }
 
   let mut db = open_single_file(&db_path, options).expect("failed to open single-file db");
 

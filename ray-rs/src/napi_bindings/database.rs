@@ -128,6 +128,10 @@ pub struct OpenOptions {
   pub cache_query_ttl_ms: Option<i64>,
   /// Sync mode: "Full", "Normal", or "Off" (default: "Full")
   pub sync_mode: Option<JsSyncMode>,
+  /// Enable group commit (coalesce WAL flushes across commits)
+  pub group_commit_enabled: Option<bool>,
+  /// Group commit window in milliseconds
+  pub group_commit_window_ms: Option<i64>,
   /// Snapshot parse mode: "Strict" or "Salvage" (single-file only)
   pub snapshot_parse_mode: Option<JsSnapshotParseMode>,
 }
@@ -202,6 +206,14 @@ impl From<OpenOptions> for RustOpenOptions {
     // Sync mode
     if let Some(mode) = opts.sync_mode {
       rust_opts = rust_opts.sync_mode(mode.into());
+    }
+    if let Some(enabled) = opts.group_commit_enabled {
+      rust_opts = rust_opts.group_commit_enabled(enabled);
+    }
+    if let Some(window_ms) = opts.group_commit_window_ms {
+      if window_ms >= 0 {
+        rust_opts = rust_opts.group_commit_window_ms(window_ms as u64);
+      }
     }
 
     // Snapshot parse mode

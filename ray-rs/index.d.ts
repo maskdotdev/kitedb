@@ -1118,6 +1118,10 @@ export interface JsKiteOptions {
   mvccMaxChainDepth?: number
   /** Sync mode: "Full", "Normal", or "Off" (default: "Full") */
   syncMode?: JsSyncMode
+  /** Enable group commit (coalesce WAL flushes across commits) */
+  groupCommitEnabled?: boolean
+  /** Group commit window in milliseconds */
+  groupCommitWindowMs?: number
   /** WAL size in megabytes (default: 1MB) */
   walSizeMb?: number
   /** WAL usage threshold (0.0-1.0) to trigger auto-checkpoint */
@@ -1412,6 +1416,10 @@ export interface OpenOptions {
   cacheQueryTtlMs?: number
   /** Sync mode: "Full", "Normal", or "Off" (default: "Full") */
   syncMode?: JsSyncMode
+  /** Enable group commit (coalesce WAL flushes across commits) */
+  groupCommitEnabled?: boolean
+  /** Group commit window in milliseconds */
+  groupCommitWindowMs?: number
   /** Snapshot parse mode: "Strict" or "Salvage" (single-file only) */
   snapshotParseMode?: JsSnapshotParseMode
 }

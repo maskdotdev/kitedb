@@ -1,0 +1,53 @@
+========================================================================================================================
+Single-file Raw Benchmark (Rust)
+========================================================================================================================
+Nodes: 10,000
+Edges: 50,000
+Edge types: 3
+Edge props: 10
+Iterations: 10,000
+WAL size: 67,108,864 bytes
+Sync mode: Normal
+Group commit: true (window 2ms)
+Auto-checkpoint: true
+Checkpoint threshold: 0.8
+Vector dims: 128
+Vector count: 1,000
+Skip checkpoint: false
+Reopen read-only: false
+========================================================================================================================
+
+[1/6] Building graph...
+  Creating nodes...
+  Created 5000 / 10000 nodes  Created 10000 / 10000 nodes
+  Creating edges...
+  Created 5000 / 50000 edges  Created 10000 / 50000 edges  Created 15000 / 50000 edges  Created 20000 / 50000 edges  Created 25000 / 50000 edges  Created 30000 / 50000 edges  Created 35000 / 50000 edges  Created 40000 / 50000 edges  Created 45000 / 50000 edges  Created 50000 / 50000 edges
+  Built in 247ms
+
+[2/6] Vector setup...
+
+--- Vector Operations ---
+Set vectors (batch 100)                       p50=    3.77ms p95=    6.02ms p99=    6.02ms max=    6.02ms (253 ops/sec)
+
+[3/6] Checkpointing...
+  Checkpointed in 145ms
+
+[4/6] Key lookup benchmarks...
+
+--- Key Lookups (get_node_by_key) ---
+Random existing keys                          p50=     125ns p95=     250ns p99=     542ns max=  450.33us (5404117 ops/sec)
+
+[5/6] Traversal and edge benchmarks...
+
+--- 1-Hop Traversals (out) ---
+Random nodes                                  p50=     208ns p95=     333ns p99=     708ns max=  504.04us (3479879 ops/sec)
+
+--- Edge Exists ---
+Random edge exists                            p50=      83ns p95=     125ns p99=     125ns max=    3.04us (10982325 ops/sec)
+get_node_vector() random                      p50=     125ns p95=     250ns p99=     375ns max=   16.33us (7524828 ops/sec)
+has_node_vector() random                      p50=      42ns p95=      84ns p99=     125ns max=    8.62us (15712968 ops/sec)
+
+[6/6] Write benchmarks...
+
+--- Batch Writes (100 nodes) ---
+Batch of 100 nodes                            p50=    3.09ms p95=    3.17ms p99=    3.21ms max=    3.21ms (327 ops/sec)

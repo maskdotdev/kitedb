@@ -1079,6 +1079,14 @@ impl napi::Task for OpenKiteTask {
     if let Some(mode) = self.options.sync_mode.take() {
       kite_opts.sync_mode = mode.into();
     }
+    if let Some(enabled) = self.options.group_commit_enabled {
+      kite_opts.group_commit_enabled = enabled;
+    }
+    if let Some(window_ms) = self.options.group_commit_window_ms {
+      if window_ms >= 0 {
+        kite_opts.group_commit_window_ms = window_ms as u64;
+      }
+    }
     if let Some(wal_size_mb) = self.options.wal_size_mb {
       if wal_size_mb > 0 {
         kite_opts.wal_size = Some((wal_size_mb as usize).saturating_mul(1024 * 1024));

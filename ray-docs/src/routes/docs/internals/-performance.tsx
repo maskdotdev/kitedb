@@ -320,9 +320,10 @@ export function PerformancePage() {
 
 			<p>
 				Latest snapshot (single-file raw, Rust core, 10k nodes / 50k edges,
-				February 3, 2026):
+				edge types=3, edge props=10, group commit enabled, February 3, 2026):
 			</p>
 
+			<h3>Node Ops</h3>
 			<table>
 				<thead>
 					<tr>
@@ -336,16 +337,28 @@ export function PerformancePage() {
 						<td>125ns</td>
 					</tr>
 					<tr>
+						<td>Batch write (100 nodes)</td>
+						<td>3.09ms</td>
+					</tr>
+				</tbody>
+			</table>
+
+			<h3>Edge Ops</h3>
+			<table>
+				<thead>
+					<tr>
+						<th>Operation</th>
+						<th>p50</th>
+					</tr>
+				</thead>
+				<tbody>
+					<tr>
 						<td>1-hop traversal (out)</td>
 						<td>208ns</td>
 					</tr>
 					<tr>
 						<td>Edge exists (random)</td>
 						<td>83ns</td>
-					</tr>
-					<tr>
-						<td>Batch write (100 nodes)</td>
-						<td>45.62us</td>
 					</tr>
 				</tbody>
 			</table>

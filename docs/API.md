@@ -58,6 +58,18 @@ Kite is organized into several key layers:
 └─────────────────────────────────────────┘
 ```
 
+## Fast Writes (Single-File)
+
+Recommended profile for high write throughput:
+
+- `sync_mode = Normal`
+- `group_commit_enabled = true`
+- `group_commit_window_ms = 2`
+- Optional: increase `wal_size` (e.g., 64MB) for heavy ingest to reduce checkpoints
+
+Durability note: `Normal` mode does not `fsync` on every commit. An OS crash can
+lose recent commits, but application crashes are recovered via WAL replay.
+
 ## API Layers
 
 ### 1. High-Level API (`src/api/`)

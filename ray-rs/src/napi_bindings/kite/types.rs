@@ -80,6 +80,10 @@ pub struct JsKiteOptions {
   pub mvcc_max_chain_depth: Option<i64>,
   /// Sync mode: "Full", "Normal", or "Off" (default: "Full")
   pub sync_mode: Option<JsSyncMode>,
+  /// Enable group commit (coalesce WAL flushes across commits)
+  pub group_commit_enabled: Option<bool>,
+  /// Group commit window in milliseconds
+  pub group_commit_window_ms: Option<i64>,
   /// WAL size in megabytes (default: 1MB)
   pub wal_size_mb: Option<i64>,
   /// WAL usage threshold (0.0-1.0) to trigger auto-checkpoint

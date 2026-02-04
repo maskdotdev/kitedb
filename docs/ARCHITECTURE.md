@@ -319,6 +319,18 @@ Record types: `BEGIN`, `COMMIT`, `ROLLBACK`, `CREATE_NODE`, `DELETE_NODE`, `ADD_
 - Page-level write batching to reduce I/O amplification
 - No wrap-around; checkpoints reset the WAL to reclaim space
 
+### Fast Writes (Single-File)
+
+Recommended profile for high write throughput:
+
+- `sync_mode = Normal`
+- `group_commit_enabled = true`
+- `group_commit_window_ms = 2`
+- Optional: increase `wal_size` (e.g., 64MB) for heavy ingest to reduce checkpoints
+
+Durability note: `Normal` mode does not `fsync` on every commit. An OS crash can
+lose recent commits, but application crashes are recovered via WAL replay.
+
 ---
 
 ## MVCC (Multi-Version Concurrency Control)

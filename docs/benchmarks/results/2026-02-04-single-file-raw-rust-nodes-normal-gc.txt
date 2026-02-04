@@ -1,0 +1,53 @@
+========================================================================================================================
+Single-file Raw Benchmark (Rust)
+========================================================================================================================
+Nodes: 10,000
+Edges: 0
+Edge types: 1
+Edge props: 0
+Iterations: 10,000
+WAL size: 268,435,456 bytes
+Sync mode: Normal
+Group commit: true (window 2ms)
+Auto-checkpoint: false
+Checkpoint threshold: 0.8
+Vector dims: 128
+Vector count: 1,000
+Skip checkpoint: true
+Reopen read-only: false
+========================================================================================================================
+
+[1/6] Building graph...
+  Creating nodes...
+  Created 5000 / 10000 nodes  Created 10000 / 10000 nodes
+  Creating edges...
+
+  Built in 12ms
+
+[2/6] Vector setup...
+
+--- Vector Operations ---
+Set vectors (batch 100)                       p50=    2.79ms p95=    5.30ms p99=    5.30ms max=    5.30ms (283 ops/sec)
+
+[3/6] Checkpointing...
+  Skipped checkpoint
+
+[4/6] Key lookup benchmarks...
+
+--- Key Lookups (get_node_by_key) ---
+Random existing keys                          p50=      42ns p95=     250ns p99=     333ns max=    6.38us (11430139 ops/sec)
+
+[5/6] Traversal and edge benchmarks...
+
+--- 1-Hop Traversals (out) ---
+Random nodes                                  p50=      41ns p95=      42ns p99=      42ns max=   17.08us (29187110 ops/sec)
+
+--- Edge Exists ---
+Random edge exists                            p50=      42ns p95=      42ns p99=      42ns max=   16.50us (24504338 ops/sec)
+get_node_vector() random                      p50=     167ns p95=     250ns p99=     375ns max=    2.33us (5722503 ops/sec)
+has_node_vector() random                      p50=      83ns p95=     125ns p99=     125ns max=     416ns (11922973 ops/sec)
+
+[6/6] Write benchmarks...
+
+--- Batch Writes (100 nodes) ---
+Batch of 100 nodes                            p50=    2.63ms p95=    5.07ms p99=    6.05ms max=    6.05ms (325 ops/sec)

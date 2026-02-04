@@ -839,6 +839,49 @@ mod tests {
   }
 
   #[test]
+  fn test_group_commit_flush_and_persist() {
+    let temp_dir = tempdir().unwrap();
+    let db_path = temp_dir.path().join("group-commit.kitedb");
+
+    let db = open_single_file(
+      &db_path,
+      SingleFileOpenOptions::new()
+        .sync_mode(SyncMode::Normal)
+        .group_commit_enabled(true)
+        .group_commit_window_ms(0),
+    )
+    .unwrap();
+
+    db.begin(false).unwrap();
+    let node_id = db.create_node(Some("n1")).unwrap();
+    let key_id = db.get_or_create_propkey("value");
+    db
+      .set_node_prop(node_id, key_id, crate::types::PropValue::I64(42))
+      .unwrap();
+    db.commit().unwrap();
+
+    assert!(!db.wal_buffer.lock().has_pending_writes());
+
+    close_single_file(db).unwrap();
+
+    let reopened = open_single_file(
+      &db_path,
+      SingleFileOpenOptions::new()
+        .sync_mode(SyncMode::Normal)
+        .group_commit_enabled(true)
+        .group_commit_window_ms(0),
+    )
+    .unwrap();
+
+    let value = reopened
+      .get_node_prop(node_id, key_id)
+      .expect("prop value");
+    assert_eq!(value, crate::types::PropValue::I64(42));
+
+    close_single_file(reopened).unwrap();
+  }
+
+  #[test]
   fn test_open_rejects_wal_size_mismatch() {
     let temp_dir = tempdir().unwrap();
     let db_path = temp_dir.path().join("wal-size-mismatch.kitedb");

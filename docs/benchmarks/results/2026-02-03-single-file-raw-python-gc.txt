@@ -1,0 +1,57 @@
+========================================================================================================================
+Single-file Raw Benchmark (Python)
+========================================================================================================================
+Date: 2026-02-03T17:11:31.744217
+Nodes: 10,000
+Edges: 50,000
+Edge types: 3
+Edge props: 10
+Iterations: 10,000
+WAL size: 67,108,864 bytes
+Sync mode: normal
+Group commit: True (window 2ms)
+Auto-checkpoint: True
+Checkpoint threshold: 0.8
+Cache enabled: False
+Vector dims: 128
+Vector count: 1,000
+Skip compact: False
+Reopen read-only: False
+========================================================================================================================
+
+[1/6] Building graph...
+  Creating nodes...
+  Creating edges...
+  Built in 444ms
+
+[2/6] Vector setup...
+
+--- Vector Operations ---
+Set vectors (batch 100)                       p50=    2.81ms p95=    5.92ms p99=    5.92ms max=    5.92ms (286 ops/sec)
+
+[3/6] Compacting...
+  Compacted in 178ms
+
+[4/6] Key lookup benchmarks...
+
+--- Key Lookups (get_node_by_key) ---
+Random existing keys                          p50=     209ns p95=     417ns p99=     708ns max=   19.92us (3,809,737 ops/sec)
+
+[5/6] Traversal and edge benchmarks...
+
+--- 1-Hop Traversals (out) ---
+Random nodes                                  p50=     458ns p95=     708ns p99=    1.04us max=   41.71us (1,995,379 ops/sec)
+
+--- Edge Exists ---
+Random edge exists                            p50=     167ns p95=     291ns p99=     375ns max=   14.75us (5,339,267 ops/sec)
+get_node_vector() random                      p50=    1.17us p95=    1.54us p99=    2.08us max=   40.08us (778,998 ops/sec)
+has_node_vector() random                      p50=     166ns p95=     167ns p99=     209ns max=    8.17us (6,555,618 ops/sec)
+
+[6/6] Write benchmarks...
+
+--- Batch Writes (100 nodes) ---
+Batch of 100 nodes                            p50=    2.60ms p95=    2.65ms p99=    2.69ms max=    2.69ms (384 ops/sec)
+
+========================================================================================================================
+Benchmark complete.
+========================================================================================================================

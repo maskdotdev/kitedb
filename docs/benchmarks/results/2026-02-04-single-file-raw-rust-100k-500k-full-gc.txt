@@ -1,0 +1,53 @@
+========================================================================================================================
+Single-file Raw Benchmark (Rust)
+========================================================================================================================
+Nodes: 100,000
+Edges: 500,000
+Edge types: 3
+Edge props: 10
+Iterations: 5,000
+WAL size: 1,073,741,824 bytes
+Sync mode: Full
+Group commit: true (window 2ms)
+Auto-checkpoint: false
+Checkpoint threshold: 0.8
+Vector dims: 128
+Vector count: 1,000
+Skip checkpoint: true
+Reopen read-only: false
+========================================================================================================================
+
+[1/6] Building graph...
+  Creating nodes...
+  Created 5000 / 100000 nodes  Created 10000 / 100000 nodes  Created 15000 / 100000 nodes  Created 20000 / 100000 nodes  Created 25000 / 100000 nodes  Created 30000 / 100000 nodes  Created 35000 / 100000 nodes  Created 40000 / 100000 nodes  Created 45000 / 100000 nodes  Created 50000 / 100000 nodes  Created 55000 / 100000 nodes  Created 60000 / 100000 nodes  Created 65000 / 100000 nodes  Created 70000 / 100000 nodes  Created 75000 / 100000 nodes  Created 80000 / 100000 nodes  Created 85000 / 100000 nodes  Created 90000 / 100000 nodes  Created 95000 / 100000 nodes  Created 100000 / 100000 nodes
+  Creating edges...
+  Created 5000 / 500000 edges  Created 10000 / 500000 edges  Created 15000 / 500000 edges  Created 20000 / 500000 edges  Created 25000 / 500000 edges  Created 30000 / 500000 edges  Created 35000 / 500000 edges  Created 40000 / 500000 edges  Created 45000 / 500000 edges  Created 50000 / 500000 edges  Created 55000 / 500000 edges  Created 60000 / 500000 edges  Created 65000 / 500000 edges  Created 70000 / 500000 edges  Created 75000 / 500000 edges  Created 80000 / 500000 edges  Created 85000 / 500000 edges  Created 90000 / 500000 edges  Created 95000 / 500000 edges  Created 100000 / 500000 edges  Created 105000 / 500000 edges  Created 110000 / 500000 edges  Created 115000 / 500000 edges  Created 120000 / 500000 edges  Created 125000 / 500000 edges  Created 130000 / 500000 edges  Created 135000 / 500000 edges  Created 140000 / 500000 edges  Created 145000 / 500000 edges  Created 150000 / 500000 edges  Created 155000 / 500000 edges  Created 160000 / 500000 edges  Created 165000 / 500000 edges  Created 170000 / 500000 edges  Created 175000 / 500000 edges  Created 180000 / 500000 edges  Created 185000 / 500000 edges  Created 190000 / 500000 edges  Created 195000 / 500000 edges  Created 200000 / 500000 edges  Created 205000 / 500000 edges  Created 210000 / 500000 edges  Created 215000 / 500000 edges  Created 220000 / 500000 edges  Created 225000 / 500000 edges  Created 230000 / 500000 edges  Created 235000 / 500000 edges  Created 240000 / 500000 edges  Created 245000 / 500000 edges  Created 250000 / 500000 edges  Created 255000 / 500000 edges  Created 260000 / 500000 edges  Created 265000 / 500000 edges  Created 270000 / 500000 edges  Created 275000 / 500000 edges  Created 280000 / 500000 edges  Created 285000 / 500000 edges  Created 290000 / 500000 edges  Created 295000 / 500000 edges  Created 300000 / 500000 edges  Created 305000 / 500000 edges  Created 310000 / 500000 edges  Created 315000 / 500000 edges  Created 320000 / 500000 edges  Created 325000 / 500000 edges  Created 330000 / 500000 edges  Created 335000 / 500000 edges  Created 340000 / 500000 edges  Created 345000 / 500000 edges  Created 350000 / 500000 edges  Created 355000 / 500000 edges  Created 360000 / 500000 edges  Created 365000 / 500000 edges  Created 370000 / 500000 edges  Created 375000 / 500000 edges  Created 380000 / 500000 edges  Created 385000 / 500000 edges  Created 390000 / 500000 edges  Created 395000 / 500000 edges  Created 400000 / 500000 edges  Created 405000 / 500000 edges  Created 410000 / 500000 edges  Created 415000 / 500000 edges  Created 420000 / 500000 edges  Created 425000 / 500000 edges  Created 430000 / 500000 edges  Created 435000 / 500000 edges  Created 440000 / 500000 edges  Created 445000 / 500000 edges  Created 450000 / 500000 edges  Created 455000 / 500000 edges  Created 460000 / 500000 edges  Created 465000 / 500000 edges  Created 470000 / 500000 edges  Created 475000 / 500000 edges  Created 480000 / 500000 edges  Created 485000 / 500000 edges  Created 490000 / 500000 edges  Created 495000 / 500000 edges  Created 500000 / 500000 edges
+  Built in 2595ms
+
+[2/6] Vector setup...
+
+--- Vector Operations ---
+Set vectors (batch 100)                       p50=  172.54us p95=  237.75us p99=  237.75us max=  237.75us (6010 ops/sec)
+
+[3/6] Checkpointing...
+  Skipped checkpoint
+
+[4/6] Key lookup benchmarks...
+
+--- Key Lookups (get_node_by_key) ---
+Random existing keys                          p50=     291ns p95=     667ns p99=    1.88us max=   75.92us (2599129 ops/sec)
+
+[5/6] Traversal and edge benchmarks...
+
+--- 1-Hop Traversals (out) ---
+Random nodes                                  p50=     250ns p95=     417ns p99=     542ns max=    3.38us (3858328 ops/sec)
+
+--- Edge Exists ---
+Random edge exists                            p50=     250ns p95=     500ns p99=     667ns max=    2.83us (3595798 ops/sec)
+get_node_vector() random                      p50=     125ns p95=     375ns p99=     583ns max=   25.25us (5700006 ops/sec)
+has_node_vector() random                      p50=      42ns p95=      84ns p99=      84ns max=     250ns (16734217 ops/sec)
+
+[6/6] Write benchmarks...
+
+--- Batch Writes (100 nodes) ---
+Batch of 100 nodes                            p50=   81.00us p95=  141.83us p99=  210.92us max=  210.92us (10477 ops/sec)

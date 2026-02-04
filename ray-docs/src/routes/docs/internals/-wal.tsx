@@ -518,6 +518,32 @@ export function WALPage() {
 
 			<DurabilityModes />
 
+			<h2 id="fast-writes">Fast Writes (Single-File)</h2>
+
+			<p>Recommended profile for high write throughput:</p>
+
+			<ul>
+				<li>
+					<code>sync_mode = Normal</code>
+				</li>
+				<li>
+					<code>group_commit_enabled = true</code>
+				</li>
+				<li>
+					<code>group_commit_window_ms = 2</code>
+				</li>
+				<li>
+					Optional: increase <code>wal_size</code> (e.g., 64MB) for heavy ingest to
+					reduce checkpoints
+				</li>
+			</ul>
+
+			<p class="text-sm text-slate-400">
+				Durability note: <code>Normal</code> mode does not <code>fsync</code> on every
+				commit. An OS crash can lose recent commits, but application crashes are
+				recovered via WAL replay.
+			</p>
+
 			<h2 id="recovery">Crash Recovery</h2>
 
 			<p>On database open, the WAL is replayed to rebuild the delta:</p>
