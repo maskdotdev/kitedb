@@ -16,7 +16,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 // ============================================================================
 // Snapshot Data Structure
@@ -32,6 +32,8 @@ pub struct SnapshotData {
   sections: Vec<SectionEntry>,
   /// Cache for decompressed sections
   decompressed_cache: RwLock<HashMap<SectionId, Arc<[u8]>>>,
+  /// Cache for string table entries (indexed by StringId)
+  string_cache: Vec<OnceLock<Arc<str>>>,
 }
 
 /// Borrowed or shared section bytes.
@@ -41,8 +43,7 @@ pub enum SectionBytes<'a> {
   Shared(Arc<[u8]>),
 }
 
-impl SectionBytes<'_> {
-}
+impl SectionBytes<'_> {}
 
 impl AsRef<[u8]> for SectionBytes<'_> {
   fn as_ref(&self) -> &[u8] {
@@ -157,11 +158,14 @@ impl SnapshotData {
       }
     }
 
+    let string_cache = Self::init_string_cache(num_strings)?;
+
     Ok(Self {
       mmap,
       header,
       sections,
       decompressed_cache: RwLock::new(HashMap::new()),
+      string_cache,
     })
   }
 
@@ -252,12 +256,25 @@ impl SnapshotData {
       }
     }
 
+    let string_cache = Self::init_string_cache(num_strings)?;
+
     Ok(Self {
       mmap,
       header,
       sections,
       decompressed_cache: RwLock::new(HashMap::new()),
+      string_cache,
     })
+  }
+
+  fn init_string_cache(num_strings: u64) -> Result<Vec<OnceLock<Arc<str>>>> {
+    let base_len = usize::try_from(num_strings).map_err(|_| {
+      KiteError::InvalidSnapshot("Snapshot string table too large".to_string())
+    })?;
+    let len = base_len
+      .checked_add(1)
+      .ok_or_else(|| KiteError::InvalidSnapshot("Snapshot string table too large".to_string()))?;
+    Ok(std::iter::repeat_with(OnceLock::new).take(len).collect())
   }
 
   /// Get raw section bytes (possibly compressed)
@@ -460,6 +477,23 @@ impl SnapshotData {
     }
 
     String::from_utf8(bytes[start..end].to_vec()).ok()
+  }
+
+  fn get_string_cached(&self, string_id: StringId) -> Option<&str> {
+    if string_id == 0 {
+      return Some("");
+    }
+
+    let idx = string_id as usize;
+    let cell = self.string_cache.get(idx)?;
+    if let Some(value) = cell.get() {
+      return Some(value.as_ref());
+    }
+
+    let value = self.get_string(string_id)?;
+    let arc: Arc<str> = Arc::from(value);
+    let _ = cell.set(arc);
+    cell.get().map(|value| value.as_ref())
   }
 
   // ========================================================================
@@ -1037,13 +1071,7 @@ impl SnapshotData {
     if string_id == 0 {
       return None;
     }
-    // Return as owned String converted to &str via lifetime extension
-    // This is a workaround - ideally we'd have a string cache
-    self.get_string(string_id).map(|s| {
-      // Leak the string to extend lifetime - only safe for short-lived operations
-      // In production, this should use a proper string cache
-      Box::leak(s.into_boxed_str()) as &str
-    })
+    self.get_string_cached(string_id)
   }
 
   /// Get etype name by ETypeID
@@ -1058,9 +1086,7 @@ impl SnapshotData {
     if string_id == 0 {
       return None;
     }
-    self
-      .get_string(string_id)
-      .map(|s| Box::leak(s.into_boxed_str()) as &str)
+    self.get_string_cached(string_id)
   }
 
   /// Get propkey name by PropKeyID
@@ -1075,9 +1101,7 @@ impl SnapshotData {
     if string_id == 0 {
       return None;
     }
-    self
-      .get_string(string_id)
-      .map(|s| Box::leak(s.into_boxed_str()) as &str)
+    self.get_string_cached(string_id)
   }
 
   /// Get out-edges as a Vec for compaction purposes
