@@ -389,6 +389,11 @@ export function PerformancePage() {
 				<li>
 					<b class="text-slate-200">Multi-writer throughput:</b>{" "}
 					<code>sync_mode=Normal</code> + <code>group_commit=true</code> (1-2ms).
+					<span class="text-slate-500">
+						{" "}
+						Scaling saturates quickly; prefer prep-parallel + single writer for max ingest. See{" "}
+						<a href="/docs/benchmarks#parallel-write-scaling">benchmarks notes</a>.
+					</span>
 				</li>
 				<li>
 					<b class="text-slate-200">Highest speed, weakest durability:</b>{" "}

@@ -196,6 +196,17 @@ function DocPageContent(props: { slug: string }) {
           </a>
         </p>
 
+        <h2 id="parallel-write-scaling">Parallel Write Scaling (Single-File)</h2>
+        <p>
+          Writes don’t scale linearly with more writer threads. Commits must serialize WAL ordering
+          and delta application (see <code>commit_lock</code>), so the best ingest pattern is usually:
+          parallelize batch prep, funnel into 1 writer doing batched transactions.
+        </p>
+        <p class="text-sm text-slate-500">
+          Measured February 5, 2026 on local dev machine (10 CPUs). Full details and configs are in{" "}
+          <code>docs/BENCHMARKS.md</code>.
+        </p>
+
         <h2 id="running">Running Benchmarks</h2>
         <table>
           <thead>
@@ -273,6 +284,55 @@ function DocPageContent(props: { slug: string }) {
             <tr><td>get_node_vector()</td><td>125ns</td><td>209ns</td></tr>
             <tr><td>has_node_vector()</td><td>42ns</td><td>84ns</td></tr>
             <tr><td>Set vectors (batch 100)</td><td>94.33us</td><td>195.38us</td></tr>
+          </tbody>
+        </table>
+
+        <h2 id="parallel-write-scaling">Parallel Write Scaling Notes (2026-02-05)</h2>
+        <p>
+          Multi-writer write throughput saturates quickly because commits serialize WAL ordering and
+          delta application. For max ingest throughput: parallelize prep, funnel into 1 writer doing
+          batched transactions.
+        </p>
+
+        <h3 id="parallel-nodes-edges">Nodes + Edges (create_nodes_batch + add_edges_batch)</h3>
+        <p class="text-sm text-slate-500">
+          Config: <code>--tx-per-thread 400 --batch-size 500 --edges-per-node 1 --edge-types 3 --edge-props 0 --wal-size 268435456</code>
+          .
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>sync_mode</th>
+              <th>threads</th>
+              <th>node rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Normal</td><td>1</td><td>521.89K/s</td></tr>
+            <tr><td>Normal</td><td>2</td><td>577.43K/s</td></tr>
+            <tr><td>Normal</td><td>4</td><td>603.92K/s</td></tr>
+            <tr><td>Off</td><td>1</td><td>771.18K/s</td></tr>
+            <tr><td>Off</td><td>2</td><td>896.99K/s</td></tr>
+            <tr><td>Off</td><td>4</td><td>805.34K/s</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="parallel-vectors">Vectors (set_node_vector, dims=128)</h3>
+        <p class="text-sm text-slate-500">
+          Config: <code>--vector-dims 128 --tx-per-thread 200 --batch-size 500 --wal-size 1610612736 --sync-mode normal --no-auto-checkpoint</code>
+          .
+        </p>
+        <table>
+          <thead>
+            <tr>
+              <th>threads</th>
+              <th>vector rate</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>529.31K/s</td></tr>
+            <tr><td>2</td><td>452.36K/s</td></tr>
+            <tr><td>4</td><td>388.78K/s</td></tr>
           </tbody>
         </table>
 
