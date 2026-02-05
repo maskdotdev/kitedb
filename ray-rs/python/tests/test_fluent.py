@@ -1,5 +1,6 @@
 import os
 import tempfile
+import pytest
 
 from kitedb import (
     TraverseOptions,
@@ -288,6 +289,52 @@ def test_vector_index_search():
             assert index.has(alice)
             assert index.delete(bob)
             assert index.stats()["totalVectors"] == 1
+
+
+def test_vector_index_dimension_mismatch_and_invalid_vector():
+    user, knows = _build_schema()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "fluent.kitedb")
+        with kite(path, nodes=[user], edges=[knows]) as db:
+            alice = db.insert(user).values(key="alice", name="Alice", age=30).returning()
+
+            index = create_vector_index(VectorIndexOptions(dimensions=2, metric="cosine"))
+            with pytest.raises(ValueError, match="dimension mismatch"):
+                index.set(alice, [1.0, 0.0, 0.0])
+
+            with pytest.raises(ValueError, match="Invalid vector"):
+                index.set(alice, [1.0, float("nan")])
+
+
+def test_vector_index_trains_and_searches_with_single_cluster():
+    user, knows = _build_schema()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "fluent.kitedb")
+        with kite(path, nodes=[user], edges=[knows]) as db:
+            alice = db.insert(user).values(key="alice", name="Alice", age=30).returning()
+            bob = db.insert(user).values(key="bob", name="Bob", age=25).returning()
+
+            index = create_vector_index(
+                VectorIndexOptions(
+                    dimensions=2,
+                    metric="cosine",
+                    ivf={"n_clusters": 1, "n_probe": 1},
+                    training_threshold=2,
+                )
+            )
+            index.set(alice, [1.0, 0.0])
+            index.set(bob, [0.0, 1.0])
+            index.build_index()
+
+            stats = index.stats()
+            assert stats["indexTrained"]
+            assert stats["indexClusters"] == 1
+
+            hits = index.search([1.0, 0.0], SimilarOptions(k=1))
+            assert len(hits) == 1
+            assert hits[0].node.id == alice.id
 
 
 def test_insert_values_list():

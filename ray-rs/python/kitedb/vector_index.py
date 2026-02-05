@@ -259,13 +259,14 @@ class VectorIndex:
     def stats(self) -> Dict[str, object]:
         total_vectors = len(self._node_to_vector)
         live_vectors = len(self._vectors)
+        index_stats = self._index.stats() if self._index is not None else None
         return {
             "totalVectors": total_vectors,
             "liveVectors": live_vectors,
             "dimensions": self._dimensions,
             "metric": self._metric,
             "indexTrained": self._index.trained if self._index is not None else False,
-            "indexClusters": self._index.config.n_clusters if self._index is not None else None,
+            "indexClusters": index_stats.n_clusters if index_stats is not None else None,
         }
 
     def clear(self) -> None:

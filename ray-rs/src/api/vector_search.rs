@@ -497,54 +497,47 @@ impl VectorIndex {
       self.build_index()?;
     }
 
-    let k = options.k;
-    let n_probe = options.n_probe.unwrap_or(self.options.n_probe);
+    let SimilarOptions {
+      k,
+      threshold,
+      n_probe,
+      filter,
+    } = options;
+
+    let n_probe = n_probe.unwrap_or(self.options.n_probe);
 
     let results: Vec<VectorSearchResult> = if let Some(ref index) = self.index {
       if index.trained {
-        // Use IVF index for approximate search
+        // Use IVF index for approximate search (push down threshold/filter)
+        let filter_box = filter.as_ref().map(|f| {
+          let f = Arc::clone(f);
+          Box::new(move |node_id: NodeId| f(node_id)) as Box<dyn Fn(NodeId) -> bool>
+        });
+
         let search_opts = SearchOptions {
           n_probe: Some(n_probe),
-          filter: None,
-          threshold: None,
+          filter: filter_box,
+          threshold,
         };
-        index.search(&self.manifest, query, k * 2, Some(search_opts))
+        index.search(&self.manifest, query, k, Some(search_opts))
       } else {
-        self.brute_force_search(query, k * 2)
+        self.brute_force_search_filtered(query, k, threshold, filter.as_ref())
       }
     } else {
-      self.brute_force_search(query, k * 2)
+      self.brute_force_search_filtered(query, k, threshold, filter.as_ref())
     };
 
-    // Apply filter, threshold, and limit
-    let mut hits = Vec::with_capacity(k);
-    for result in results {
-      // Apply filter if provided
-      if let Some(ref filter) = options.filter {
-        if !filter(result.node_id) {
-          continue;
-        }
-      }
-
-      // Apply threshold
-      if let Some(threshold) = options.threshold {
-        if result.similarity < threshold {
-          continue;
-        }
-      }
-
-      hits.push(VectorSearchHit {
-        node_id: result.node_id,
-        distance: result.distance,
-        similarity: result.similarity,
-      });
-
-      if hits.len() >= k {
-        break;
-      }
-    }
-
-    Ok(hits)
+    Ok(
+      results
+        .into_iter()
+        .take(k)
+        .map(|r| VectorSearchHit {
+          node_id: r.node_id,
+          distance: r.distance,
+          similarity: r.similarity,
+        })
+        .collect(),
+    )
   }
 
   /// Brute force search (fallback when index not available)
@@ -584,6 +577,70 @@ impl VectorIndex {
     }
 
     // Sort by distance and return top k
+    candidates.sort_by(|a, b| {
+      a.distance
+        .partial_cmp(&b.distance)
+        .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    candidates.truncate(k);
+    candidates
+  }
+
+  fn brute_force_search_filtered(
+    &self,
+    query: &[f32],
+    k: usize,
+    threshold: Option<f32>,
+    filter: Option<&Arc<dyn Fn(NodeId) -> bool + Send + Sync>>,
+  ) -> Vec<VectorSearchResult> {
+    if threshold.is_none() && filter.is_none() {
+      return self.brute_force_search(query, k);
+    }
+
+    use crate::vector::{cosine_distance, dot_product, euclidean_distance, normalize};
+
+    let metric = self.options.metric;
+
+    let query_normalized: Vec<f32>;
+    let query_for_search = if metric == DistanceMetric::Cosine {
+      query_normalized = normalize(query);
+      &query_normalized
+    } else {
+      query
+    };
+
+    let mut candidates: Vec<VectorSearchResult> = Vec::new();
+
+    for (&node_id, &vector_id) in &self.manifest.node_to_vector {
+      if let Some(filter) = filter {
+        if !filter(node_id) {
+          continue;
+        }
+      }
+
+      if let Some(vector) = vector_store_get(&self.manifest, node_id) {
+        let distance = match metric {
+          DistanceMetric::Cosine => cosine_distance(query_for_search, vector),
+          DistanceMetric::Euclidean => euclidean_distance(query_for_search, vector),
+          DistanceMetric::DotProduct => -dot_product(query_for_search, vector), // Negate for sorting
+        };
+
+        let similarity = metric.distance_to_similarity(distance);
+        if let Some(threshold) = threshold {
+          if similarity < threshold {
+            continue;
+          }
+        }
+
+        candidates.push(VectorSearchResult {
+          vector_id,
+          node_id,
+          distance,
+          similarity,
+        });
+      }
+    }
+
     candidates.sort_by(|a, b| {
       a.distance
         .partial_cmp(&b.distance)
@@ -820,10 +877,8 @@ mod tests {
     let mut index = VectorIndex::new(VectorIndexOptions::new(4));
 
     let vector = vec![1.0, f32::NAN, 0.0, 0.0];
-    let _result = index.set(1, &vector);
-
-    // Note: validation happens at search time, not insert time in current impl
-    // For this test, we verify the search validation
+    let result = index.set(1, &vector);
+    assert!(matches!(result, Err(VectorIndexError::StoreError(_))));
   }
 
   #[test]
@@ -891,6 +946,64 @@ mod tests {
     // Node 2 is orthogonal (similarity ~0)
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].node_id, 1);
+  }
+
+  #[test]
+  fn test_search_with_filter_returns_best_allowed_result_brute_force() {
+    let mut index = VectorIndex::new(VectorIndexOptions::new(4).with_training_threshold(1000));
+
+    // Disallowed exact matches - would dominate top-k without filter
+    for node_id in 1..=10 {
+      index.set(node_id, &[1.0, 0.0, 0.0, 0.0]).unwrap();
+    }
+
+    // Allowed but less-similar
+    index.set(100, &[0.8, 0.6, 0.0, 0.0]).unwrap();
+    index.set(101, &[0.0, 1.0, 0.0, 0.0]).unwrap();
+
+    let query = vec![1.0, 0.0, 0.0, 0.0];
+    let results = index
+      .search(
+        &query,
+        SimilarOptions::new(1).with_filter(|node_id| node_id >= 100),
+      )
+      .unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].node_id, 100);
+  }
+
+  #[test]
+  fn test_ivf_search_trained_path_and_filter() {
+    let mut index = VectorIndex::new(
+      VectorIndexOptions::new(4)
+        .with_training_threshold(2)
+        .with_n_clusters(1)
+        .with_n_probe(1),
+    );
+
+    // Disallowed exact matches
+    for node_id in 1..=10 {
+      index.set(node_id, &[1.0, 0.0, 0.0, 0.0]).unwrap();
+    }
+    index.set(100, &[0.8, 0.6, 0.0, 0.0]).unwrap();
+    index.set(101, &[0.0, 1.0, 0.0, 0.0]).unwrap();
+
+    index.build_index().unwrap();
+    let stats = index.stats();
+    assert!(stats.index_trained);
+    assert_eq!(stats.index_clusters, Some(1));
+
+    let query = vec![1.0, 0.0, 0.0, 0.0];
+    let results = index
+      .search(
+        &query,
+        SimilarOptions::new(1).with_filter(|node_id| node_id >= 100),
+      )
+      .unwrap();
+
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].node_id, 100);
   }
 
   #[test]

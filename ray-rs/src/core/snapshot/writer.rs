@@ -1035,6 +1035,8 @@ pub fn build_snapshot_to_memory(input: SnapshotBuildInput) -> Result<Vec<u8>> {
 mod tests {
   use super::*;
   use crate::util::crc::crc32c;
+  use std::io::Write;
+  use tempfile::NamedTempFile;
 
   fn create_test_input() -> SnapshotBuildInput {
     let nodes = vec![
@@ -1148,6 +1150,33 @@ mod tests {
     let stored_crc = read_u32(&buffer, crc_offset);
     let computed_crc = crc32c(&buffer[..crc_offset]);
     assert_eq!(stored_crc, computed_crc);
+  }
+
+  #[test]
+  fn test_snapshot_round_trip_includes_vector_properties() {
+    let input = create_test_input();
+    let buffer = build_snapshot_to_memory(input).unwrap();
+
+    let mut tmp = NamedTempFile::new().unwrap();
+    tmp.write_all(&buffer).unwrap();
+    tmp.flush().unwrap();
+
+    let snapshot = crate::core::snapshot::reader::SnapshotData::load(tmp.path()).unwrap();
+
+    assert!(snapshot.header.flags.contains(SnapshotFlags::HAS_PROPERTIES));
+    assert!(snapshot.header.flags.contains(SnapshotFlags::HAS_VECTORS));
+
+    let phys = snapshot.phys_node(1).unwrap();
+    let embedding = snapshot.node_prop(phys, 4).unwrap();
+    match embedding {
+      PropValue::VectorF32(v) => {
+        assert_eq!(v.len(), 3);
+        assert!((v[0] - 0.1).abs() < 1e-6);
+        assert!((v[1] - 0.2).abs() < 1e-6);
+        assert!((v[2] - 0.3).abs() < 1e-6);
+      }
+      other => panic!("expected VectorF32, got {other:?}"),
+    }
   }
 
   #[test]
