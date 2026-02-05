@@ -115,7 +115,7 @@ macro_rules! dispatch_tx {
 ///
 /// The Database class uses an internal RwLock to support concurrent operations:
 ///
-/// - **Read operations** (`get_node_by_key`, `node_exists`, `get_neighbors`, etc.)
+/// - **Read operations** (`node_by_key`, `node_exists`, `neighbors`, etc.)
 ///   use a shared read lock, allowing multiple threads to read concurrently.
 /// - **Write operations** (`create_node`, `add_edge`, `set_node_prop`, etc.)
 ///   use an exclusive write lock, blocking all other operations.
@@ -297,17 +297,19 @@ impl PyDatabase {
     )
   }
 
-  fn get_node_by_key(&self, key: &str) -> PyResult<Option<i64>> {
-    dispatch_ok!(self, |db| nodes::get_node_by_key_single(db, key), |db| {
-      nodes::get_node_by_key_single(db, key)
+  #[pyo3(name = "get_node_by_key")]
+  fn node_by_key(&self, key: &str) -> PyResult<Option<i64>> {
+    dispatch_ok!(self, |db| nodes::node_by_key_single(db, key), |db| {
+      nodes::node_by_key_single(db, key)
     })
   }
 
-  fn get_node_key(&self, node_id: i64) -> PyResult<Option<String>> {
+  #[pyo3(name = "get_node_key")]
+  fn node_key(&self, node_id: i64) -> PyResult<Option<String>> {
     dispatch_ok!(
       self,
-      |db| nodes::get_node_key_single(db, node_id as NodeId),
-      |db| nodes::get_node_key_single(db, node_id as NodeId)
+      |db| nodes::node_key_single(db, node_id as NodeId),
+      |db| nodes::node_key_single(db, node_id as NodeId)
     )
   }
 
@@ -549,35 +551,39 @@ impl PyDatabase {
     )
   }
 
-  fn get_out_edges(&self, node_id: i64) -> PyResult<Vec<Edge>> {
+  #[pyo3(name = "get_out_edges")]
+  fn out_edges(&self, node_id: i64) -> PyResult<Vec<Edge>> {
     dispatch_ok!(
       self,
-      |db| edges::get_out_edges_single(db, node_id as NodeId),
-      |db| edges::get_out_edges_single(db, node_id as NodeId)
+      |db| edges::out_edges_single(db, node_id as NodeId),
+      |db| edges::out_edges_single(db, node_id as NodeId)
     )
   }
 
-  fn get_in_edges(&self, node_id: i64) -> PyResult<Vec<Edge>> {
+  #[pyo3(name = "get_in_edges")]
+  fn in_edges(&self, node_id: i64) -> PyResult<Vec<Edge>> {
     dispatch_ok!(
       self,
-      |db| edges::get_in_edges_single(db, node_id as NodeId),
-      |db| edges::get_in_edges_single(db, node_id as NodeId)
+      |db| edges::in_edges_single(db, node_id as NodeId),
+      |db| edges::in_edges_single(db, node_id as NodeId)
     )
   }
 
-  fn get_out_degree(&self, node_id: i64) -> PyResult<i64> {
+  #[pyo3(name = "get_out_degree")]
+  fn out_degree(&self, node_id: i64) -> PyResult<i64> {
     dispatch_ok!(
       self,
-      |db| edges::get_out_degree_single(db, node_id as NodeId),
-      |db| edges::get_out_degree_single(db, node_id as NodeId)
+      |db| edges::out_degree_single(db, node_id as NodeId),
+      |db| edges::out_degree_single(db, node_id as NodeId)
     )
   }
 
-  fn get_in_degree(&self, node_id: i64) -> PyResult<i64> {
+  #[pyo3(name = "get_in_degree")]
+  fn in_degree(&self, node_id: i64) -> PyResult<i64> {
     dispatch_ok!(
       self,
-      |db| edges::get_in_degree_single(db, node_id as NodeId),
-      |db| edges::get_in_degree_single(db, node_id as NodeId)
+      |db| edges::in_degree_single(db, node_id as NodeId),
+      |db| edges::in_degree_single(db, node_id as NodeId)
     )
   }
 
@@ -639,11 +645,12 @@ impl PyDatabase {
     }
   }
 
-  fn get_node_prop(&self, node_id: i64, key_id: u32) -> PyResult<Option<PropValue>> {
+  #[pyo3(name = "get_node_prop")]
+  fn node_prop(&self, node_id: i64, key_id: u32) -> PyResult<Option<PropValue>> {
     dispatch_ok!(
       self,
-      |db| properties::get_node_prop_single(db, node_id as NodeId, key_id as PropKeyId),
-      |db| properties::get_node_prop_single(db, node_id as NodeId, key_id as PropKeyId)
+      |db| properties::node_prop_single(db, node_id as NodeId, key_id as PropKeyId),
+      |db| properties::node_prop_single(db, node_id as NodeId, key_id as PropKeyId)
     )
   }
 
@@ -655,11 +662,12 @@ impl PyDatabase {
     )
   }
 
-  fn get_node_props(&self, node_id: i64) -> PyResult<Option<Vec<NodeProp>>> {
+  #[pyo3(name = "get_node_props")]
+  fn node_props(&self, node_id: i64) -> PyResult<Option<Vec<NodeProp>>> {
     dispatch_ok!(
       self,
-      |db| properties::get_node_props_single(db, node_id as NodeId),
-      |db| properties::get_node_props_single(db, node_id as NodeId)
+      |db| properties::node_props_single(db, node_id as NodeId),
+      |db| properties::node_props_single(db, node_id as NodeId)
     )
   }
 
@@ -717,23 +725,18 @@ impl PyDatabase {
     }
   }
 
-  fn get_edge_prop(
-    &self,
-    src: i64,
-    etype: u32,
-    dst: i64,
-    key_id: u32,
-  ) -> PyResult<Option<PropValue>> {
+  #[pyo3(name = "get_edge_prop")]
+  fn edge_prop(&self, src: i64, etype: u32, dst: i64, key_id: u32) -> PyResult<Option<PropValue>> {
     dispatch_ok!(
       self,
-      |db| properties::get_edge_prop_single(
+      |db| properties::edge_prop_single(
         db,
         src as NodeId,
         etype as ETypeId,
         dst as NodeId,
         key_id as PropKeyId
       ),
-      |db| properties::get_edge_prop_single(
+      |db| properties::edge_prop_single(
         db,
         src as NodeId,
         etype as ETypeId,
@@ -763,44 +766,49 @@ impl PyDatabase {
     )
   }
 
-  fn get_edge_props(&self, src: i64, etype: u32, dst: i64) -> PyResult<Option<Vec<NodeProp>>> {
+  #[pyo3(name = "get_edge_props")]
+  fn edge_props(&self, src: i64, etype: u32, dst: i64) -> PyResult<Option<Vec<NodeProp>>> {
     dispatch_ok!(
       self,
-      |db| properties::get_edge_props_single(db, src as NodeId, etype as ETypeId, dst as NodeId),
-      |db| properties::get_edge_props_single(db, src as NodeId, etype as ETypeId, dst as NodeId)
+      |db| properties::edge_props_single(db, src as NodeId, etype as ETypeId, dst as NodeId),
+      |db| properties::edge_props_single(db, src as NodeId, etype as ETypeId, dst as NodeId)
     )
   }
 
   // Direct type property getters
-  fn get_node_prop_string(&self, node_id: i64, key_id: u32) -> PyResult<Option<String>> {
+  #[pyo3(name = "get_node_prop_string")]
+  fn node_prop_string(&self, node_id: i64, key_id: u32) -> PyResult<Option<String>> {
     dispatch_ok!(
       self,
-      |db| properties::get_node_prop_string_single(db, node_id as NodeId, key_id as PropKeyId),
-      |db| properties::get_node_prop_string_single(db, node_id as NodeId, key_id as PropKeyId)
+      |db| properties::node_prop_string_single(db, node_id as NodeId, key_id as PropKeyId),
+      |db| properties::node_prop_string_single(db, node_id as NodeId, key_id as PropKeyId)
     )
   }
 
-  fn get_node_prop_int(&self, node_id: i64, key_id: u32) -> PyResult<Option<i64>> {
+  #[pyo3(name = "get_node_prop_int")]
+  fn node_prop_int(&self, node_id: i64, key_id: u32) -> PyResult<Option<i64>> {
     dispatch_ok!(
       self,
-      |db| properties::get_node_prop_int_single(db, node_id as NodeId, key_id as PropKeyId),
-      |db| properties::get_node_prop_int_single(db, node_id as NodeId, key_id as PropKeyId)
+      |db| properties::node_prop_int_single(db, node_id as NodeId, key_id as PropKeyId),
+      |db| properties::node_prop_int_single(db, node_id as NodeId, key_id as PropKeyId)
     )
   }
 
-  fn get_node_prop_float(&self, node_id: i64, key_id: u32) -> PyResult<Option<f64>> {
+  #[pyo3(name = "get_node_prop_float")]
+  fn node_prop_float(&self, node_id: i64, key_id: u32) -> PyResult<Option<f64>> {
     dispatch_ok!(
       self,
-      |db| properties::get_node_prop_float_single(db, node_id as NodeId, key_id as PropKeyId),
-      |db| properties::get_node_prop_float_single(db, node_id as NodeId, key_id as PropKeyId)
+      |db| properties::node_prop_float_single(db, node_id as NodeId, key_id as PropKeyId),
+      |db| properties::node_prop_float_single(db, node_id as NodeId, key_id as PropKeyId)
     )
   }
 
-  fn get_node_prop_bool(&self, node_id: i64, key_id: u32) -> PyResult<Option<bool>> {
+  #[pyo3(name = "get_node_prop_bool")]
+  fn node_prop_bool(&self, node_id: i64, key_id: u32) -> PyResult<Option<bool>> {
     dispatch_ok!(
       self,
-      |db| properties::get_node_prop_bool_single(db, node_id as NodeId, key_id as PropKeyId),
-      |db| properties::get_node_prop_bool_single(db, node_id as NodeId, key_id as PropKeyId)
+      |db| properties::node_prop_bool_single(db, node_id as NodeId, key_id as PropKeyId),
+      |db| properties::node_prop_bool_single(db, node_id as NodeId, key_id as PropKeyId)
     )
   }
 
@@ -808,63 +816,66 @@ impl PyDatabase {
   // Schema Operations
   // ==========================================================================
 
-  fn get_or_create_label(&self, name: &str) -> PyResult<u32> {
-    dispatch_ok!(
-      self,
-      |db| schema::get_or_create_label_single(db, name),
-      |db| schema::get_or_create_label_single(db, name)
-    )
-  }
-
-  fn get_label_id(&self, name: &str) -> PyResult<Option<u32>> {
-    dispatch_ok!(self, |db| schema::get_label_id_single(db, name), |db| {
-      schema::get_label_id_single(db, name)
+  #[pyo3(name = "get_or_create_label")]
+  fn ensure_label(&self, name: &str) -> PyResult<u32> {
+    dispatch_ok!(self, |db| schema::ensure_label_single(db, name), |db| {
+      schema::ensure_label_single(db, name)
     })
   }
 
-  fn get_label_name(&self, id: u32) -> PyResult<Option<String>> {
-    dispatch_ok!(self, |db| schema::get_label_name_single(db, id), |db| {
-      schema::get_label_name_single(db, id)
+  #[pyo3(name = "get_label_id")]
+  fn label_id(&self, name: &str) -> PyResult<Option<u32>> {
+    dispatch_ok!(self, |db| schema::label_id_single(db, name), |db| {
+      schema::label_id_single(db, name)
     })
   }
 
-  fn get_or_create_etype(&self, name: &str) -> PyResult<u32> {
-    dispatch_ok!(
-      self,
-      |db| schema::get_or_create_etype_single(db, name),
-      |db| schema::get_or_create_etype_single(db, name)
-    )
-  }
-
-  fn get_etype_id(&self, name: &str) -> PyResult<Option<u32>> {
-    dispatch_ok!(self, |db| schema::get_etype_id_single(db, name), |db| {
-      schema::get_etype_id_single(db, name)
+  #[pyo3(name = "get_label_name")]
+  fn label_name(&self, id: u32) -> PyResult<Option<String>> {
+    dispatch_ok!(self, |db| schema::label_name_single(db, id), |db| {
+      schema::label_name_single(db, id)
     })
   }
 
-  fn get_etype_name(&self, id: u32) -> PyResult<Option<String>> {
+  #[pyo3(name = "get_or_create_etype")]
+  fn ensure_etype(&self, name: &str) -> PyResult<u32> {
+    dispatch_ok!(self, |db| schema::ensure_etype_single(db, name), |db| {
+      schema::ensure_etype_single(db, name)
+    })
+  }
+
+  #[pyo3(name = "get_etype_id")]
+  fn etype_id(&self, name: &str) -> PyResult<Option<u32>> {
+    dispatch_ok!(self, |db| schema::etype_id_single(db, name), |db| {
+      schema::etype_id_single(db, name)
+    })
+  }
+
+  #[pyo3(name = "get_etype_name")]
+  fn etype_name(&self, id: u32) -> PyResult<Option<String>> {
     dispatch_ok!(self, |db| schema::etype_name_single(db, id), |db| {
       schema::etype_name_single(db, id)
     })
   }
 
-  fn get_or_create_propkey(&self, name: &str) -> PyResult<u32> {
-    dispatch_ok!(
-      self,
-      |db| schema::get_or_create_propkey_single(db, name),
-      |db| schema::get_or_create_propkey_single(db, name)
-    )
-  }
-
-  fn get_propkey_id(&self, name: &str) -> PyResult<Option<u32>> {
-    dispatch_ok!(self, |db| schema::get_propkey_id_single(db, name), |db| {
-      schema::get_propkey_id_single(db, name)
+  #[pyo3(name = "get_or_create_propkey")]
+  fn ensure_propkey(&self, name: &str) -> PyResult<u32> {
+    dispatch_ok!(self, |db| schema::ensure_propkey_single(db, name), |db| {
+      schema::ensure_propkey_single(db, name)
     })
   }
 
-  fn get_propkey_name(&self, id: u32) -> PyResult<Option<String>> {
-    dispatch_ok!(self, |db| schema::get_propkey_name_single(db, id), |db| {
-      schema::get_propkey_name_single(db, id)
+  #[pyo3(name = "get_propkey_id")]
+  fn propkey_id(&self, name: &str) -> PyResult<Option<u32>> {
+    dispatch_ok!(self, |db| schema::propkey_id_single(db, name), |db| {
+      schema::propkey_id_single(db, name)
+    })
+  }
+
+  #[pyo3(name = "get_propkey_name")]
+  fn propkey_name(&self, id: u32) -> PyResult<Option<String>> {
+    dispatch_ok!(self, |db| schema::propkey_name_single(db, id), |db| {
+      schema::propkey_name_single(db, id)
     })
   }
 
@@ -915,11 +926,12 @@ impl PyDatabase {
     )
   }
 
-  fn get_node_labels(&self, node_id: i64) -> PyResult<Vec<u32>> {
+  #[pyo3(name = "get_node_labels")]
+  fn node_labels(&self, node_id: i64) -> PyResult<Vec<u32>> {
     dispatch_ok!(
       self,
-      |db| labels::get_node_labels_single(db, node_id as NodeId),
-      |db| labels::get_node_labels_single(db, node_id as NodeId)
+      |db| labels::node_labels_single(db, node_id as NodeId),
+      |db| labels::node_labels_single(db, node_id as NodeId)
     )
   }
 
@@ -936,11 +948,12 @@ impl PyDatabase {
     )
   }
 
-  fn get_node_vector(&self, node_id: i64, prop_key_id: u32) -> PyResult<Option<Vec<f64>>> {
+  #[pyo3(name = "get_node_vector")]
+  fn node_vector(&self, node_id: i64, prop_key_id: u32) -> PyResult<Option<Vec<f64>>> {
     dispatch_ok!(
       self,
-      |db| vectors::get_node_vector_single(db, node_id as NodeId, prop_key_id as PropKeyId),
-      |db| vectors::get_node_vector_single(db, node_id as NodeId, prop_key_id as PropKeyId)
+      |db| vectors::node_vector_single(db, node_id as NodeId, prop_key_id as PropKeyId),
+      |db| vectors::node_vector_single(db, node_id as NodeId, prop_key_id as PropKeyId)
     )
   }
 
@@ -1435,7 +1448,8 @@ impl PyDatabase {
   }
 
   #[pyo3(signature = (options=None))]
-  fn get_nodes_page(&self, options: Option<PaginationOptions>) -> PyResult<NodePage> {
+  #[pyo3(name = "get_nodes_page")]
+  fn nodes_page(&self, options: Option<PaginationOptions>) -> PyResult<NodePage> {
     let opts = match options {
       Some(o) => o.to_rust()?,
       None => crate::streaming::PaginationOptions::default(),
@@ -1448,7 +1462,8 @@ impl PyDatabase {
   }
 
   #[pyo3(signature = (options=None))]
-  fn get_edges_page(&self, options: Option<PaginationOptions>) -> PyResult<EdgePage> {
+  #[pyo3(name = "get_edges_page")]
+  fn edges_page(&self, options: Option<PaginationOptions>) -> PyResult<EdgePage> {
     let opts = match options {
       Some(o) => o.to_rust()?,
       None => crate::streaming::PaginationOptions::default(),

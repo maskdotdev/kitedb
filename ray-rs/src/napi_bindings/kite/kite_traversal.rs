@@ -14,7 +14,7 @@ use crate::api::traversal::{TraversalBuilder, TraversalDirection, TraversalStep,
 use crate::types::{ETypeId, Edge, NodeId};
 
 use super::helpers::{
-  call_filter, edge_filter_arg, edge_filter_data, get_neighbors, node_filter_arg, node_filter_data,
+  call_filter, edge_filter_arg, edge_filter_data, neighbors, node_filter_arg, node_filter_data,
   node_to_js, TraversalFilterItem,
 };
 use crate::napi_bindings::database::JsFullEdge;
@@ -219,7 +219,7 @@ impl KiteTraversal {
         .ok_or_else(|| Error::from_reason("Kite is closed"))?;
 
       let results: Vec<_> = builder
-        .execute(|node_id, dir, etype| get_neighbors(ray.raw(), node_id, dir, etype))
+        .execute(|node_id, dir, etype| neighbors(ray.raw(), node_id, dir, etype))
         .collect();
 
       let mut items = Vec::with_capacity(results.len());
@@ -280,7 +280,7 @@ impl KiteTraversal {
         .ok_or_else(|| Error::from_reason("Kite is closed"))?;
 
       let results: Vec<_> = builder
-        .execute(|node_id, dir, etype| get_neighbors(ray.raw(), node_id, dir, etype))
+        .execute(|node_id, dir, etype| neighbors(ray.raw(), node_id, dir, etype))
         .collect();
 
       let mut items = Vec::with_capacity(results.len());
@@ -348,7 +348,7 @@ impl KiteTraversal {
         .ok_or_else(|| Error::from_reason("Kite is closed"))?;
 
       let results: Vec<_> = builder
-        .execute(|node_id, dir, etype| get_neighbors(ray.raw(), node_id, dir, etype))
+        .execute(|node_id, dir, etype| neighbors(ray.raw(), node_id, dir, etype))
         .collect();
 
       let mut items = Vec::with_capacity(results.len());
@@ -415,7 +415,7 @@ impl KiteTraversal {
         .ok_or_else(|| Error::from_reason("Kite is closed"))?;
 
       let results: Vec<_> = builder
-        .execute(|node_id, dir, etype| get_neighbors(ray.raw(), node_id, dir, etype))
+        .execute(|node_id, dir, etype| neighbors(ray.raw(), node_id, dir, etype))
         .collect();
 
       let mut items = Vec::with_capacity(results.len());

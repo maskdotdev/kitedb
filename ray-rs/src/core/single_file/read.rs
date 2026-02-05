@@ -1341,101 +1341,107 @@ mod tests {
 
   #[test]
   fn test_mvcc_label_visibility_across_transactions() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir.path().join("test-db");
-    let db = Arc::new(open_single_file(db_path, SingleFileOpenOptions::new().mvcc(true)).unwrap());
+    let db = Arc::new(
+      open_single_file(db_path, SingleFileOpenOptions::new().mvcc(true)).expect("expected value"),
+    );
 
-    db.begin(false).unwrap();
-    let node_id = db.create_node(Some("n1")).unwrap();
-    let label_id = db.define_label("Tag").unwrap();
-    db.commit().unwrap();
+    db.begin(false).expect("expected value");
+    let node_id = db.create_node(Some("n1")).expect("expected value");
+    let label_id = db.define_label("Tag").expect("expected value");
+    db.commit().expect("expected value");
 
     let (ready_tx, ready_rx) = mpsc::channel();
     let (cont_tx, cont_rx) = mpsc::channel();
     let (done_tx, done_rx) = mpsc::channel();
     let db_reader = Arc::clone(&db);
     let handle = thread::spawn(move || {
-      db_reader.begin(true).unwrap();
+      db_reader.begin(true).expect("expected value");
       assert!(!db_reader.node_has_label(node_id, label_id));
       assert!(db_reader.node_labels(node_id).is_empty());
-      ready_tx.send(()).unwrap();
-      cont_rx.recv().unwrap();
+      ready_tx.send(()).expect("expected value");
+      cont_rx.recv().expect("expected value");
       assert!(!db_reader.node_has_label(node_id, label_id));
       assert!(db_reader.node_labels(node_id).is_empty());
-      db_reader.commit().unwrap();
-      done_tx.send(()).unwrap();
+      db_reader.commit().expect("expected value");
+      done_tx.send(()).expect("expected value");
     });
 
-    ready_rx.recv().unwrap();
-    db.begin(false).unwrap();
-    db.add_node_label(node_id, label_id).unwrap();
-    db.commit().unwrap();
-    cont_tx.send(()).unwrap();
-    done_rx.recv().unwrap();
-    handle.join().unwrap();
+    ready_rx.recv().expect("expected value");
+    db.begin(false).expect("expected value");
+    db.add_node_label(node_id, label_id)
+      .expect("expected value");
+    db.commit().expect("expected value");
+    cont_tx.send(()).expect("expected value");
+    done_rx.recv().expect("expected value");
+    handle.join().expect("expected value");
 
-    db.begin(true).unwrap();
+    db.begin(true).expect("expected value");
     assert!(db.node_has_label(node_id, label_id));
     let labels = db.node_labels(node_id);
     assert!(labels.contains(&label_id));
-    db.commit().unwrap();
+    db.commit().expect("expected value");
 
     let (ready_tx2, ready_rx2) = mpsc::channel();
     let (cont_tx2, cont_rx2) = mpsc::channel();
     let (done_tx2, done_rx2) = mpsc::channel();
     let db_reader2 = Arc::clone(&db);
     let handle2 = thread::spawn(move || {
-      db_reader2.begin(true).unwrap();
+      db_reader2.begin(true).expect("expected value");
       assert!(db_reader2.node_has_label(node_id, label_id));
       assert!(db_reader2.node_labels(node_id).contains(&label_id));
-      ready_tx2.send(()).unwrap();
-      cont_rx2.recv().unwrap();
+      ready_tx2.send(()).expect("expected value");
+      cont_rx2.recv().expect("expected value");
       assert!(db_reader2.node_has_label(node_id, label_id));
       assert!(db_reader2.node_labels(node_id).contains(&label_id));
-      db_reader2.commit().unwrap();
-      done_tx2.send(()).unwrap();
+      db_reader2.commit().expect("expected value");
+      done_tx2.send(()).expect("expected value");
     });
 
-    ready_rx2.recv().unwrap();
-    db.begin(false).unwrap();
-    db.remove_node_label(node_id, label_id).unwrap();
-    db.commit().unwrap();
-    cont_tx2.send(()).unwrap();
-    done_rx2.recv().unwrap();
-    handle2.join().unwrap();
+    ready_rx2.recv().expect("expected value");
+    db.begin(false).expect("expected value");
+    db.remove_node_label(node_id, label_id)
+      .expect("expected value");
+    db.commit().expect("expected value");
+    cont_tx2.send(()).expect("expected value");
+    done_rx2.recv().expect("expected value");
+    handle2.join().expect("expected value");
 
-    db.begin(true).unwrap();
+    db.begin(true).expect("expected value");
     assert!(!db.node_has_label(node_id, label_id));
     assert!(!db.node_labels(node_id).contains(&label_id));
-    db.commit().unwrap();
+    db.commit().expect("expected value");
 
     let db = match Arc::try_unwrap(db) {
       Ok(db) => db,
       Err(_) => panic!("single owner"),
     };
-    close_single_file(db).unwrap();
+    close_single_file(db).expect("expected value");
   }
 
   #[test]
   fn test_mvcc_neighbor_read_conflicts_with_edge_write() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir.path().join("test-db");
-    let db = Arc::new(open_single_file(db_path, SingleFileOpenOptions::new().mvcc(true)).unwrap());
+    let db = Arc::new(
+      open_single_file(db_path, SingleFileOpenOptions::new().mvcc(true)).expect("expected value"),
+    );
 
-    db.begin(false).unwrap();
-    let src = db.create_node(Some("src")).unwrap();
-    let dst = db.create_node(Some("dst")).unwrap();
-    db.commit().unwrap();
+    db.begin(false).expect("expected value");
+    let src = db.create_node(Some("src")).expect("expected value");
+    let dst = db.create_node(Some("dst")).expect("expected value");
+    db.commit().expect("expected value");
 
     let (ready_tx, ready_rx) = mpsc::channel();
     let (cont_tx, cont_rx) = mpsc::channel();
     let db_reader = Arc::clone(&db);
     let handle = thread::spawn(move || {
-      db_reader.begin(false).unwrap();
+      db_reader.begin(false).expect("expected value");
       let edges = db_reader.out_edges(src);
       assert!(edges.is_empty());
-      ready_tx.send(()).unwrap();
-      cont_rx.recv().unwrap();
+      ready_tx.send(()).expect("expected value");
+      cont_rx.recv().expect("expected value");
       let result = db_reader.commit();
       match result {
         Err(KiteError::Conflict { keys, .. }) => {
@@ -1447,17 +1453,18 @@ mod tests {
       }
     });
 
-    ready_rx.recv().unwrap();
-    db.begin(false).unwrap();
-    db.add_edge_by_name(src, "Rel", dst).unwrap();
-    db.commit().unwrap();
-    cont_tx.send(()).unwrap();
-    handle.join().unwrap();
+    ready_rx.recv().expect("expected value");
+    db.begin(false).expect("expected value");
+    db.add_edge_by_name(src, "Rel", dst)
+      .expect("expected value");
+    db.commit().expect("expected value");
+    cont_tx.send(()).expect("expected value");
+    handle.join().expect("expected value");
 
     let db = match Arc::try_unwrap(db) {
       Ok(db) => db,
       Err(_) => panic!("single owner"),
     };
-    close_single_file(db).unwrap();
+    close_single_file(db).expect("expected value");
   }
 }

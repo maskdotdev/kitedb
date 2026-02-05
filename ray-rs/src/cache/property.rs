@@ -500,7 +500,7 @@ mod tests {
   }
 
   #[test]
-  fn test_get_updates_lru() {
+  fn test_updates_lru() {
     let mut cache = PropertyCache::new(PropertyCacheConfig {
       max_node_props: 3,
       max_edge_props: 3,

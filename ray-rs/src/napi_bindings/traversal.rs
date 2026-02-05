@@ -300,7 +300,7 @@ impl JsGraphAccessor {
   }
 
   // Internal method to get neighbors
-  fn get_neighbors_internal(
+  fn neighbors_internal(
     &self,
     node_id: NodeId,
     direction: TraversalDirection,
@@ -336,8 +336,8 @@ impl JsGraphAccessor {
         }
       }
       TraversalDirection::Both => {
-        edges.extend(self.get_neighbors_internal(node_id, TraversalDirection::Out, etype));
-        edges.extend(self.get_neighbors_internal(node_id, TraversalDirection::In, etype));
+        edges.extend(self.neighbors_internal(node_id, TraversalDirection::Out, etype));
+        edges.extend(self.neighbors_internal(node_id, TraversalDirection::In, etype));
       }
     }
 
@@ -345,7 +345,7 @@ impl JsGraphAccessor {
   }
 
   // Internal method to get edge weight
-  fn get_weight_internal(&self, src: NodeId, etype: ETypeId, dst: NodeId) -> f64 {
+  fn weight_internal(&self, src: NodeId, etype: ETypeId, dst: NodeId) -> f64 {
     self.weights.get(&(src, etype, dst)).copied().unwrap_or(1.0)
   }
 
@@ -370,7 +370,7 @@ impl JsGraphAccessor {
 
     TraversalBuilder::new(start)
       .out(edge_type) // Note: direction is handled below
-      .execute(|node_id, dir, etype| self.get_neighbors_internal(node_id, dir, etype))
+      .execute(|node_id, dir, etype| self.neighbors_internal(node_id, dir, etype))
       .map(JsTraversalResult::from)
       .collect()
   }
@@ -405,7 +405,7 @@ impl JsGraphAccessor {
     }
 
     builder
-      .execute(|node_id, dir, etype| self.get_neighbors_internal(node_id, dir, etype))
+      .execute(|node_id, dir, etype| self.neighbors_internal(node_id, dir, etype))
       .map(JsTraversalResult::from)
       .collect()
   }
@@ -428,7 +428,7 @@ impl JsGraphAccessor {
 
     TraversalBuilder::new(start)
       .traverse(edge_type, opts)
-      .execute(|node_id, dir, etype| self.get_neighbors_internal(node_id, dir, etype))
+      .execute(|node_id, dir, etype| self.neighbors_internal(node_id, dir, etype))
       .map(JsTraversalResult::from)
       .collect()
   }
@@ -452,7 +452,7 @@ impl JsGraphAccessor {
       };
     }
 
-    builder.count(|node_id, dir, etype| self.get_neighbors_internal(node_id, dir, etype)) as u32
+    builder.count(|node_id, dir, etype| self.neighbors_internal(node_id, dir, etype)) as u32
   }
 
   /// Get just the node IDs from a traversal
@@ -485,7 +485,7 @@ impl JsGraphAccessor {
     }
 
     builder
-      .collect_node_ids(|node_id, dir, etype| self.get_neighbors_internal(node_id, dir, etype))
+      .collect_node_ids(|node_id, dir, etype| self.neighbors_internal(node_id, dir, etype))
       .into_iter()
       .map(|id| id as i64)
       .collect()
@@ -505,8 +505,8 @@ impl JsGraphAccessor {
 
     dijkstra(
       rust_config,
-      |node_id, dir, etype| self.get_neighbors_internal(node_id, dir, etype),
-      |src, etype, dst| self.get_weight_internal(src, etype, dst),
+      |node_id, dir, etype| self.neighbors_internal(node_id, dir, etype),
+      |src, etype, dst| self.weight_internal(src, etype, dst),
     )
     .into()
   }
@@ -522,7 +522,7 @@ impl JsGraphAccessor {
     let rust_config: PathConfig = config.into();
 
     bfs(rust_config, |node_id, dir, etype| {
-      self.get_neighbors_internal(node_id, dir, etype)
+      self.neighbors_internal(node_id, dir, etype)
     })
     .into()
   }
@@ -539,8 +539,8 @@ impl JsGraphAccessor {
     yen_k_shortest(
       rust_config,
       k as usize,
-      |node_id, dir, etype| self.get_neighbors_internal(node_id, dir, etype),
-      |src, etype, dst| self.get_weight_internal(src, etype, dst),
+      |node_id, dir, etype| self.neighbors_internal(node_id, dir, etype),
+      |src, etype, dst| self.weight_internal(src, etype, dst),
     )
     .into_iter()
     .map(JsPathResult::from)

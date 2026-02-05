@@ -13,7 +13,7 @@ use crate::core::snapshot::writer::{
 use crate::error::{KiteError, Result};
 use crate::types::*;
 use crate::util::mmap::map_file;
-use crate::vector::store::vector_store_get;
+use crate::vector::store::vector_store_node_vector;
 
 use super::vector::vector_stores_from_snapshot;
 use super::{CheckpointStatus, SingleFileDB};
@@ -633,7 +633,7 @@ impl SingleFileDB {
             continue;
           };
 
-          if let Some(vec) = vector_store_get(store, node_id) {
+          if let Some(vec) = vector_store_node_vector(store, node_id) {
             nodes[idx]
               .props
               .insert(prop_key_id, PropValue::VectorF32(vec.to_vec()));

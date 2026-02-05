@@ -289,16 +289,16 @@ fn build_graph(db: &kitedb::core::single_file::SingleFileDB, config: &BenchConfi
   let mut edge_prop_keys: Vec<u32> = Vec::new();
   for batch_start in (0..config.nodes).step_by(batch_size) {
     let end = (batch_start + batch_size).min(config.nodes);
-    db.begin_bulk().unwrap();
+    db.begin_bulk().expect("expected value");
 
     if batch_start == 0 {
       for idx in 0..config.edge_types {
         let name = format!("CALLS_{idx}");
-        edge_types.push(db.define_etype(&name).unwrap());
+        edge_types.push(db.define_etype(&name).expect("expected value"));
       }
       for idx in 0..config.edge_props {
         let name = format!("edge_prop_{idx}");
-        edge_prop_keys.push(db.define_propkey(&name).unwrap());
+        edge_prop_keys.push(db.define_propkey(&name).expect("expected value"));
       }
     }
 
@@ -308,11 +308,11 @@ fn build_graph(db: &kitedb::core::single_file::SingleFileDB, config: &BenchConfi
       keys.push(key);
     }
     let key_refs: Vec<Option<&str>> = keys.iter().map(|k| Some(k.as_str())).collect();
-    let batch_ids = db.create_nodes_batch(&key_refs).unwrap();
+    let batch_ids = db.create_nodes_batch(&key_refs).expect("expected value");
     node_ids.extend(batch_ids);
     node_keys.extend(keys);
 
-    db.commit().unwrap();
+    db.commit().expect("expected value");
     print!("\r  Created {} / {} nodes", end, config.nodes);
   }
   println!();
@@ -325,7 +325,7 @@ fn build_graph(db: &kitedb::core::single_file::SingleFileDB, config: &BenchConfi
 
   while edges_created < config.edges && attempts < max_attempts {
     let batch_target = (edges_created + batch_size).min(config.edges);
-    db.begin_bulk().unwrap();
+    db.begin_bulk().expect("expected value");
 
     let mut edges = Vec::new();
     let mut edges_with_props = Vec::new();
@@ -356,12 +356,13 @@ fn build_graph(db: &kitedb::core::single_file::SingleFileDB, config: &BenchConfi
     }
 
     if edge_prop_keys.is_empty() {
-      db.add_edges_batch(&edges).unwrap();
+      db.add_edges_batch(&edges).expect("expected value");
     } else {
-      db.add_edges_with_props_batch(edges_with_props).unwrap();
+      db.add_edges_with_props_batch(edges_with_props)
+        .expect("expected value");
     }
 
-    db.commit().unwrap();
+    db.commit().expect("expected value");
     print!("\r  Created {} / {} edges", edges_created, config.edges);
   }
   println!();
@@ -452,9 +453,9 @@ fn benchmark_vectors(
   let vector_count = config.vector_count.min(graph.node_ids.len());
   let vector_nodes = graph.node_ids[..vector_count].to_vec();
 
-  db.begin(false).unwrap();
-  let prop_key_id = db.define_propkey("embedding").unwrap();
-  db.commit().unwrap();
+  db.begin(false).expect("expected value");
+  let prop_key_id = db.define_propkey("embedding").expect("expected value");
+  db.commit().expect("expected value");
 
   let mut rng = StdRng::from_entropy();
   let vectors: Vec<Vec<f32>> = (0..vector_count)
@@ -468,12 +469,12 @@ fn benchmark_vectors(
   while i < vector_nodes.len() {
     let end = (i + batch_size).min(vector_nodes.len());
     let start = Instant::now();
-    db.begin(false).unwrap();
+    db.begin(false).expect("expected value");
     for j in i..end {
       db.set_node_vector(vector_nodes[j], prop_key_id, &vectors[j])
-        .unwrap();
+        .expect("expected value");
     }
-    db.commit().unwrap();
+    db.commit().expect("expected value");
     samples.push(start.elapsed().as_nanos());
     i = end;
   }
@@ -520,14 +521,14 @@ fn create_bench_nodes(
   if count == 0 {
     return Vec::new();
   }
-  db.begin_bulk().unwrap();
+  db.begin_bulk().expect("expected value");
   let mut keys = Vec::with_capacity(count);
   for idx in 0..count {
     keys.push(format!("{label}:{idx}"));
   }
   let key_refs: Vec<Option<&str>> = keys.iter().map(|k| Some(k.as_str())).collect();
-  let node_ids = db.create_nodes_batch(&key_refs).unwrap();
-  db.commit().unwrap();
+  let node_ids = db.create_nodes_batch(&key_refs).expect("expected value");
+  db.commit().expect("expected value");
   node_ids
 }
 
@@ -543,14 +544,14 @@ fn benchmark_writes(
 
   for b in 0..batches {
     let start = Instant::now();
-    db.begin_bulk().unwrap();
+    db.begin_bulk().expect("expected value");
     let mut keys = Vec::with_capacity(batch_size);
     for i in 0..batch_size {
       keys.push(format!("bench:raw:{b}:{i}"));
     }
     let key_refs: Vec<Option<&str>> = keys.iter().map(|k| Some(k.as_str())).collect();
-    let _ = db.create_nodes_batch(&key_refs).unwrap();
-    db.commit().unwrap();
+    let _ = db.create_nodes_batch(&key_refs).expect("expected value");
+    db.commit().expect("expected value");
     samples.push(start.elapsed().as_nanos());
   }
 
@@ -568,9 +569,9 @@ fn benchmark_writes(
   }
 
   let edge_etype = graph.edge_types.first().copied().unwrap_or_else(|| {
-    db.begin_bulk().unwrap();
-    let etype = db.define_etype("BENCH_EDGE").unwrap();
-    db.commit().unwrap();
+    db.begin_bulk().expect("expected value");
+    let etype = db.define_etype("BENCH_EDGE").expect("expected value");
+    db.commit().expect("expected value");
     etype
   });
 
@@ -580,7 +581,7 @@ fn benchmark_writes(
   let mut edge_samples = Vec::with_capacity(edge_batches);
   for b in 0..edge_batches {
     let start = Instant::now();
-    db.begin_bulk().unwrap();
+    db.begin_bulk().expect("expected value");
     let base = b * edge_batch_size * 2;
     let mut edges = Vec::with_capacity(edge_batch_size);
     for i in 0..edge_batch_size {
@@ -588,8 +589,8 @@ fn benchmark_writes(
       let dst = edge_nodes[base + i * 2 + 1];
       edges.push((src, edge_etype, dst));
     }
-    db.add_edges_batch(&edges).unwrap();
-    db.commit().unwrap();
+    db.add_edges_batch(&edges).expect("expected value");
+    db.commit().expect("expected value");
     edge_samples.push(start.elapsed().as_nanos());
   }
   let edge_stats = compute_stats(&mut edge_samples);
@@ -604,7 +605,7 @@ fn benchmark_writes(
   let mut edge_prop_samples = Vec::with_capacity(edge_batches);
   for b in 0..edge_batches {
     let start = Instant::now();
-    db.begin_bulk().unwrap();
+    db.begin_bulk().expect("expected value");
     let base = b * edge_batch_size * 2;
     let mut edges = Vec::with_capacity(edge_batch_size);
     for i in 0..edge_batch_size {
@@ -617,8 +618,9 @@ fn benchmark_writes(
       }
       edges.push((src, edge_etype, dst, props));
     }
-    db.add_edges_with_props_batch(edges).unwrap();
-    db.commit().unwrap();
+    db.add_edges_with_props_batch(edges)
+      .expect("expected value");
+    db.commit().expect("expected value");
     edge_prop_samples.push(start.elapsed().as_nanos());
   }
   let edge_prop_stats = compute_stats(&mut edge_prop_samples);

@@ -368,7 +368,7 @@ mod tests {
 
     let result: Option<&Vec<i32>> = cache.get("query1");
     assert!(result.is_some());
-    assert_eq!(result.unwrap(), &vec![1, 2, 3]);
+    assert_eq!(result.expect("expected value"), &vec![1, 2, 3]);
     assert_eq!(cache.stats().hits, 1);
   }
 

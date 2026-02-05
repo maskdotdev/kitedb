@@ -5,46 +5,46 @@ use crate::core::single_file::SingleFileDB as RustSingleFileDB;
 /// Trait for schema operations
 pub trait SchemaOps {
   /// Get or create a label ID
-  fn get_or_create_label_impl(&self, name: &str) -> u32;
+  fn ensure_label_impl(&self, name: &str) -> u32;
   /// Get label ID by name
-  fn get_label_id_impl(&self, name: &str) -> Option<u32>;
+  fn label_id_impl(&self, name: &str) -> Option<u32>;
   /// Get label name by ID
-  fn get_label_name_impl(&self, id: u32) -> Option<String>;
+  fn label_name_impl(&self, id: u32) -> Option<String>;
   /// Get or create an edge type ID
-  fn get_or_create_etype_impl(&self, name: &str) -> u32;
+  fn ensure_etype_impl(&self, name: &str) -> u32;
   /// Get edge type ID by name
-  fn get_etype_id_impl(&self, name: &str) -> Option<u32>;
+  fn etype_id_impl(&self, name: &str) -> Option<u32>;
   /// Get edge type name by ID
-  fn get_etype_name_impl(&self, id: u32) -> Option<String>;
+  fn etype_name_impl(&self, id: u32) -> Option<String>;
   /// Get or create a property key ID
-  fn get_or_create_propkey_impl(&self, name: &str) -> u32;
+  fn ensure_propkey_impl(&self, name: &str) -> u32;
   /// Get property key ID by name
-  fn get_propkey_id_impl(&self, name: &str) -> Option<u32>;
+  fn propkey_id_impl(&self, name: &str) -> Option<u32>;
   /// Get property key name by ID
-  fn get_propkey_name_impl(&self, id: u32) -> Option<String>;
+  fn propkey_name_impl(&self, id: u32) -> Option<String>;
 }
 
 // ============================================================================
 // Single-file database operations
 // ============================================================================
 
-pub fn get_or_create_label_single(db: &RustSingleFileDB, name: &str) -> u32 {
+pub fn ensure_label_single(db: &RustSingleFileDB, name: &str) -> u32 {
   db.label_id_or_create(name)
 }
 
-pub fn get_label_id_single(db: &RustSingleFileDB, name: &str) -> Option<u32> {
+pub fn label_id_single(db: &RustSingleFileDB, name: &str) -> Option<u32> {
   db.label_id(name)
 }
 
-pub fn get_label_name_single(db: &RustSingleFileDB, id: u32) -> Option<String> {
+pub fn label_name_single(db: &RustSingleFileDB, id: u32) -> Option<String> {
   db.label_name(id)
 }
 
-pub fn get_or_create_etype_single(db: &RustSingleFileDB, name: &str) -> u32 {
+pub fn ensure_etype_single(db: &RustSingleFileDB, name: &str) -> u32 {
   db.etype_id_or_create(name)
 }
 
-pub fn get_etype_id_single(db: &RustSingleFileDB, name: &str) -> Option<u32> {
+pub fn etype_id_single(db: &RustSingleFileDB, name: &str) -> Option<u32> {
   db.etype_id(name)
 }
 
@@ -52,14 +52,14 @@ pub fn etype_name_single(db: &RustSingleFileDB, id: u32) -> Option<String> {
   db.etype_name(id)
 }
 
-pub fn get_or_create_propkey_single(db: &RustSingleFileDB, name: &str) -> u32 {
+pub fn ensure_propkey_single(db: &RustSingleFileDB, name: &str) -> u32 {
   db.propkey_id_or_create(name)
 }
 
-pub fn get_propkey_id_single(db: &RustSingleFileDB, name: &str) -> Option<u32> {
+pub fn propkey_id_single(db: &RustSingleFileDB, name: &str) -> Option<u32> {
   db.propkey_id(name)
 }
 
-pub fn get_propkey_name_single(db: &RustSingleFileDB, id: u32) -> Option<String> {
+pub fn propkey_name_single(db: &RustSingleFileDB, id: u32) -> Option<String> {
   db.propkey_name(id)
 }

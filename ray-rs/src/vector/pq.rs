@@ -604,7 +604,7 @@ mod tests {
 
   #[test]
   fn test_pq_new() {
-    let index = PqIndex::new(16, test_config()).unwrap();
+    let index = PqIndex::new(16, test_config()).expect("expected value");
     assert_eq!(index.dimensions, 16);
     assert_eq!(index.subspace_dims, 4);
     assert!(!index.trained);
@@ -618,7 +618,7 @@ mod tests {
 
   #[test]
   fn test_pq_train() {
-    let mut index = PqIndex::new(16, test_config()).unwrap();
+    let mut index = PqIndex::new(16, test_config()).expect("expected value");
 
     // Create training vectors
     let mut vectors = Vec::new();
@@ -628,13 +628,13 @@ mod tests {
       }
     }
 
-    index.train(&vectors, 100).unwrap();
+    index.train(&vectors, 100).expect("expected value");
     assert!(index.trained);
   }
 
   #[test]
   fn test_pq_train_not_enough_vectors() {
-    let mut index = PqIndex::new(16, test_config()).unwrap();
+    let mut index = PqIndex::new(16, test_config()).expect("expected value");
 
     let vectors = vec![0.0; 5 * 16]; // Only 5 vectors, need 8
     let result = index.train(&vectors, 5);
@@ -647,7 +647,7 @@ mod tests {
 
   #[test]
   fn test_pq_encode() {
-    let mut index = PqIndex::new(16, test_config()).unwrap();
+    let mut index = PqIndex::new(16, test_config()).expect("expected value");
 
     // Train
     let mut vectors = Vec::new();
@@ -656,19 +656,19 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 1600.0);
       }
     }
-    index.train(&vectors, 100).unwrap();
+    index.train(&vectors, 100).expect("expected value");
 
     // Encode
-    index.encode(&vectors, 100).unwrap();
+    index.encode(&vectors, 100).expect("expected value");
 
     assert!(index.codes.is_some());
     assert_eq!(index.num_vectors, 100);
-    assert_eq!(index.codes.as_ref().unwrap().len(), 100 * 4);
+    assert_eq!(index.codes.as_ref().expect("expected value").len(), 100 * 4);
   }
 
   #[test]
   fn test_pq_encode_one() {
-    let mut index = PqIndex::new(16, test_config()).unwrap();
+    let mut index = PqIndex::new(16, test_config()).expect("expected value");
 
     // Train
     let mut vectors = Vec::new();
@@ -677,18 +677,18 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 1600.0);
       }
     }
-    index.train(&vectors, 100).unwrap();
+    index.train(&vectors, 100).expect("expected value");
 
     // Encode single vector
     let vector = vec![0.5; 16];
-    let codes = index.encode_one(&vector).unwrap();
+    let codes = index.encode_one(&vector).expect("expected value");
 
     assert_eq!(codes.len(), 4);
   }
 
   #[test]
   fn test_pq_distance_table() {
-    let mut index = PqIndex::new(16, test_config()).unwrap();
+    let mut index = PqIndex::new(16, test_config()).expect("expected value");
 
     // Train
     let mut vectors = Vec::new();
@@ -697,18 +697,18 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 1600.0);
       }
     }
-    index.train(&vectors, 100).unwrap();
+    index.train(&vectors, 100).expect("expected value");
 
     // Build distance table
     let query = vec![0.5; 16];
-    let table = index.build_distance_table(&query).unwrap();
+    let table = index.build_distance_table(&query).expect("expected value");
 
     assert_eq!(table.len(), 4 * 8); // num_subspaces * num_centroids
   }
 
   #[test]
   fn test_pq_search() {
-    let mut index = PqIndex::new(16, test_config()).unwrap();
+    let mut index = PqIndex::new(16, test_config()).expect("expected value");
 
     // Train
     let mut vectors = Vec::new();
@@ -717,12 +717,12 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 1600.0);
       }
     }
-    index.train(&vectors, 100).unwrap();
-    index.encode(&vectors, 100).unwrap();
+    index.train(&vectors, 100).expect("expected value");
+    index.encode(&vectors, 100).expect("expected value");
 
     // Search
     let query = vec![0.5; 16];
-    let results = index.search(&query, 5, None).unwrap();
+    let results = index.search(&query, 5, None).expect("expected value");
 
     assert_eq!(results.len(), 5);
     // Results should be sorted by distance
@@ -733,7 +733,7 @@ mod tests {
 
   #[test]
   fn test_pq_stats() {
-    let mut index = PqIndex::new(16, test_config()).unwrap();
+    let mut index = PqIndex::new(16, test_config()).expect("expected value");
 
     // Train
     let mut vectors = Vec::new();
@@ -742,8 +742,8 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 1600.0);
       }
     }
-    index.train(&vectors, 100).unwrap();
-    index.encode(&vectors, 100).unwrap();
+    index.train(&vectors, 100).expect("expected value");
+    index.encode(&vectors, 100).expect("expected value");
 
     let stats = index.stats();
     assert!(stats.trained);
@@ -755,7 +755,7 @@ mod tests {
 
   #[test]
   fn test_pq_clear_codes() {
-    let mut index = PqIndex::new(16, test_config()).unwrap();
+    let mut index = PqIndex::new(16, test_config()).expect("expected value");
 
     let mut vectors = Vec::new();
     for i in 0..100 {
@@ -763,8 +763,8 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 1600.0);
       }
     }
-    index.train(&vectors, 100).unwrap();
-    index.encode(&vectors, 100).unwrap();
+    index.train(&vectors, 100).expect("expected value");
+    index.encode(&vectors, 100).expect("expected value");
 
     index.clear_codes();
 
@@ -775,7 +775,7 @@ mod tests {
 
   #[test]
   fn test_pq_reset() {
-    let mut index = PqIndex::new(16, test_config()).unwrap();
+    let mut index = PqIndex::new(16, test_config()).expect("expected value");
 
     let mut vectors = Vec::new();
     for i in 0..100 {
@@ -783,8 +783,8 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 1600.0);
       }
     }
-    index.train(&vectors, 100).unwrap();
-    index.encode(&vectors, 100).unwrap();
+    index.train(&vectors, 100).expect("expected value");
+    index.encode(&vectors, 100).expect("expected value");
 
     index.reset();
 

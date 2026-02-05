@@ -1024,7 +1024,7 @@ mod tests {
 
     let head = store.head(1);
     assert!(head.is_some());
-    let v = head.unwrap();
+    let v = head.expect("expected value");
     assert_eq!(*v.data, 42);
     assert_eq!(v.txid, 1);
     assert_eq!(v.commit_ts, 10);
@@ -1039,13 +1039,13 @@ mod tests {
     store.append(1, 20, 2, 20);
     store.append(1, 30, 3, 30);
 
-    let head = store.head(1).unwrap();
+    let head = store.head(1).expect("expected value");
     assert_eq!(*head.data, 30);
     assert_eq!(head.commit_ts, 30);
     assert_ne!(head.prev_idx, NULL_IDX);
 
     // Follow chain
-    let prev = store.at(head.prev_idx).unwrap();
+    let prev = store.at(head.prev_idx).expect("expected value");
     assert_eq!(*prev.data, 20);
   }
 
@@ -1070,7 +1070,7 @@ mod tests {
 
     let version = mgr.node_version(1);
     assert!(version.is_some());
-    assert_eq!(version.unwrap().data.node_id, 1);
+    assert_eq!(version.expect("expected value").data.node_id, 1);
   }
 
   #[test]
@@ -1086,10 +1086,10 @@ mod tests {
       mgr.append_node_version(1, data, i, i * 10);
     }
 
-    let version = mgr.node_version(1).unwrap();
+    let version = mgr.node_version(1).expect("expected value");
     assert_eq!(version.commit_ts, 30);
     assert!(version.prev.is_some());
-    assert_eq!(version.prev.as_ref().unwrap().commit_ts, 20);
+    assert_eq!(version.prev.as_ref().expect("expected value").commit_ts, 20);
   }
 
   #[test]
@@ -1103,7 +1103,7 @@ mod tests {
     mgr.append_node_version(1, data, 1, 10);
     mgr.delete_node_version(1, 2, 20);
 
-    let version = mgr.node_version(1).unwrap();
+    let version = mgr.node_version(1).expect("expected value");
     assert!(version.deleted);
     assert_eq!(version.commit_ts, 20);
   }
@@ -1116,7 +1116,7 @@ mod tests {
 
     let version = mgr.edge_version(1, 1, 2);
     assert!(version.is_some());
-    let v = version.unwrap();
+    let v = version.expect("expected value");
     assert_eq!(v.data.src, 1);
     assert_eq!(v.data.etype, 1);
     assert_eq!(v.data.dst, 2);
@@ -1130,7 +1130,7 @@ mod tests {
     mgr.append_edge_version(1, 1, 2, true, 1, 10);
     mgr.append_edge_version(1, 1, 2, false, 2, 20);
 
-    let version = mgr.edge_version(1, 1, 2).unwrap();
+    let version = mgr.edge_version(1, 1, 2).expect("expected value");
     assert!(!version.data.added);
   }
 
@@ -1143,7 +1143,10 @@ mod tests {
 
     let version = mgr.node_prop_version(1, 1);
     assert!(version.is_some());
-    assert_eq!(version.unwrap().data.as_deref(), Some(&PropValue::I64(42)));
+    assert_eq!(
+      version.expect("expected value").data.as_deref(),
+      Some(&PropValue::I64(42))
+    );
   }
 
   #[test]
@@ -1155,7 +1158,10 @@ mod tests {
 
     let version = mgr.node_prop_version(1, 1);
     assert!(version.is_some());
-    assert_eq!(version.unwrap().data.as_deref(), Some(&PropValue::I64(42)));
+    assert_eq!(
+      version.expect("expected value").data.as_deref(),
+      Some(&PropValue::I64(42))
+    );
   }
 
   #[test]
@@ -1175,7 +1181,7 @@ mod tests {
     let version = mgr.edge_prop_version(1, 1, 2, 1);
     assert!(version.is_some());
     assert_eq!(
-      version.unwrap().data.as_deref(),
+      version.expect("expected value").data.as_deref(),
       Some(&PropValue::F64(std::f64::consts::PI))
     );
   }

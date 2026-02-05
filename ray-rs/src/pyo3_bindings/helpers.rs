@@ -5,7 +5,7 @@ use crate::core::single_file::SingleFileDB as RustSingleFileDB;
 use crate::types::{ETypeId, Edge, NodeId};
 
 /// Get neighbors from single-file database for traversal
-pub fn get_neighbors_from_single_file(
+pub fn neighbors_from_single_file(
   db: &RustSingleFileDB,
   node_id: NodeId,
   direction: TraversalDirection,
@@ -36,13 +36,13 @@ pub fn get_neighbors_from_single_file(
       }
     }
     TraversalDirection::Both => {
-      edges.extend(get_neighbors_from_single_file(
+      edges.extend(neighbors_from_single_file(
         db,
         node_id,
         TraversalDirection::Out,
         etype,
       ));
-      edges.extend(get_neighbors_from_single_file(
+      edges.extend(neighbors_from_single_file(
         db,
         node_id,
         TraversalDirection::In,

@@ -565,7 +565,10 @@ mod tests {
 
     assert!(executed);
     assert_eq!(result, 1);
-    assert_eq!(captured_data.unwrap().key, Some("test".to_string()));
+    assert_eq!(
+      captured_data.expect("expected value").key,
+      Some("test".to_string())
+    );
   }
 
   #[test]
@@ -581,13 +584,13 @@ mod tests {
       .set(1, PropValue::String("Updated".to_string()))
       .unset(2)
       .execute()
-      .unwrap();
+      .expect("expected value");
 
-    let (node_id, updates) = captured.unwrap();
+    let (node_id, updates) = captured.expect("expected value");
     assert_eq!(node_id, 42);
     assert_eq!(updates.len(), 2);
-    assert!(updates.get(&1).unwrap().is_some());
-    assert!(updates.get(&2).unwrap().is_none());
+    assert!(updates.get(&1).expect("expected value").is_some());
+    assert!(updates.get(&2).expect("expected value").is_none());
   }
 
   #[test]
@@ -602,7 +605,7 @@ mod tests {
     let result = DeleteBuilder::new(&mut executor)
       .where_id(42)
       .execute()
-      .unwrap();
+      .expect("expected value");
 
     assert!(result);
     assert_eq!(deleted_id, Some(42));
@@ -620,9 +623,9 @@ mod tests {
       .to(2)
       .with_prop(100, PropValue::F64(1.5))
       .execute()
-      .unwrap();
+      .expect("expected value");
 
-    let (src, etype, dst, props) = captured.unwrap();
+    let (src, etype, dst, props) = captured.expect("expected value");
     assert_eq!(src, 1);
     assert_eq!(etype, 10);
     assert_eq!(dst, 2);
@@ -641,10 +644,10 @@ mod tests {
     let result = UnlinkBuilder::new(1, 10, &mut executor)
       .from_node(2)
       .execute()
-      .unwrap();
+      .expect("expected value");
 
     assert!(result);
-    let (src, etype, dst) = captured.unwrap();
+    let (src, etype, dst) = captured.expect("expected value");
     assert_eq!(src, 1);
     assert_eq!(etype, 10);
     assert_eq!(dst, 2);

@@ -609,7 +609,7 @@ mod tests {
 
     let result = cache.traversal(1, Some(1), TraversalDirection::Out);
     assert!(result.is_some());
-    assert_eq!(result.unwrap().neighbors.len(), 2);
+    assert_eq!(result.expect("expected value").neighbors.len(), 2);
   }
 
   #[test]
@@ -620,7 +620,7 @@ mod tests {
 
     let result: Option<&Vec<u64>> = cache.query("query1");
     assert!(result.is_some());
-    assert_eq!(result.unwrap(), &vec![1, 2, 3]);
+    assert_eq!(result.expect("expected value"), &vec![1, 2, 3]);
   }
 
   #[test]

@@ -179,15 +179,15 @@ fn create_nodes(db: &kitedb::core::single_file::SingleFileDB, count: usize) -> V
   let batch_size = 10_000usize;
   for start in (0..count).step_by(batch_size) {
     let end = (start + batch_size).min(count);
-    db.begin_bulk().unwrap();
+    db.begin_bulk().expect("expected value");
     let mut keys = Vec::with_capacity(end - start);
     for i in start..end {
       keys.push(format!("vec-node:{i}"));
     }
     let key_refs: Vec<Option<&str>> = keys.iter().map(|k| Some(k.as_str())).collect();
-    let batch_ids = db.create_nodes_batch(&key_refs).unwrap();
+    let batch_ids = db.create_nodes_batch(&key_refs).expect("expected value");
     ids.extend(batch_ids);
-    db.commit().unwrap();
+    db.commit().expect("expected value");
   }
   ids
 }
@@ -234,9 +234,9 @@ fn main() {
   let db = Arc::new(db);
 
   // Schema setup (single tx).
-  db.begin(false).unwrap();
-  let prop_key_id = db.define_propkey("embedding").unwrap();
-  db.commit().unwrap();
+  db.begin(false).expect("expected value");
+  let prop_key_id = db.define_propkey("embedding").expect("expected value");
+  db.commit().expect("expected value");
 
   // Pre-create nodes so the benchmark measures vector writes (not node creation).
   let node_ids = create_nodes(&db, total_vectors);
@@ -244,7 +244,7 @@ fn main() {
 
   // Pre-create vector store to avoid any "first set" races / store init cost.
   db.vector_store_or_create(prop_key_id, config.vector_dims)
-    .unwrap();
+    .expect("expected value");
 
   let start_idx = Arc::new(AtomicU64::new(0));
   let start = Instant::now();
@@ -261,14 +261,15 @@ fn main() {
       let vector = vec![0.1234f32; config.vector_dims];
 
       for _ in 0..config.tx_per_thread {
-        db.begin(false).unwrap();
+        db.begin(false).expect("expected value");
         let base = start_idx.fetch_add(config.batch_size as u64, Ordering::Relaxed) as usize;
         for offset in 0..config.batch_size {
           let node_id = node_ids[base + offset];
-          db.set_node_vector(node_id, prop_key_id, &vector).unwrap();
+          db.set_node_vector(node_id, prop_key_id, &vector)
+            .expect("expected value");
           total_sets += 1;
         }
-        db.commit().unwrap();
+        db.commit().expect("expected value");
       }
 
       total_sets

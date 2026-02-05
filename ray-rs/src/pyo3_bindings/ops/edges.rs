@@ -20,10 +20,10 @@ pub trait EdgeOps {
   fn edge_exists_impl(&self, src: i64, etype: u32, dst: i64) -> PyResult<bool>;
 
   /// Get outgoing edges for a node
-  fn get_out_edges_impl(&self, node_id: i64) -> PyResult<Vec<Edge>>;
+  fn out_edges_impl(&self, node_id: i64) -> PyResult<Vec<Edge>>;
 
   /// Get incoming edges for a node
-  fn get_in_edges_impl(&self, node_id: i64) -> PyResult<Vec<Edge>>;
+  fn in_edges_impl(&self, node_id: i64) -> PyResult<Vec<Edge>>;
 
   /// Count all edges
   fn count_edges_impl(&self) -> PyResult<i64>;
@@ -87,7 +87,7 @@ pub fn edge_exists_single(db: &RustSingleFileDB, src: NodeId, etype: ETypeId, ds
 }
 
 /// Get out edges on single-file database
-pub fn get_out_edges_single(db: &RustSingleFileDB, node_id: NodeId) -> Vec<Edge> {
+pub fn out_edges_single(db: &RustSingleFileDB, node_id: NodeId) -> Vec<Edge> {
   db.out_edges(node_id)
     .into_iter()
     .map(|(etype, dst)| Edge {
@@ -98,7 +98,7 @@ pub fn get_out_edges_single(db: &RustSingleFileDB, node_id: NodeId) -> Vec<Edge>
 }
 
 /// Get in edges on single-file database
-pub fn get_in_edges_single(db: &RustSingleFileDB, node_id: NodeId) -> Vec<Edge> {
+pub fn in_edges_single(db: &RustSingleFileDB, node_id: NodeId) -> Vec<Edge> {
   db.in_edges(node_id)
     .into_iter()
     .map(|(etype, src)| Edge {
@@ -109,12 +109,12 @@ pub fn get_in_edges_single(db: &RustSingleFileDB, node_id: NodeId) -> Vec<Edge> 
 }
 
 /// Get out degree on single-file database
-pub fn get_out_degree_single(db: &RustSingleFileDB, node_id: NodeId) -> i64 {
+pub fn out_degree_single(db: &RustSingleFileDB, node_id: NodeId) -> i64 {
   db.out_degree(node_id) as i64
 }
 
 /// Get in degree on single-file database
-pub fn get_in_degree_single(db: &RustSingleFileDB, node_id: NodeId) -> i64 {
+pub fn in_degree_single(db: &RustSingleFileDB, node_id: NodeId) -> i64 {
   db.in_degree(node_id) as i64
 }
 

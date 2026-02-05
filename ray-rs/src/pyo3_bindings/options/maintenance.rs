@@ -170,7 +170,7 @@ mod tests {
       min_size: Some(1024),
       level: Some(3),
     };
-    let core = opts.to_core().unwrap();
+    let core = opts.to_core().expect("expected value");
     assert!(core.enabled);
     assert_eq!(core.compression_type, CompressionType::Zstd);
     assert_eq!(core.min_size, 1024);

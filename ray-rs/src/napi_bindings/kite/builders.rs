@@ -14,7 +14,7 @@ use crate::api::kite::{Kite as RustKite, NodeRef};
 use crate::types::{NodeId, PropValue};
 
 use super::conversion::{js_props_to_map, js_value_to_prop_value, key_suffix_from_js};
-use super::helpers::{get_node_props, node_to_js};
+use super::helpers::{node_props, node_to_js};
 use super::key_spec::KeySpec;
 
 // =============================================================================
@@ -409,7 +409,7 @@ fn upsert_single_returning(
     .returning()
     .map_err(|e| Error::from_reason(e.to_string()))?;
 
-  let props_for_return = get_node_props(ray, node_ref.id());
+  let props_for_return = node_props(ray, node_ref.id());
   Ok((node_ref, props_for_return))
 }
 
@@ -451,7 +451,7 @@ fn upsert_many(
     node_refs
       .into_iter()
       .map(|node_ref| {
-        let props = get_node_props(ray, node_ref.id());
+        let props = node_props(ray, node_ref.id());
         (node_ref, Some(props))
       })
       .collect(),

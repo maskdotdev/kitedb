@@ -85,7 +85,7 @@ mod tests {
   #[test]
   fn test_stream_options_default() {
     let opts = StreamOptions::default();
-    let rust = opts.to_rust().unwrap();
+    let rust = opts.to_rust().expect("expected value");
     assert_eq!(rust.batch_size, 0);
   }
 
@@ -94,7 +94,7 @@ mod tests {
     let opts = StreamOptions {
       batch_size: Some(100),
     };
-    let rust = opts.to_rust().unwrap();
+    let rust = opts.to_rust().expect("expected value");
     assert_eq!(rust.batch_size, 100);
   }
 
@@ -109,7 +109,7 @@ mod tests {
   #[test]
   fn test_pagination_options_default() {
     let opts = PaginationOptions::default();
-    let rust = opts.to_rust().unwrap();
+    let rust = opts.to_rust().expect("expected value");
     assert_eq!(rust.limit, 0);
     assert!(rust.cursor.is_none());
   }
@@ -120,7 +120,7 @@ mod tests {
       limit: Some(50),
       cursor: Some("abc123".to_string()),
     };
-    let rust = opts.to_rust().unwrap();
+    let rust = opts.to_rust().expect("expected value");
     assert_eq!(rust.limit, 50);
     assert_eq!(rust.cursor, Some("abc123".to_string()));
   }

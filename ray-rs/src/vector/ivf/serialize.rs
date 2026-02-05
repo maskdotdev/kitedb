@@ -685,9 +685,18 @@ mod tests {
     assert_eq!(metric_to_u8(DistanceMetric::Euclidean), 1);
     assert_eq!(metric_to_u8(DistanceMetric::DotProduct), 2);
 
-    assert_eq!(u8_to_metric(0).unwrap(), DistanceMetric::Cosine);
-    assert_eq!(u8_to_metric(1).unwrap(), DistanceMetric::Euclidean);
-    assert_eq!(u8_to_metric(2).unwrap(), DistanceMetric::DotProduct);
+    assert_eq!(
+      u8_to_metric(0).expect("expected value"),
+      DistanceMetric::Cosine
+    );
+    assert_eq!(
+      u8_to_metric(1).expect("expected value"),
+      DistanceMetric::Euclidean
+    );
+    assert_eq!(
+      u8_to_metric(2).expect("expected value"),
+      DistanceMetric::DotProduct
+    );
 
     assert!(u8_to_metric(3).is_err());
   }
@@ -698,7 +707,7 @@ mod tests {
     let index = IvfIndex::new(4, config);
 
     let serialized = serialize_ivf(&index);
-    let deserialized = deserialize_ivf(&serialized).unwrap();
+    let deserialized = deserialize_ivf(&serialized).expect("expected value");
 
     assert_eq!(deserialized.config.n_clusters, 10);
     assert_eq!(deserialized.dimensions, 4);
@@ -717,14 +726,21 @@ mod tests {
     index.trained = true;
 
     let serialized = serialize_ivf(&index);
-    let deserialized = deserialize_ivf(&serialized).unwrap();
+    let deserialized = deserialize_ivf(&serialized).expect("expected value");
 
     assert_eq!(deserialized.config.n_clusters, 2);
     assert_eq!(deserialized.config.metric, DistanceMetric::Euclidean);
     assert_eq!(deserialized.centroids.len(), 8);
     assert!(deserialized.trained);
     assert_eq!(deserialized.inverted_lists.len(), 2);
-    assert_eq!(deserialized.inverted_lists.get(&0).unwrap().len(), 3);
+    assert_eq!(
+      deserialized
+        .inverted_lists
+        .get(&0)
+        .expect("expected value")
+        .len(),
+      3
+    );
   }
 
   #[test]
@@ -735,7 +751,7 @@ mod tests {
     let manifest = create_vector_store(config);
 
     let serialized = serialize_manifest(&manifest);
-    let deserialized = deserialize_manifest(&serialized).unwrap();
+    let deserialized = deserialize_manifest(&serialized).expect("expected value");
 
     assert_eq!(deserialized.config.dimensions, 4);
     assert_eq!(deserialized.config.metric, DistanceMetric::Cosine);
@@ -752,11 +768,11 @@ mod tests {
     // Insert some vectors
     for i in 0..5 {
       let vector = vec![1.0 + i as f32, 2.0, 3.0, 4.0];
-      vector_store_insert(&mut manifest, i, &vector).unwrap();
+      vector_store_insert(&mut manifest, i, &vector).expect("expected value");
     }
 
     let serialized = serialize_manifest(&manifest);
-    let deserialized = deserialize_manifest(&serialized).unwrap();
+    let deserialized = deserialize_manifest(&serialized).expect("expected value");
 
     assert_eq!(deserialized.config.dimensions, 4);
     assert_eq!(deserialized.total_vectors, 5);
@@ -804,7 +820,7 @@ mod tests {
 
     for i in 0..3 {
       let vector = vec![1.0 + i as f32, 2.0, 3.0, 4.0];
-      vector_store_insert(&mut manifest, i, &vector).unwrap();
+      vector_store_insert(&mut manifest, i, &vector).expect("expected value");
     }
 
     let size = manifest_serialized_size(&manifest);

@@ -128,7 +128,7 @@ impl PathConfig {
 /// # Arguments
 /// * `config` - Pathfinding configuration
 /// * `neighbors` - Function to get neighbors for a node
-/// * `get_weight` - Function to get edge weight (default: 1.0 for all edges)
+/// * `edge_weight` - Function to get edge weight (default: 1.0 for all edges)
 ///
 /// # Returns
 /// PathResult with the shortest path, or not_found() if no path exists
@@ -164,7 +164,7 @@ impl PathConfig {
 /// }
 /// # }
 /// ```
-pub fn dijkstra<F, W>(config: PathConfig, neighbors: F, get_weight: W) -> PathResult
+pub fn dijkstra<F, W>(config: PathConfig, neighbors: F, edge_weight: W) -> PathResult
 where
   F: Fn(NodeId, TraversalDirection, Option<ETypeId>) -> Vec<Edge>,
   W: Fn(NodeId, ETypeId, NodeId) -> f64,
@@ -249,7 +249,7 @@ where
           continue;
         }
 
-        let weight = get_weight(edge.src, edge.etype, edge.dst);
+        let weight = edge_weight(edge.src, edge.etype, edge.dst);
         let new_cost = current_state.cost + weight;
 
         // Check if we should update - use entry API to avoid borrow issues
@@ -288,12 +288,12 @@ where
 /// # Arguments
 /// * `config` - Pathfinding configuration
 /// * `neighbors` - Function to get neighbors for a node
-/// * `get_weight` - Function to get edge weight
+/// * `edge_weight` - Function to get edge weight
 /// * `heuristic` - Function estimating distance from node to target
 ///
 /// # Returns
 /// PathResult with the shortest path, or not_found() if no path exists
-pub fn a_star<F, W, H>(config: PathConfig, neighbors: F, get_weight: W, heuristic: H) -> PathResult
+pub fn a_star<F, W, H>(config: PathConfig, neighbors: F, edge_weight: W, heuristic: H) -> PathResult
 where
   F: Fn(NodeId, TraversalDirection, Option<ETypeId>) -> Vec<Edge>,
   W: Fn(NodeId, ETypeId, NodeId) -> f64,
@@ -352,7 +352,7 @@ where
           continue;
         }
 
-        let weight = get_weight(edge.src, edge.etype, edge.dst);
+        let weight = edge_weight(edge.src, edge.etype, edge.dst);
         let tentative_g = current_state.g_score + weight;
 
         // Check if we should update - extract info to avoid borrow issues
@@ -523,7 +523,7 @@ pub struct PathFindingBuilder<F, W> {
   direction: TraversalDirection,
   max_depth: usize,
   neighbors: F,
-  get_weight: W,
+  edge_weight: W,
 }
 
 impl<F, W> PathFindingBuilder<F, W>
@@ -532,7 +532,7 @@ where
   W: Fn(NodeId, ETypeId, NodeId) -> f64,
 {
   /// Create a new pathfinding builder
-  pub fn new(source: NodeId, neighbors: F, get_weight: W) -> Self {
+  pub fn new(source: NodeId, neighbors: F, edge_weight: W) -> Self {
     Self {
       source,
       targets: HashSet::new(),
@@ -540,7 +540,7 @@ where
       direction: TraversalDirection::Out,
       max_depth: 100,
       neighbors,
-      get_weight,
+      edge_weight,
     }
   }
 
@@ -589,7 +589,7 @@ where
       max_depth: self.max_depth,
     };
 
-    dijkstra(config, self.neighbors, self.get_weight)
+    dijkstra(config, self.neighbors, self.edge_weight)
   }
 
   /// Execute A* algorithm with heuristic
@@ -609,7 +609,7 @@ where
       max_depth: self.max_depth,
     };
 
-    a_star(config, self.neighbors, self.get_weight, heuristic)
+    a_star(config, self.neighbors, self.edge_weight, heuristic)
   }
 
   /// Find k shortest paths using Yen's algorithm
@@ -628,7 +628,7 @@ where
       max_depth: self.max_depth,
     };
 
-    yen_k_shortest(config, k, self.neighbors, self.get_weight)
+    yen_k_shortest(config, k, self.neighbors, self.edge_weight)
   }
 
   /// Find all paths (alias for k_shortest with a large k)
@@ -670,7 +670,7 @@ where
 /// * `config` - Pathfinding configuration (source, target, etc.)
 /// * `k` - Maximum number of paths to find
 /// * `neighbors` - Function to get neighbors for a node
-/// * `get_weight` - Function to get edge weight
+/// * `edge_weight` - Function to get edge weight
 ///
 /// # Returns
 /// Vector of up to k shortest paths, sorted by total weight
@@ -708,7 +708,7 @@ pub fn yen_k_shortest<F, W>(
   config: PathConfig,
   k: usize,
   neighbors: F,
-  get_weight: W,
+  edge_weight: W,
 ) -> Vec<PathResult>
 where
   F: Fn(NodeId, TraversalDirection, Option<ETypeId>) -> Vec<Edge>,
@@ -728,7 +728,7 @@ where
   let mut result_paths: Vec<PathResult> = Vec::with_capacity(k);
 
   // Find the first shortest path using Dijkstra
-  let first_path = dijkstra(config.clone(), &neighbors, &get_weight);
+  let first_path = dijkstra(config.clone(), &neighbors, &edge_weight);
   if !first_path.found {
     return Vec::new();
   }
@@ -756,7 +756,7 @@ where
     for (spur_idx, &spur_node) in prev_path_nodes.iter().enumerate().take(max_spur_idx) {
       // Root path: path from source to spur node
       let (root_path, root_edges) = root_segments(prev_path, spur_idx);
-      let root_weight = root_weight(&root_edges, &get_weight);
+      let root_weight = root_weight(&root_edges, &edge_weight);
 
       // Collect edges to exclude (edges used by paths that share this root)
       let mut excluded_edges = HashSet::new();
@@ -789,7 +789,7 @@ where
       // Find spur path from spur_node to target
       let spur_config = build_spur_config(&config, spur_node, target, spur_idx);
 
-      let spur_path = dijkstra(spur_config, filtered_neighbors, &get_weight);
+      let spur_path = dijkstra(spur_config, filtered_neighbors, &edge_weight);
 
       if spur_path.found {
         let candidate = combine_paths(root_path, root_edges, root_weight, spur_path);
@@ -833,13 +833,13 @@ fn root_segments(
   (root_path, root_edges)
 }
 
-fn root_weight<W>(root_edges: &[(NodeId, ETypeId, NodeId)], get_weight: &W) -> f64
+fn root_weight<W>(root_edges: &[(NodeId, ETypeId, NodeId)], edge_weight: &W) -> f64
 where
   W: Fn(NodeId, ETypeId, NodeId) -> f64,
 {
   root_edges
     .iter()
-    .map(|(s, e, d)| get_weight(*s, *e, *d))
+    .map(|(s, e, d)| edge_weight(*s, *e, *d))
     .sum()
 }
 

@@ -628,7 +628,7 @@ mod tests {
     // Create and commit transactions
     for _ in 0..5 {
       let (txid, _) = tx_mgr.begin_tx();
-      tx_mgr.commit_tx(txid).unwrap();
+      tx_mgr.commit_tx(txid).expect("expected value");
     }
 
     // Start another transaction to prevent eager cleanup

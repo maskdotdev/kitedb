@@ -389,7 +389,7 @@ mod tests {
 
     let result = cache.get(1, Some(1), TraversalDirection::Out);
     assert!(result.is_some());
-    let cached = result.unwrap();
+    let cached = result.expect("expected value");
     assert_eq!(cached.neighbors.len(), 2);
     assert!(!cached.truncated);
     assert_eq!(cache.stats().hits, 1);
@@ -422,12 +422,12 @@ mod tests {
     // Check out result
     let out_result = cache.get(1, Some(1), TraversalDirection::Out);
     assert!(out_result.is_some());
-    assert_eq!(out_result.unwrap().neighbors[0].dst, 2);
+    assert_eq!(out_result.expect("expected value").neighbors[0].dst, 2);
 
     // Check in result (separate borrow)
     let in_result = cache.get(1, Some(1), TraversalDirection::In);
     assert!(in_result.is_some());
-    assert_eq!(in_result.unwrap().neighbors[0].src, 3);
+    assert_eq!(in_result.expect("expected value").neighbors[0].src, 3);
   }
 
   #[test]
@@ -446,7 +446,9 @@ mod tests {
     ];
     cache.set(1, Some(1), TraversalDirection::Out, neighbors);
 
-    let result = cache.get(1, Some(1), TraversalDirection::Out).unwrap();
+    let result = cache
+      .get(1, Some(1), TraversalDirection::Out)
+      .expect("expected value");
     assert_eq!(result.neighbors.len(), 3);
     assert!(result.truncated);
   }
@@ -621,7 +623,7 @@ mod tests {
   }
 
   #[test]
-  fn test_get_updates_lru() {
+  fn test_updates_lru() {
     let mut cache = TraversalCache::new(TraversalCacheConfig {
       max_entries: 2,
       max_neighbors_per_entry: 10,
@@ -743,7 +745,7 @@ mod tests {
     assert_eq!(
       cache
         .peek(1, Some(1), TraversalDirection::Out)
-        .unwrap()
+        .expect("expected value")
         .neighbors[0]
         .dst,
       100
@@ -751,7 +753,7 @@ mod tests {
     assert_eq!(
       cache
         .peek(2, Some(1), TraversalDirection::Out)
-        .unwrap()
+        .expect("expected value")
         .neighbors[0]
         .dst,
       200
@@ -759,7 +761,7 @@ mod tests {
     assert_eq!(
       cache
         .peek(1, Some(2), TraversalDirection::Out)
-        .unwrap()
+        .expect("expected value")
         .neighbors[0]
         .dst,
       300
@@ -767,7 +769,7 @@ mod tests {
     assert_eq!(
       cache
         .peek(1, Some(1), TraversalDirection::In)
-        .unwrap()
+        .expect("expected value")
         .neighbors[0]
         .src,
       100
@@ -783,8 +785,8 @@ mod tests {
 
     let result = cache.get(1, Some(1), TraversalDirection::Out);
     assert!(result.is_some());
-    assert!(result.unwrap().neighbors.is_empty());
-    assert!(!result.unwrap().truncated);
+    assert!(result.expect("expected value").neighbors.is_empty());
+    assert!(!result.expect("expected value").truncated);
   }
 
   #[test]

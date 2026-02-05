@@ -10,7 +10,7 @@ use crate::api::traversal::{
 use crate::core::single_file::SingleFileDB as RustSingleFileDB;
 use crate::types::{ETypeId, Edge, NodeId};
 
-use crate::pyo3_bindings::helpers::get_neighbors_from_single_file;
+use crate::pyo3_bindings::helpers::neighbors_from_single_file;
 use crate::pyo3_bindings::traversal::{PyPathResult, PyTraversalResult as TraversalResult};
 
 /// Trait for graph traversal operations
@@ -281,13 +281,13 @@ pub fn traverse_single(
     where_node: None,
   };
 
-  let get_neighbors = |nid: NodeId, d: TraversalDirection, et: Option<ETypeId>| -> Vec<Edge> {
-    get_neighbors_from_single_file(db, nid, d, et)
+  let neighbors = |nid: NodeId, d: TraversalDirection, et: Option<ETypeId>| -> Vec<Edge> {
+    neighbors_from_single_file(db, nid, d, et)
   };
 
   RustTraversalBuilder::new(vec![node_id])
     .traverse(etype, opts)
-    .execute(get_neighbors)
+    .execute(neighbors)
     .map(|r| {
       let (edge_src, edge_dst, edge_type) = match r.edge {
         Some(e) => (Some(e.src as i64), Some(e.dst as i64), Some(e.etype)),
@@ -334,11 +334,11 @@ pub fn find_path_bfs_single(
     max_depth: max_depth.unwrap_or(100) as usize,
   };
 
-  let get_neighbors = |nid: NodeId, d: TraversalDirection, et: Option<ETypeId>| -> Vec<Edge> {
-    get_neighbors_from_single_file(db, nid, d, et)
+  let neighbors = |nid: NodeId, d: TraversalDirection, et: Option<ETypeId>| -> Vec<Edge> {
+    neighbors_from_single_file(db, nid, d, et)
   };
 
-  bfs(config, get_neighbors).into()
+  bfs(config, neighbors).into()
 }
 
 pub fn find_path_dijkstra_single(
@@ -371,11 +371,11 @@ pub fn find_path_dijkstra_single(
     max_depth: max_depth.unwrap_or(100) as usize,
   };
 
-  let get_neighbors = |nid: NodeId, d: TraversalDirection, et: Option<ETypeId>| -> Vec<Edge> {
-    get_neighbors_from_single_file(db, nid, d, et)
+  let neighbors = |nid: NodeId, d: TraversalDirection, et: Option<ETypeId>| -> Vec<Edge> {
+    neighbors_from_single_file(db, nid, d, et)
   };
 
-  let get_weight = |_src: NodeId, _etype: ETypeId, _dst: NodeId| -> f64 { 1.0 };
+  let edge_weight = |_src: NodeId, _etype: ETypeId, _dst: NodeId| -> f64 { 1.0 };
 
-  dijkstra(config, get_neighbors, get_weight).into()
+  dijkstra(config, neighbors, edge_weight).into()
 }

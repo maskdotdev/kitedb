@@ -17,7 +17,7 @@ pub trait LabelOps {
   /// Check if a node has a label
   fn node_has_label_impl(&self, node_id: i64, label_id: u32) -> PyResult<bool>;
   /// Get all labels for a node
-  fn get_node_labels_impl(&self, node_id: i64) -> PyResult<Vec<u32>>;
+  fn node_labels_impl(&self, node_id: i64) -> PyResult<Vec<u32>>;
 }
 
 // ============================================================================
@@ -60,6 +60,6 @@ pub fn node_has_label_single(db: &RustSingleFileDB, node_id: NodeId, label_id: u
   db.node_has_label(node_id, label_id)
 }
 
-pub fn get_node_labels_single(db: &RustSingleFileDB, node_id: NodeId) -> Vec<u32> {
+pub fn node_labels_single(db: &RustSingleFileDB, node_id: NodeId) -> Vec<u32> {
   db.node_labels(node_id)
 }

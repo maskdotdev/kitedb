@@ -11,7 +11,7 @@ use crate::api::pathfinding::{bfs, dijkstra, yen_k_shortest, PathConfig, PathRes
 use crate::api::traversal::TraversalDirection;
 use crate::types::{ETypeId, NodeId};
 
-use super::helpers::get_neighbors;
+use super::helpers::neighbors;
 
 // =============================================================================
 // Path Builder
@@ -96,7 +96,7 @@ impl KitePath {
     };
     let result = dijkstra(
       config,
-      |node_id, dir, etype| get_neighbors(ray.raw(), node_id, dir, etype),
+      |node_id, dir, etype| neighbors(ray.raw(), node_id, dir, etype),
       |_src, _etype, _dst| 1.0,
     );
     Ok(JsPathResult::from(result))
@@ -116,7 +116,7 @@ impl KitePath {
       max_depth: self.max_depth,
     };
     let result = bfs(config, |node_id, dir, etype| {
-      get_neighbors(ray.raw(), node_id, dir, etype)
+      neighbors(ray.raw(), node_id, dir, etype)
     });
     Ok(JsPathResult::from(result))
   }
@@ -137,7 +137,7 @@ impl KitePath {
     let results = yen_k_shortest(
       config,
       k as usize,
-      |node_id, dir, etype| get_neighbors(ray.raw(), node_id, dir, etype),
+      |node_id, dir, etype| neighbors(ray.raw(), node_id, dir, etype),
       |_src, _etype, _dst| 1.0,
     );
     Ok(results.into_iter().map(JsPathResult::from).collect())

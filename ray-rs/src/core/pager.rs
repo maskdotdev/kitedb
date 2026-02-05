@@ -424,51 +424,51 @@ mod tests {
 
   #[test]
   fn test_read_write_page() {
-    let temp_file = NamedTempFile::new().unwrap();
-    let mut pager = create_pager(temp_file.path(), 4096).unwrap();
+    let temp_file = NamedTempFile::new().expect("expected value");
+    let mut pager = create_pager(temp_file.path(), 4096).expect("expected value");
 
     // Write a page
     let data: Vec<u8> = (0..4096).map(|i| (i % 256) as u8).collect();
-    pager.write_page(0, &data).unwrap();
+    pager.write_page(0, &data).expect("expected value");
 
     // Read it back
-    let read_data = pager.read_page(0).unwrap();
+    let read_data = pager.read_page(0).expect("expected value");
     assert_eq!(read_data, data);
   }
 
   #[test]
   fn test_read_empty_page() {
-    let temp_file = NamedTempFile::new().unwrap();
-    let mut pager = create_pager(temp_file.path(), 4096).unwrap();
+    let temp_file = NamedTempFile::new().expect("expected value");
+    let mut pager = create_pager(temp_file.path(), 4096).expect("expected value");
 
     // Reading beyond file size should return zeros
-    let read_data = pager.read_page(100).unwrap();
+    let read_data = pager.read_page(100).expect("expected value");
     assert_eq!(read_data, vec![0u8; 4096]);
   }
 
   #[test]
   fn test_allocate_pages() {
-    let temp_file = NamedTempFile::new().unwrap();
-    let mut pager = create_pager(temp_file.path(), 4096).unwrap();
+    let temp_file = NamedTempFile::new().expect("expected value");
+    let mut pager = create_pager(temp_file.path(), 4096).expect("expected value");
 
     // Allocate first batch
-    let start1 = pager.allocate_pages(5).unwrap();
+    let start1 = pager.allocate_pages(5).expect("expected value");
     assert_eq!(start1, 0);
     assert_eq!(pager.file_size(), 5 * 4096);
 
     // Allocate second batch
-    let start2 = pager.allocate_pages(3).unwrap();
+    let start2 = pager.allocate_pages(3).expect("expected value");
     assert_eq!(start2, 5);
     assert_eq!(pager.file_size(), 8 * 4096);
   }
 
   #[test]
   fn test_free_pages() {
-    let temp_file = NamedTempFile::new().unwrap();
-    let mut pager = create_pager(temp_file.path(), 4096).unwrap();
+    let temp_file = NamedTempFile::new().expect("expected value");
+    let mut pager = create_pager(temp_file.path(), 4096).expect("expected value");
 
     // Allocate and free some pages
-    pager.allocate_pages(10).unwrap();
+    pager.allocate_pages(10).expect("expected value");
     pager.free_pages(2, 3);
 
     assert_eq!(pager.free_page_count(), 3);
@@ -476,37 +476,37 @@ mod tests {
 
   #[test]
   fn test_mmap_file() {
-    let temp_file = NamedTempFile::new().unwrap();
-    let mut pager = create_pager(temp_file.path(), 4096).unwrap();
+    let temp_file = NamedTempFile::new().expect("expected value");
+    let mut pager = create_pager(temp_file.path(), 4096).expect("expected value");
 
     // Write some data first
     let data: Vec<u8> = (0..4096).map(|i| (i % 256) as u8).collect();
-    pager.write_page(0, &data).unwrap();
-    pager.sync().unwrap();
+    pager.write_page(0, &data).expect("expected value");
+    pager.sync().expect("expected value");
 
     // Now mmap and verify
-    let mmap = pager.mmap_file().unwrap();
+    let mmap = pager.mmap_file().expect("expected value");
     assert_eq!(&mmap[..4096], &data[..]);
   }
 
   #[test]
   fn test_write_extends_file() {
-    let temp_file = NamedTempFile::new().unwrap();
-    let mut pager = create_pager(temp_file.path(), 4096).unwrap();
+    let temp_file = NamedTempFile::new().expect("expected value");
+    let mut pager = create_pager(temp_file.path(), 4096).expect("expected value");
 
     assert_eq!(pager.file_size(), 0);
 
     // Writing to page 5 should extend the file
     let data = vec![0xAB; 4096];
-    pager.write_page(5, &data).unwrap();
+    pager.write_page(5, &data).expect("expected value");
 
     assert_eq!(pager.file_size(), 6 * 4096);
   }
 
   #[test]
   fn test_page_size_validation() {
-    let temp_file = NamedTempFile::new().unwrap();
-    let mut pager = create_pager(temp_file.path(), 4096).unwrap();
+    let temp_file = NamedTempFile::new().expect("expected value");
+    let mut pager = create_pager(temp_file.path(), 4096).expect("expected value");
 
     // Wrong size data should fail
     let small_data = vec![0u8; 100];

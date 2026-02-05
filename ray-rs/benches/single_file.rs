@@ -23,7 +23,7 @@ fn open_bench_db(path: &std::path::Path) -> kitedb::core::single_file::SingleFil
     path,
     SingleFileOpenOptions::new().sync_mode(SyncMode::Normal),
   )
-  .unwrap()
+  .expect("expected value")
 }
 
 fn bench_single_file_insert(c: &mut Criterion) {
@@ -38,19 +38,19 @@ fn bench_single_file_insert(c: &mut Criterion) {
       |bencher, &count| {
         bencher.iter_with_setup(
           || {
-            let temp_dir = tempdir().unwrap();
+            let temp_dir = tempdir().expect("expected value");
             let db = open_bench_db(&temp_db_path(&temp_dir));
             (temp_dir, db)
           },
           |(_temp_dir, db)| {
-            db.begin(false).unwrap();
+            db.begin(false).expect("expected value");
             for i in 0..count {
               let key = format!("n{i}");
-              let node_id = db.create_node(Some(&key)).unwrap();
+              let node_id = db.create_node(Some(&key)).expect("expected value");
               let _ = db.set_node_prop_by_name(node_id, "name", PropValue::String(key));
             }
-            db.commit().unwrap();
-            close_single_file(db).unwrap();
+            db.commit().expect("expected value");
+            close_single_file(db).expect("expected value");
           },
         );
       },
@@ -72,20 +72,20 @@ fn bench_single_file_checkpoint(c: &mut Criterion) {
       |bencher, &count| {
         bencher.iter_batched(
           || {
-            let temp_dir = tempdir().unwrap();
+            let temp_dir = tempdir().expect("expected value");
             let db = open_bench_db(&temp_db_path(&temp_dir));
-            db.begin(false).unwrap();
+            db.begin(false).expect("expected value");
             for i in 0..count {
               let key = format!("n{i}");
-              let _ = db.create_node(Some(&key)).unwrap();
+              let _ = db.create_node(Some(&key)).expect("expected value");
             }
-            db.commit().unwrap();
+            db.commit().expect("expected value");
             (temp_dir, db)
           },
           |(_temp_dir, db)| {
-            db.checkpoint().unwrap();
+            db.checkpoint().expect("expected value");
             black_box(());
-            close_single_file(db).unwrap();
+            close_single_file(db).expect("expected value");
           },
           BatchSize::SmallInput,
         );

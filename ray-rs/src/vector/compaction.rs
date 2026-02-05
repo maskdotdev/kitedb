@@ -434,7 +434,7 @@ mod tests {
     // Insert some vectors (non-zero to pass validation)
     for i in 0..20 {
       let vector = vec![1.0 + i as f32, 2.0, 3.0, 4.0];
-      vector_store_insert(&mut manifest, i, &vector).unwrap();
+      vector_store_insert(&mut manifest, i, &vector).expect("expected value");
     }
 
     // Seal and delete all
@@ -479,7 +479,7 @@ mod tests {
     // Insert some vectors (non-zero to pass validation)
     for i in 0..10 {
       let vector = vec![1.0 + i as f32, 2.0, 3.0, 4.0];
-      vector_store_insert(&mut manifest, i, &vector).unwrap();
+      vector_store_insert(&mut manifest, i, &vector).expect("expected value");
     }
 
     // Seal

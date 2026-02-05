@@ -850,7 +850,7 @@ mod tests {
   fn corrupt_last_wal_record(db: &SingleFileDB) {
     let mut pager = db.pager.lock();
     let header = db.header.read().clone();
-    let wal_data = read_wal_area(&mut pager, &header).unwrap();
+    let wal_data = read_wal_area(&mut pager, &header).expect("expected value");
     let mut pos = header.wal_tail as usize;
     let head = header.wal_head as usize;
     let mut last_start = None;
@@ -879,34 +879,36 @@ mod tests {
     let page_offset = file_offset % page_size;
 
     if page_offset + 4 <= page_size {
-      let mut page = pager.read_page(page_num).unwrap();
+      let mut page = pager.read_page(page_num).expect("expected value");
       page[page_offset..page_offset + 4].fill(0);
-      pager.write_page(page_num, &page).unwrap();
+      pager.write_page(page_num, &page).expect("expected value");
     } else {
       let first_len = page_size - page_offset;
-      let mut page = pager.read_page(page_num).unwrap();
+      let mut page = pager.read_page(page_num).expect("expected value");
       page[page_offset..].fill(0);
-      pager.write_page(page_num, &page).unwrap();
+      pager.write_page(page_num, &page).expect("expected value");
 
-      let mut next_page = pager.read_page(page_num + 1).unwrap();
+      let mut next_page = pager.read_page(page_num + 1).expect("expected value");
       next_page[..(4 - first_len)].fill(0);
-      pager.write_page(page_num + 1, &next_page).unwrap();
+      pager
+        .write_page(page_num + 1, &next_page)
+        .expect("expected value");
     }
 
-    pager.sync().unwrap();
+    pager.sync().expect("expected value");
   }
 
   #[test]
   fn test_recover_incomplete_background_checkpoint() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir.path().join("checkpoint-recover.kitedb");
 
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
 
     // Write a primary WAL record
-    db.begin(false).unwrap();
-    let _n1 = db.create_node(Some("n1")).unwrap();
-    db.commit().unwrap();
+    db.begin(false).expect("expected value");
+    let _n1 = db.create_node(Some("n1")).expect("expected value");
+    db.commit().expect("expected value");
 
     // Simulate beginning a background checkpoint (switch to secondary + header flag)
     {
@@ -924,27 +926,27 @@ mod tests {
       header.change_counter += 1;
 
       let header_bytes = header.serialize_to_page();
-      pager.write_page(0, &header_bytes).unwrap();
-      pager.sync().unwrap();
+      pager.write_page(0, &header_bytes).expect("expected value");
+      pager.sync().expect("expected value");
     }
 
     // Write to secondary WAL region
-    db.begin(false).unwrap();
-    let _n2 = db.create_node(Some("n2")).unwrap();
-    db.commit().unwrap();
+    db.begin(false).expect("expected value");
+    let _n2 = db.create_node(Some("n2")).expect("expected value");
+    db.commit().expect("expected value");
 
-    close_single_file(db).unwrap();
+    close_single_file(db).expect("expected value");
 
     // Reopen and ensure both records are recovered
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
     assert!(db.node_by_key("n1").is_some());
     assert!(db.node_by_key("n2").is_some());
-    close_single_file(db).unwrap();
+    close_single_file(db).expect("expected value");
   }
 
   #[test]
   fn test_group_commit_flush_and_persist() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir.path().join("group-commit.kitedb");
 
     let db = open_single_file(
@@ -954,18 +956,18 @@ mod tests {
         .group_commit_enabled(true)
         .group_commit_window_ms(0),
     )
-    .unwrap();
+    .expect("expected value");
 
-    db.begin(false).unwrap();
-    let node_id = db.create_node(Some("n1")).unwrap();
+    db.begin(false).expect("expected value");
+    let node_id = db.create_node(Some("n1")).expect("expected value");
     let key_id = db.propkey_id_or_create("value");
     db.set_node_prop(node_id, key_id, crate::types::PropValue::I64(42))
-      .unwrap();
-    db.commit().unwrap();
+      .expect("expected value");
+    db.commit().expect("expected value");
 
     assert!(!db.wal_buffer.lock().has_pending_writes());
 
-    close_single_file(db).unwrap();
+    close_single_file(db).expect("expected value");
 
     let reopened = open_single_file(
       &db_path,
@@ -974,21 +976,22 @@ mod tests {
         .group_commit_enabled(true)
         .group_commit_window_ms(0),
     )
-    .unwrap();
+    .expect("expected value");
 
     let value = reopened.node_prop(node_id, key_id).expect("prop value");
     assert_eq!(value, crate::types::PropValue::I64(42));
 
-    close_single_file(reopened).unwrap();
+    close_single_file(reopened).expect("expected value");
   }
 
   #[test]
   fn test_open_rejects_wal_size_mismatch() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir.path().join("wal-size-mismatch.kitedb");
 
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new().wal_size(64 * 1024)).unwrap();
-    close_single_file(db).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new().wal_size(64 * 1024))
+      .expect("expected value");
+    close_single_file(db).expect("expected value");
 
     let reopen = open_single_file(
       &db_path,
@@ -1000,17 +1003,17 @@ mod tests {
 
   #[test]
   fn test_recover_checkpoint_with_partial_header_update() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir
       .path()
       .join("checkpoint-recover-partial-header.kitedb");
 
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
 
     // Write a primary WAL record
-    db.begin(false).unwrap();
-    let _n1 = db.create_node(Some("n1")).unwrap();
-    db.commit().unwrap();
+    db.begin(false).expect("expected value");
+    let _n1 = db.create_node(Some("n1")).expect("expected value");
+    db.commit().expect("expected value");
 
     // Simulate beginning a background checkpoint (switch to secondary + header flag)
     {
@@ -1028,20 +1031,20 @@ mod tests {
       header.change_counter += 1;
 
       let header_bytes = header.serialize_to_page();
-      pager.write_page(0, &header_bytes).unwrap();
-      pager.sync().unwrap();
+      pager.write_page(0, &header_bytes).expect("expected value");
+      pager.sync().expect("expected value");
     }
 
     // Write to secondary WAL region
-    db.begin(false).unwrap();
-    let _n2 = db.create_node(Some("n2")).unwrap();
-    db.commit().unwrap();
+    db.begin(false).expect("expected value");
+    let _n2 = db.create_node(Some("n2")).expect("expected value");
+    db.commit().expect("expected value");
 
     // Simulate an interrupted header update: wal_head advanced, secondary head missing
     {
       let mut pager = db.pager.lock();
       let mut wal = db.wal_buffer.lock();
-      wal.flush(&mut pager).unwrap();
+      wal.flush(&mut pager).expect("expected value");
       let mut header = db.header.write();
 
       header.active_wal_region = 1;
@@ -1053,33 +1056,33 @@ mod tests {
       header.change_counter += 1;
 
       let header_bytes = header.serialize_to_page();
-      pager.write_page(0, &header_bytes).unwrap();
-      pager.sync().unwrap();
+      pager.write_page(0, &header_bytes).expect("expected value");
+      pager.sync().expect("expected value");
     }
 
     // Simulate crash by dropping without close
     drop(db);
 
     // Reopen and ensure both records are recovered
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
     assert!(db.node_by_key("n1").is_some());
     assert!(db.node_by_key("n2").is_some());
-    close_single_file(db).unwrap();
+    close_single_file(db).expect("expected value");
   }
 
   #[test]
   fn test_recover_checkpoint_with_missing_primary_head() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir
       .path()
       .join("checkpoint-recover-missing-primary-head.kitedb");
 
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
 
     // Write a primary WAL record
-    db.begin(false).unwrap();
-    let _n1 = db.create_node(Some("n1")).unwrap();
-    db.commit().unwrap();
+    db.begin(false).expect("expected value");
+    let _n1 = db.create_node(Some("n1")).expect("expected value");
+    db.commit().expect("expected value");
 
     // Simulate a crash where checkpoint flag is set but wal_primary_head is missing
     {
@@ -1096,50 +1099,50 @@ mod tests {
       header.change_counter += 1;
 
       let header_bytes = header.serialize_to_page();
-      pager.write_page(0, &header_bytes).unwrap();
-      pager.sync().unwrap();
+      pager.write_page(0, &header_bytes).expect("expected value");
+      pager.sync().expect("expected value");
     }
 
     drop(db);
 
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
     assert!(db.node_by_key("n1").is_some());
-    close_single_file(db).unwrap();
+    close_single_file(db).expect("expected value");
   }
 
   #[test]
   fn test_recover_wal_with_truncated_record() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir.path().join("wal-truncated.kitedb");
 
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
 
-    db.begin(false).unwrap();
-    let _n1 = db.create_node(Some("n1")).unwrap();
-    db.commit().unwrap();
+    db.begin(false).expect("expected value");
+    let _n1 = db.create_node(Some("n1")).expect("expected value");
+    db.commit().expect("expected value");
 
-    db.begin(false).unwrap();
-    let _n2 = db.create_node(Some("n2")).unwrap();
-    db.commit().unwrap();
+    db.begin(false).expect("expected value");
+    let _n2 = db.create_node(Some("n2")).expect("expected value");
+    db.commit().expect("expected value");
 
     corrupt_last_wal_record(&db);
     drop(db);
 
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
     assert!(db.node_by_key("n1").is_some());
     assert!(db.node_by_key("n2").is_none());
-    close_single_file(db).unwrap();
+    close_single_file(db).expect("expected value");
   }
 
   #[test]
   fn test_recover_ignores_uncommitted_transaction() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir.path().join("wal-uncommitted.kitedb");
 
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
 
-    db.begin(false).unwrap();
-    let _n1 = db.create_node(Some("n1")).unwrap();
+    db.begin(false).expect("expected value");
+    let _n1 = db.create_node(Some("n1")).expect("expected value");
 
     // Persist WAL head without a commit record
     {
@@ -1155,39 +1158,39 @@ mod tests {
       header.change_counter += 1;
 
       let header_bytes = header.serialize_to_page();
-      pager.write_page(0, &header_bytes).unwrap();
-      pager.sync().unwrap();
+      pager.write_page(0, &header_bytes).expect("expected value");
+      pager.sync().expect("expected value");
     }
 
     drop(db);
 
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
     assert!(db.node_by_key("n1").is_none());
-    close_single_file(db).unwrap();
+    close_single_file(db).expect("expected value");
   }
 
   #[test]
   fn test_checkpoint_replay_after_crash() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir.path().join("checkpoint-replay.kitedb");
 
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
 
-    db.begin(false).unwrap();
-    let _n1 = db.create_node(Some("n1")).unwrap();
-    db.commit().unwrap();
+    db.begin(false).expect("expected value");
+    let _n1 = db.create_node(Some("n1")).expect("expected value");
+    db.commit().expect("expected value");
 
-    db.checkpoint().unwrap();
+    db.checkpoint().expect("expected value");
 
-    db.begin(false).unwrap();
-    let _n2 = db.create_node(Some("n2")).unwrap();
-    db.commit().unwrap();
+    db.begin(false).expect("expected value");
+    let _n2 = db.create_node(Some("n2")).expect("expected value");
+    db.commit().expect("expected value");
 
     drop(db);
 
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
     assert!(db.node_by_key("n1").is_some());
     assert!(db.node_by_key("n2").is_some());
-    close_single_file(db).unwrap();
+    close_single_file(db).expect("expected value");
   }
 }

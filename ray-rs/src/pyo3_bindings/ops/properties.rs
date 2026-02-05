@@ -14,13 +14,13 @@ pub trait PropertyOps {
   fn set_node_prop_impl(&self, node_id: i64, key_id: u32, value: PropValue) -> PyResult<()>;
 
   /// Get a node property
-  fn get_node_prop_impl(&self, node_id: i64, key_id: u32) -> PyResult<Option<PropValue>>;
+  fn node_prop_impl(&self, node_id: i64, key_id: u32) -> PyResult<Option<PropValue>>;
 
   /// Delete a node property
   fn delete_node_prop_impl(&self, node_id: i64, key_id: u32) -> PyResult<()>;
 
   /// Get all properties for a node
-  fn get_node_props_impl(&self, node_id: i64) -> PyResult<Option<Vec<NodeProp>>>;
+  fn node_props_impl(&self, node_id: i64) -> PyResult<Option<Vec<NodeProp>>>;
 
   /// Set an edge property
   fn set_edge_prop_impl(
@@ -33,7 +33,7 @@ pub trait PropertyOps {
   ) -> PyResult<()>;
 
   /// Get an edge property
-  fn get_edge_prop_impl(
+  fn edge_prop_impl(
     &self,
     src: i64,
     etype: u32,
@@ -45,7 +45,7 @@ pub trait PropertyOps {
   fn delete_edge_prop_impl(&self, src: i64, etype: u32, dst: i64, key_id: u32) -> PyResult<()>;
 
   /// Get all properties for an edge
-  fn get_edge_props_impl(&self, src: i64, etype: u32, dst: i64) -> PyResult<Option<Vec<NodeProp>>>;
+  fn edge_props_impl(&self, src: i64, etype: u32, dst: i64) -> PyResult<Option<Vec<NodeProp>>>;
 }
 
 // ============================================================================
@@ -75,7 +75,7 @@ pub fn set_node_prop_by_name_single(
 }
 
 /// Get node property on single-file database
-pub fn get_node_prop_single(
+pub fn node_prop_single(
   db: &RustSingleFileDB,
   node_id: NodeId,
   key_id: PropKeyId,
@@ -94,7 +94,7 @@ pub fn delete_node_prop_single(
 }
 
 /// Get all node properties on single-file database
-pub fn get_node_props_single(db: &RustSingleFileDB, node_id: NodeId) -> Option<Vec<NodeProp>> {
+pub fn node_props_single(db: &RustSingleFileDB, node_id: NodeId) -> Option<Vec<NodeProp>> {
   db.node_props(node_id).map(|props| {
     props
       .into_iter()
@@ -137,7 +137,7 @@ pub fn set_edge_prop_by_name_single(
 }
 
 /// Get edge property on single-file database
-pub fn get_edge_prop_single(
+pub fn edge_prop_single(
   db: &RustSingleFileDB,
   src: NodeId,
   etype: ETypeId,
@@ -160,7 +160,7 @@ pub fn delete_edge_prop_single(
 }
 
 /// Get all edge properties on single-file database
-pub fn get_edge_props_single(
+pub fn edge_props_single(
   db: &RustSingleFileDB,
   src: NodeId,
   etype: ETypeId,
@@ -182,7 +182,7 @@ pub fn get_edge_props_single(
 // ============================================================================
 
 /// Get string property directly
-pub fn get_node_prop_string_single(
+pub fn node_prop_string_single(
   db: &RustSingleFileDB,
   node_id: NodeId,
   key_id: PropKeyId,
@@ -194,7 +194,7 @@ pub fn get_node_prop_string_single(
 }
 
 /// Get int property directly
-pub fn get_node_prop_int_single(
+pub fn node_prop_int_single(
   db: &RustSingleFileDB,
   node_id: NodeId,
   key_id: PropKeyId,
@@ -206,7 +206,7 @@ pub fn get_node_prop_int_single(
 }
 
 /// Get float property directly
-pub fn get_node_prop_float_single(
+pub fn node_prop_float_single(
   db: &RustSingleFileDB,
   node_id: NodeId,
   key_id: PropKeyId,
@@ -218,7 +218,7 @@ pub fn get_node_prop_float_single(
 }
 
 /// Get bool property directly
-pub fn get_node_prop_bool_single(
+pub fn node_prop_bool_single(
   db: &RustSingleFileDB,
   node_id: NodeId,
   key_id: PropKeyId,

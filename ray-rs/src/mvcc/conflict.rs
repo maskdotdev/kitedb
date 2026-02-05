@@ -274,7 +274,7 @@ mod tests {
     // Tx1: write and commit
     let (txid1, _) = tx_mgr.begin_tx();
     tx_mgr.record_write(txid1, key("key1"));
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     // Tx2: starts after tx1 committed, writes same key - no conflict
     let (txid2, _) = tx_mgr.begin_tx();
@@ -304,7 +304,7 @@ mod tests {
     tx_mgr.record_write(txid2, key("shared_key"));
 
     // Tx1 commits first
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     // Tx2 should have conflict
     let conflicts = detector.check_conflicts(&tx_mgr, txid2);
@@ -324,7 +324,7 @@ mod tests {
     tx_mgr.record_read(txid2, key("key1"));
 
     // Tx1 commits first
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     // Tx2 should have conflict (read-write)
     let conflicts = detector.check_conflicts(&tx_mgr, txid2);
@@ -339,7 +339,7 @@ mod tests {
     let (txid2, _) = tx_mgr.begin_tx();
 
     tx_mgr.record_write(txid1, key("key1"));
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     tx_mgr.record_write(txid2, key("key1"));
 
@@ -367,7 +367,7 @@ mod tests {
     tx_mgr.record_write(txid1, key("key"));
     tx_mgr.record_write(txid2, key("key"));
 
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     let result = detector.validate_commit(&tx_mgr, txid2);
     assert!(result.is_err());
@@ -385,7 +385,7 @@ mod tests {
     let (txid2, _) = tx_mgr.begin_tx();
 
     tx_mgr.record_write(txid1, key("key1"));
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     assert!(detector.check_key_conflict(&tx_mgr, txid2, &key("key1")));
     assert!(!detector.check_key_conflict(&tx_mgr, txid2, &key("key2")));
@@ -401,7 +401,7 @@ mod tests {
     tx_mgr.record_write(txid1, key("key1"));
     tx_mgr.record_write(txid2, key("key2"));
 
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     // No conflict - different keys
     let conflicts = detector.check_conflicts(&tx_mgr, txid2);
@@ -419,7 +419,7 @@ mod tests {
   }
 
   #[test]
-  fn test_get_conflict_details() {
+  fn test_conflict_details() {
     let (mut tx_mgr, detector) = setup();
 
     let (txid1, _) = tx_mgr.begin_tx();
@@ -432,7 +432,7 @@ mod tests {
     // Also write key2 from tx1
     tx_mgr.record_write(txid1, key("key2"));
 
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     let details = detector.conflict_details(&tx_mgr, txid2);
 
@@ -443,7 +443,7 @@ mod tests {
     let key1_conflict = details.iter().find(|c| c.key == "key:key1");
     assert!(key1_conflict.is_some());
     assert_eq!(
-      key1_conflict.unwrap().conflict_type,
+      key1_conflict.expect("expected value").conflict_type,
       ConflictType::ReadWrite
     );
 
@@ -451,7 +451,7 @@ mod tests {
     let key2_conflict = details.iter().find(|c| c.key == "key:key2");
     assert!(key2_conflict.is_some());
     assert_eq!(
-      key2_conflict.unwrap().conflict_type,
+      key2_conflict.expect("expected value").conflict_type,
       ConflictType::WriteWrite
     );
   }
@@ -480,7 +480,7 @@ mod tests {
     let (mut tx_mgr, detector) = setup();
 
     let (txid, _) = tx_mgr.begin_tx();
-    tx_mgr.commit_tx(txid).unwrap();
+    tx_mgr.commit_tx(txid).expect("expected value");
 
     // Committed tx should have no conflicts to check
     // Note: The tx is removed after serial commit
@@ -504,7 +504,7 @@ mod tests {
 
     // First one commits successfully
     assert!(detector.validate_commit(&tx_mgr, txid1).is_ok());
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     // Others should conflict
     assert!(detector.validate_commit(&tx_mgr, txid2).is_err());

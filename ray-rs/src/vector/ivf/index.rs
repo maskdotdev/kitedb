@@ -795,7 +795,9 @@ mod tests {
     let mut index = create_test_index(4, 2);
 
     let vectors = vec![1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0];
-    index.add_training_vectors(&vectors, 2).unwrap();
+    index
+      .add_training_vectors(&vectors, 2)
+      .expect("expected value");
 
     assert_eq!(index.training_count, 2);
   }
@@ -809,9 +811,11 @@ mod tests {
     for i in 0..10 {
       vectors.extend_from_slice(&[i as f32, 0.0, 0.0, 1.0]);
     }
-    index.add_training_vectors(&vectors, 10).unwrap();
+    index
+      .add_training_vectors(&vectors, 10)
+      .expect("expected value");
 
-    index.train().unwrap();
+    index.train().expect("expected value");
 
     assert!(index.trained);
     assert_eq!(index.centroids.len(), 2 * 4);
@@ -822,7 +826,9 @@ mod tests {
     let mut index = create_test_index(4, 10);
 
     let vectors = vec![1.0, 0.0, 0.0, 0.0];
-    index.add_training_vectors(&vectors, 1).unwrap();
+    index
+      .add_training_vectors(&vectors, 1)
+      .expect("expected value");
 
     let result = index.train();
     assert!(matches!(
@@ -840,12 +846,14 @@ mod tests {
     for i in 0..10 {
       vectors.extend_from_slice(&[i as f32, 0.0, 0.0, 1.0]);
     }
-    index.add_training_vectors(&vectors, 10).unwrap();
-    index.train().unwrap();
+    index
+      .add_training_vectors(&vectors, 10)
+      .expect("expected value");
+    index.train().expect("expected value");
 
     // Insert
     let vector = vec![5.0, 0.0, 0.0, 1.0];
-    index.insert(0, &vector).unwrap();
+    index.insert(0, &vector).expect("expected value");
 
     let stats = index.stats();
     assert_eq!(stats.total_vectors, 1);
@@ -870,12 +878,14 @@ mod tests {
     for i in 0..10 {
       vectors.extend_from_slice(&[i as f32, 0.0, 0.0, 1.0]);
     }
-    index.add_training_vectors(&vectors, 10).unwrap();
-    index.train().unwrap();
+    index
+      .add_training_vectors(&vectors, 10)
+      .expect("expected value");
+    index.train().expect("expected value");
 
     // Insert and delete
     let vector = vec![5.0, 0.0, 0.0, 1.0];
-    index.insert(0, &vector).unwrap();
+    index.insert(0, &vector).expect("expected value");
     assert!(index.delete(0, &vector));
     assert!(!index.delete(0, &vector)); // Already deleted
 
@@ -892,8 +902,10 @@ mod tests {
     for i in 0..10 {
       vectors.extend_from_slice(&[i as f32, 0.0, 0.0, 1.0]);
     }
-    index.add_training_vectors(&vectors, 10).unwrap();
-    index.train().unwrap();
+    index
+      .add_training_vectors(&vectors, 10)
+      .expect("expected value");
+    index.train().expect("expected value");
 
     let stats = index.stats();
     assert!(stats.trained);
@@ -910,8 +922,10 @@ mod tests {
     for i in 0..10 {
       vectors.extend_from_slice(&[i as f32, 0.0, 0.0, 1.0]);
     }
-    index.add_training_vectors(&vectors, 10).unwrap();
-    index.train().unwrap();
+    index
+      .add_training_vectors(&vectors, 10)
+      .expect("expected value");
+    index.train().expect("expected value");
 
     index.clear();
 
@@ -932,7 +946,7 @@ mod tests {
     assert_eq!(heap.len(), 4);
 
     // Max should be 3 (distance 0.8)
-    let (id, dist) = *heap.peek().unwrap();
+    let (id, dist) = *heap.peek().expect("expected value");
     assert_eq!(id, 3);
     assert_eq!(dist, 0.8);
 
@@ -964,8 +978,10 @@ mod tests {
     for i in 0..10 {
       vectors.extend_from_slice(&[i as f32, 0.0, 0.0, 1.0]);
     }
-    index.add_training_vectors(&vectors, 10).unwrap();
-    index.train().unwrap();
+    index
+      .add_training_vectors(&vectors, 10)
+      .expect("expected value");
+    index.train().expect("expected value");
 
     // Create a minimal manifest
     let manifest = VectorManifest::new(VectorStoreConfig::new(4));

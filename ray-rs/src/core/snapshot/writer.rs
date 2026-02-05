@@ -1124,7 +1124,7 @@ mod tests {
   #[test]
   fn test_build_snapshot_to_memory() {
     let input = create_test_input();
-    let buffer = build_snapshot_to_memory(input).unwrap();
+    let buffer = build_snapshot_to_memory(input).expect("expected value");
 
     // Verify the buffer is non-empty and starts with correct magic
     assert!(buffer.len() > SNAPSHOT_HEADER_SIZE);
@@ -1155,19 +1155,23 @@ mod tests {
   #[test]
   fn test_snapshot_round_trip_includes_vector_properties() {
     let input = create_test_input();
-    let buffer = build_snapshot_to_memory(input).unwrap();
+    let buffer = build_snapshot_to_memory(input).expect("expected value");
 
-    let mut tmp = NamedTempFile::new().unwrap();
-    tmp.write_all(&buffer).unwrap();
-    tmp.flush().unwrap();
+    let mut tmp = NamedTempFile::new().expect("expected value");
+    tmp.write_all(&buffer).expect("expected value");
+    tmp.flush().expect("expected value");
 
-    let snapshot = crate::core::snapshot::reader::SnapshotData::load(tmp.path()).unwrap();
+    let snapshot =
+      crate::core::snapshot::reader::SnapshotData::load(tmp.path()).expect("expected value");
 
-    assert!(snapshot.header.flags.contains(SnapshotFlags::HAS_PROPERTIES));
+    assert!(snapshot
+      .header
+      .flags
+      .contains(SnapshotFlags::HAS_PROPERTIES));
     assert!(snapshot.header.flags.contains(SnapshotFlags::HAS_VECTORS));
 
-    let phys = snapshot.phys_node(1).unwrap();
-    let embedding = snapshot.node_prop(phys, 4).unwrap();
+    let phys = snapshot.phys_node(1).expect("expected value");
+    let embedding = snapshot.node_prop(phys, 4).expect("expected value");
     match embedding {
       PropValue::VectorF32(v) => {
         assert_eq!(v.len(), 3);
@@ -1191,7 +1195,7 @@ mod tests {
       compression: None,
     };
 
-    let buffer = build_snapshot_to_memory(input).unwrap();
+    let buffer = build_snapshot_to_memory(input).expect("expected value");
 
     // Verify header
     assert_eq!(read_u32(&buffer, 0), MAGIC_SNAPSHOT);

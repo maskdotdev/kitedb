@@ -592,7 +592,7 @@ mod tests {
   }
 
   #[test]
-  fn test_get_mut() {
+  fn test_mut() {
     let mut cache = LruCache::new(10);
     cache.set("a", 1);
 

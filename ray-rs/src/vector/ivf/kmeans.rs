@@ -807,7 +807,7 @@ mod tests {
     }
 
     let config = KMeansConfig::new(2).with_seed(42);
-    let result = kmeans(&vectors, 100, 3, &config, squared_euclidean).unwrap();
+    let result = kmeans(&vectors, 100, 3, &config, squared_euclidean).expect("expected value");
 
     assert_eq!(result.centroids.len(), 2 * 3);
     assert_eq!(result.assignments.len(), 100);
@@ -847,7 +847,7 @@ mod tests {
     }
 
     let config = KMeansConfig::new(2).with_seed(42).with_tolerance(1e-6);
-    let result = kmeans(&vectors, 200, 2, &config, squared_euclidean).unwrap();
+    let result = kmeans(&vectors, 200, 2, &config, squared_euclidean).expect("expected value");
 
     // Should converge quickly with well-separated clusters
     assert!(result.converged || result.iterations <= 10);
@@ -864,7 +864,7 @@ mod tests {
     ];
 
     let config = KMeansConfig::new(2).with_seed(42);
-    let result = kmeans(&vectors, 4, 2, &config, squared_euclidean).unwrap();
+    let result = kmeans(&vectors, 4, 2, &config, squared_euclidean).expect("expected value");
 
     // Points 0,1 should be in same cluster, points 2,3 in another
     assert_eq!(result.assignments[0], result.assignments[1]);
@@ -901,7 +901,8 @@ mod tests {
     ];
 
     let config = KMeansConfig::new(2).with_seed(42);
-    let result = kmeans_parallel(&vectors, 4, 2, &config, squared_euclidean).unwrap();
+    let result =
+      kmeans_parallel(&vectors, 4, 2, &config, squared_euclidean).expect("expected value");
 
     // Points 0,1 should be in same cluster, points 2,3 in another
     assert_eq!(result.assignments[0], result.assignments[1]);
@@ -926,7 +927,8 @@ mod tests {
     }
 
     let config = KMeansConfig::new(k).with_seed(42).with_max_iterations(15);
-    let result = kmeans_parallel(&vectors, n, dims, &config, squared_euclidean).unwrap();
+    let result =
+      kmeans_parallel(&vectors, n, dims, &config, squared_euclidean).expect("expected value");
 
     assert_eq!(result.centroids.len(), k * dims);
     assert_eq!(result.assignments.len(), n);
@@ -954,8 +956,9 @@ mod tests {
 
     let config = KMeansConfig::new(k).with_seed(123).with_max_iterations(20);
 
-    let result_par = kmeans_parallel(&vectors, n, dims, &config, squared_euclidean).unwrap();
-    let result_seq = kmeans(&vectors, n, dims, &config, squared_euclidean).unwrap();
+    let result_par =
+      kmeans_parallel(&vectors, n, dims, &config, squared_euclidean).expect("expected value");
+    let result_seq = kmeans(&vectors, n, dims, &config, squared_euclidean).expect("expected value");
 
     // Both should produce valid results
     assert_eq!(result_par.centroids.len(), result_seq.centroids.len());
@@ -985,7 +988,8 @@ mod tests {
     }
 
     let config = KMeansConfig::new(k).with_seed(456).with_max_iterations(25);
-    let result = kmeans_parallel(&vectors, n, dims, &config, squared_euclidean).unwrap();
+    let result =
+      kmeans_parallel(&vectors, n, dims, &config, squared_euclidean).expect("expected value");
 
     // Count vectors per assignment
     let mut cluster_counts = vec![0usize; k];
@@ -1023,7 +1027,8 @@ mod tests {
       .with_seed(789)
       .with_max_iterations(50)
       .with_tolerance(1e-6);
-    let result = kmeans_parallel(&vectors, n, dims, &config, squared_euclidean).unwrap();
+    let result =
+      kmeans_parallel(&vectors, n, dims, &config, squared_euclidean).expect("expected value");
 
     // With perfectly separated clusters, should converge
     assert!(

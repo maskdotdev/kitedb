@@ -256,19 +256,19 @@ mod tests {
   }
 
   #[test]
-  fn test_get_visible_version_single() {
+  fn test_visible_version_single() {
     let version = VersionedRecord::new(42, 1, 10);
 
     let visible = visible_version(&version, 20, 2);
     assert!(visible.is_some());
-    assert_eq!(visible.unwrap().data, 42);
+    assert_eq!(visible.expect("expected value").data, 42);
 
     let not_visible = visible_version(&version, 5, 2);
     assert!(not_visible.is_none());
   }
 
   #[test]
-  fn test_get_visible_version_chain() {
+  fn test_visible_version_chain() {
     // Create a version chain: v3 -> v2 -> v1
     let v1 = VersionedRecord::new(1, 1, 10);
     let v2 = VersionedRecord::with_prev(2, 2, 20, Box::new(v1));
@@ -276,15 +276,15 @@ mod tests {
 
     // Snapshot at 35 sees v3
     let visible = visible_version(&v3, 35, 100);
-    assert_eq!(visible.unwrap().data, 3);
+    assert_eq!(visible.expect("expected value").data, 3);
 
     // Snapshot at 25 sees v2
     let visible = visible_version(&v3, 25, 100);
-    assert_eq!(visible.unwrap().data, 2);
+    assert_eq!(visible.expect("expected value").data, 2);
 
     // Snapshot at 15 sees v1
     let visible = visible_version(&v3, 15, 100);
-    assert_eq!(visible.unwrap().data, 1);
+    assert_eq!(visible.expect("expected value").data, 1);
 
     // Snapshot at 5 sees nothing
     let visible = visible_version(&v3, 5, 100);

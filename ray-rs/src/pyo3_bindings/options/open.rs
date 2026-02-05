@@ -388,7 +388,7 @@ mod tests {
       group_commit_window_ms: Some(5),
       ..Default::default()
     };
-    let rust_opts: RustOpenOptions = opts.try_into().unwrap();
+    let rust_opts: RustOpenOptions = opts.try_into().expect("expected value");
     assert!(rust_opts.read_only);
     assert!(!rust_opts.create_if_missing);
     assert!(rust_opts.group_commit_enabled);

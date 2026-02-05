@@ -503,7 +503,7 @@ mod tests {
     assert_eq!(idx, 0);
     assert_eq!(rg.count, 1);
 
-    let retrieved = rg.get(0, 4).unwrap();
+    let retrieved = rg.get(0, 4).expect("expected value");
     assert_eq!(retrieved, &vec1);
   }
 

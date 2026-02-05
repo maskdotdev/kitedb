@@ -246,34 +246,34 @@ mod tests {
   #[test]
   fn test_compression_none() {
     let data = b"hello world";
-    let compressed = compress(data, CompressionType::None, 0).unwrap();
+    let compressed = compress(data, CompressionType::None, 0).expect("expected value");
     assert_eq!(compressed, data);
-    let decompressed = decompress(&compressed, CompressionType::None).unwrap();
+    let decompressed = decompress(&compressed, CompressionType::None).expect("expected value");
     assert_eq!(decompressed, data);
   }
 
   #[test]
   fn test_compression_zstd() {
     let data = b"hello world hello world hello world";
-    let compressed = compress(data, CompressionType::Zstd, 3).unwrap();
+    let compressed = compress(data, CompressionType::Zstd, 3).expect("expected value");
     assert!(compressed.len() < data.len());
-    let decompressed = decompress(&compressed, CompressionType::Zstd).unwrap();
+    let decompressed = decompress(&compressed, CompressionType::Zstd).expect("expected value");
     assert_eq!(decompressed, data);
   }
 
   #[test]
   fn test_compression_gzip() {
     let data = b"hello world hello world hello world";
-    let compressed = compress(data, CompressionType::Gzip, 6).unwrap();
-    let decompressed = decompress(&compressed, CompressionType::Gzip).unwrap();
+    let compressed = compress(data, CompressionType::Gzip, 6).expect("expected value");
+    let decompressed = decompress(&compressed, CompressionType::Gzip).expect("expected value");
     assert_eq!(decompressed, data);
   }
 
   #[test]
   fn test_compression_deflate() {
     let data = b"hello world hello world hello world";
-    let compressed = compress(data, CompressionType::Deflate, 6).unwrap();
-    let decompressed = decompress(&compressed, CompressionType::Deflate).unwrap();
+    let compressed = compress(data, CompressionType::Deflate, 6).expect("expected value");
+    let decompressed = decompress(&compressed, CompressionType::Deflate).expect("expected value");
     assert_eq!(decompressed, data);
   }
 
@@ -319,9 +319,9 @@ mod tests {
   #[test]
   fn test_decompress_with_size() {
     let data = vec![b'x'; 10000];
-    let compressed = compress(&data, CompressionType::Zstd, 3).unwrap();
+    let compressed = compress(&data, CompressionType::Zstd, 3).expect("expected value");
     let decompressed =
-      decompress_with_size(&compressed, CompressionType::Zstd, data.len()).unwrap();
+      decompress_with_size(&compressed, CompressionType::Zstd, data.len()).expect("expected value");
     assert_eq!(decompressed, data);
   }
 

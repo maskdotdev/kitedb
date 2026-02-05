@@ -11,7 +11,7 @@ pub trait VectorOps {
   /// Set a vector embedding for a node
   fn set_node_vector_impl(&self, node_id: i64, prop_key_id: u32, vector: Vec<f64>) -> PyResult<()>;
   /// Get a vector embedding for a node
-  fn get_node_vector_impl(&self, node_id: i64, prop_key_id: u32) -> PyResult<Option<Vec<f64>>>;
+  fn node_vector_impl(&self, node_id: i64, prop_key_id: u32) -> PyResult<Option<Vec<f64>>>;
   /// Delete a vector embedding for a node
   fn delete_node_vector_impl(&self, node_id: i64, prop_key_id: u32) -> PyResult<()>;
   /// Check if a node has a vector embedding
@@ -32,7 +32,7 @@ pub fn set_node_vector_single(
     .map_err(|e| PyRuntimeError::new_err(format!("Failed to set vector: {e}")))
 }
 
-pub fn get_node_vector_single(
+pub fn node_vector_single(
   db: &RustSingleFileDB,
   node_id: NodeId,
   prop_key_id: PropKeyId,

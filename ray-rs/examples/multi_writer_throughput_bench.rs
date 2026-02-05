@@ -193,16 +193,20 @@ fn main() {
 
   let mut etypes = Vec::with_capacity(config.edge_types);
   let mut edge_prop_keys = Vec::with_capacity(config.edge_props);
-  db.begin(false).unwrap();
+  db.begin(false).expect("expected value");
   for i in 0..config.edge_types {
-    let etype = db.define_etype(&format!("edge_type_{i}")).unwrap();
+    let etype = db
+      .define_etype(&format!("edge_type_{i}"))
+      .expect("expected value");
     etypes.push(etype);
   }
   for i in 0..config.edge_props {
-    let key = db.define_propkey(&format!("edge_prop_{i}")).unwrap();
+    let key = db
+      .define_propkey(&format!("edge_prop_{i}"))
+      .expect("expected value");
     edge_prop_keys.push(key);
   }
-  db.commit().unwrap();
+  db.commit().expect("expected value");
 
   let node_counter = Arc::new(AtomicU64::new(0));
   let start = Instant::now();
@@ -219,7 +223,7 @@ fn main() {
       let mut total_nodes = 0u64;
       let mut total_edges = 0u64;
       for _ in 0..config.tx_per_thread {
-        db.begin(false).unwrap();
+        db.begin(false).expect("expected value");
         let mut keys = Vec::with_capacity(config.batch_size);
         for _ in 0..config.batch_size {
           let idx = node_counter.fetch_add(1, Ordering::Relaxed);
@@ -227,7 +231,7 @@ fn main() {
           keys.push(key);
         }
         let key_refs: Vec<Option<&str>> = keys.iter().map(|k| Some(k.as_str())).collect();
-        let batch_nodes = db.create_nodes_batch(&key_refs).unwrap();
+        let batch_nodes = db.create_nodes_batch(&key_refs).expect("expected value");
         total_nodes += batch_nodes.len() as u64;
 
         if !etypes.is_empty() && !batch_nodes.is_empty() && config.edges_per_node > 0 {
@@ -260,13 +264,14 @@ fn main() {
             }
           }
           if edge_prop_keys.is_empty() {
-            db.add_edges_batch(&edges).unwrap();
+            db.add_edges_batch(&edges).expect("expected value");
           } else {
-            db.add_edges_with_props_batch(edges_with_props).unwrap();
+            db.add_edges_with_props_batch(edges_with_props)
+              .expect("expected value");
           }
         }
 
-        db.commit().unwrap();
+        db.commit().expect("expected value");
       }
       (total_nodes, total_edges)
     });

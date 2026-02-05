@@ -18,10 +18,10 @@ pub trait NodeOps {
   fn node_exists_impl(&self, node_id: i64) -> PyResult<bool>;
 
   /// Get node by key
-  fn get_node_by_key_impl(&self, key: &str) -> PyResult<Option<i64>>;
+  fn node_by_key_impl(&self, key: &str) -> PyResult<Option<i64>>;
 
   /// Get the key for a node
-  fn get_node_key_impl(&self, node_id: i64) -> PyResult<Option<String>>;
+  fn node_key_impl(&self, node_id: i64) -> PyResult<Option<String>>;
 
   /// List all node IDs
   fn list_nodes_impl(&self) -> PyResult<Vec<i64>>;
@@ -54,12 +54,12 @@ pub fn node_exists_single(db: &RustSingleFileDB, node_id: NodeId) -> bool {
 }
 
 /// Get node by key on single-file database
-pub fn get_node_by_key_single(db: &RustSingleFileDB, key: &str) -> Option<i64> {
+pub fn node_by_key_single(db: &RustSingleFileDB, key: &str) -> Option<i64> {
   db.node_by_key(key).map(|id| id as i64)
 }
 
 /// Get node key on single-file database
-pub fn get_node_key_single(db: &RustSingleFileDB, node_id: NodeId) -> Option<String> {
+pub fn node_key_single(db: &RustSingleFileDB, node_id: NodeId) -> Option<String> {
   db.node_key(node_id)
 }
 

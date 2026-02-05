@@ -755,12 +755,10 @@ impl IvfPqIndex {
       return centroid_dists.into_iter().map(|(c, _)| c).collect();
     }
 
-    centroid_dists.select_nth_unstable_by(
-      n - 1,
-      |a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal),
-    );
-    centroid_dists[..n]
-      .sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    centroid_dists.select_nth_unstable_by(n - 1, |a, b| {
+      a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    centroid_dists[..n].sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     centroid_dists[..n].iter().map(|(c, _)| *c).collect()
   }
 
@@ -1809,7 +1807,7 @@ mod tests {
 
   #[test]
   fn test_ivf_pq_new() {
-    let index = IvfPqIndex::new(16, test_config()).unwrap();
+    let index = IvfPqIndex::new(16, test_config()).expect("expected value");
     assert_eq!(index.dimensions, 16);
     assert_eq!(index.subspace_dims, 4);
     assert!(!index.trained);
@@ -1826,17 +1824,19 @@ mod tests {
 
   #[test]
   fn test_ivf_pq_add_training_vectors() {
-    let mut index = IvfPqIndex::new(16, test_config()).unwrap();
+    let mut index = IvfPqIndex::new(16, test_config()).expect("expected value");
 
     let vectors = vec![0.0f32; 50 * 16];
-    index.add_training_vectors(&vectors, 50).unwrap();
+    index
+      .add_training_vectors(&vectors, 50)
+      .expect("expected value");
 
     assert_eq!(index.training_count, 50);
   }
 
   #[test]
   fn test_ivf_pq_train() {
-    let mut index = IvfPqIndex::new(16, test_config()).unwrap();
+    let mut index = IvfPqIndex::new(16, test_config()).expect("expected value");
 
     // Create training vectors
     let mut vectors = Vec::new();
@@ -1845,9 +1845,11 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 8000.0);
       }
     }
-    index.add_training_vectors(&vectors, 500).unwrap();
+    index
+      .add_training_vectors(&vectors, 500)
+      .expect("expected value");
 
-    index.train().unwrap();
+    index.train().expect("expected value");
 
     assert!(index.trained);
     assert_eq!(index.ivf_centroids.len(), 4 * 16); // n_clusters * dimensions
@@ -1856,10 +1858,12 @@ mod tests {
 
   #[test]
   fn test_ivf_pq_train_not_enough_vectors() {
-    let mut index = IvfPqIndex::new(16, test_config()).unwrap();
+    let mut index = IvfPqIndex::new(16, test_config()).expect("expected value");
 
     let vectors = vec![0.0f32; 2 * 16]; // Only 2 vectors, need at least 4 clusters
-    index.add_training_vectors(&vectors, 2).unwrap();
+    index
+      .add_training_vectors(&vectors, 2)
+      .expect("expected value");
 
     let result = index.train();
     assert!(matches!(
@@ -1870,7 +1874,7 @@ mod tests {
 
   #[test]
   fn test_ivf_pq_insert() {
-    let mut index = IvfPqIndex::new(16, test_config()).unwrap();
+    let mut index = IvfPqIndex::new(16, test_config()).expect("expected value");
 
     // Train first
     let mut vectors = Vec::new();
@@ -1879,12 +1883,14 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 8000.0);
       }
     }
-    index.add_training_vectors(&vectors, 500).unwrap();
-    index.train().unwrap();
+    index
+      .add_training_vectors(&vectors, 500)
+      .expect("expected value");
+    index.train().expect("expected value");
 
     // Insert
     let vector = vec![0.5f32; 16];
-    index.insert(0, &vector).unwrap();
+    index.insert(0, &vector).expect("expected value");
 
     let stats = index.stats();
     assert_eq!(stats.total_vectors, 1);
@@ -1893,7 +1899,7 @@ mod tests {
 
   #[test]
   fn test_ivf_pq_insert_not_trained() {
-    let mut index = IvfPqIndex::new(16, test_config()).unwrap();
+    let mut index = IvfPqIndex::new(16, test_config()).expect("expected value");
 
     let vector = vec![0.5f32; 16];
     let result = index.insert(0, &vector);
@@ -1903,7 +1909,7 @@ mod tests {
 
   #[test]
   fn test_ivf_pq_delete() {
-    let mut index = IvfPqIndex::new(16, test_config()).unwrap();
+    let mut index = IvfPqIndex::new(16, test_config()).expect("expected value");
 
     // Train
     let mut vectors = Vec::new();
@@ -1912,12 +1918,14 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 8000.0);
       }
     }
-    index.add_training_vectors(&vectors, 500).unwrap();
-    index.train().unwrap();
+    index
+      .add_training_vectors(&vectors, 500)
+      .expect("expected value");
+    index.train().expect("expected value");
 
     // Insert and delete
     let vector = vec![0.5f32; 16];
-    index.insert(0, &vector).unwrap();
+    index.insert(0, &vector).expect("expected value");
     assert!(index.delete(0, &vector));
     assert!(!index.delete(0, &vector)); // Already deleted
 
@@ -1927,7 +1935,7 @@ mod tests {
 
   #[test]
   fn test_ivf_pq_stats() {
-    let mut index = IvfPqIndex::new(16, test_config()).unwrap();
+    let mut index = IvfPqIndex::new(16, test_config()).expect("expected value");
 
     // Train
     let mut vectors = Vec::new();
@@ -1936,13 +1944,15 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 8000.0);
       }
     }
-    index.add_training_vectors(&vectors, 500).unwrap();
-    index.train().unwrap();
+    index
+      .add_training_vectors(&vectors, 500)
+      .expect("expected value");
+    index.train().expect("expected value");
 
     // Insert some vectors
     for i in 0..10 {
       let vector: Vec<f32> = (0..16).map(|d| (i * 16 + d) as f32 / 160.0).collect();
-      index.insert(i as u64, &vector).unwrap();
+      index.insert(i as u64, &vector).expect("expected value");
     }
 
     let stats = index.stats();
@@ -1956,7 +1966,7 @@ mod tests {
 
   #[test]
   fn test_ivf_pq_clear() {
-    let mut index = IvfPqIndex::new(16, test_config()).unwrap();
+    let mut index = IvfPqIndex::new(16, test_config()).expect("expected value");
 
     // Train
     let mut vectors = Vec::new();
@@ -1965,12 +1975,14 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 8000.0);
       }
     }
-    index.add_training_vectors(&vectors, 500).unwrap();
-    index.train().unwrap();
+    index
+      .add_training_vectors(&vectors, 500)
+      .expect("expected value");
+    index.train().expect("expected value");
 
     // Insert
     let vector = vec![0.5f32; 16];
-    index.insert(0, &vector).unwrap();
+    index.insert(0, &vector).expect("expected value");
 
     index.clear();
 
@@ -2014,7 +2026,7 @@ mod tests {
       use_residuals: false, // No residual encoding
     };
 
-    let mut index = IvfPqIndex::new(16, config).unwrap();
+    let mut index = IvfPqIndex::new(16, config).expect("expected value");
 
     // Train
     let mut vectors = Vec::new();
@@ -2023,8 +2035,10 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 8000.0);
       }
     }
-    index.add_training_vectors(&vectors, 500).unwrap();
-    index.train().unwrap();
+    index
+      .add_training_vectors(&vectors, 500)
+      .expect("expected value");
+    index.train().expect("expected value");
 
     assert!(index.trained);
   }
@@ -2041,7 +2055,7 @@ mod tests {
     assert_eq!(heap.len(), 4);
 
     // Max should be 3 (distance 0.8)
-    let (id, dist) = *heap.peek().unwrap();
+    let (id, dist) = *heap.peek().expect("expected value");
     assert_eq!(id, 3);
     assert_eq!(dist, 0.8);
 
@@ -2071,10 +2085,10 @@ mod tests {
 
   #[test]
   fn test_ivf_pq_serialize_empty() {
-    let index = IvfPqIndex::new(16, test_config()).unwrap();
+    let index = IvfPqIndex::new(16, test_config()).expect("expected value");
 
     let serialized = serialize_ivf_pq(&index);
-    let deserialized = deserialize_ivf_pq(&serialized).unwrap();
+    let deserialized = deserialize_ivf_pq(&serialized).expect("expected value");
 
     assert_eq!(deserialized.dimensions, 16);
     assert_eq!(deserialized.config.ivf.n_clusters, 4);
@@ -2084,7 +2098,7 @@ mod tests {
 
   #[test]
   fn test_ivf_pq_serialize_round_trip() {
-    let mut index = IvfPqIndex::new(16, test_config()).unwrap();
+    let mut index = IvfPqIndex::new(16, test_config()).expect("expected value");
 
     // Train
     let mut vectors = Vec::new();
@@ -2093,17 +2107,19 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 8000.0);
       }
     }
-    index.add_training_vectors(&vectors, 500).unwrap();
-    index.train().unwrap();
+    index
+      .add_training_vectors(&vectors, 500)
+      .expect("expected value");
+    index.train().expect("expected value");
 
     // Insert some vectors
     for i in 0..10 {
       let vector: Vec<f32> = (0..16).map(|d| (i * 16 + d) as f32 / 160.0).collect();
-      index.insert(i as u64, &vector).unwrap();
+      index.insert(i as u64, &vector).expect("expected value");
     }
 
     let serialized = serialize_ivf_pq(&index);
-    let deserialized = deserialize_ivf_pq(&serialized).unwrap();
+    let deserialized = deserialize_ivf_pq(&serialized).expect("expected value");
 
     assert_eq!(deserialized.dimensions, index.dimensions);
     assert_eq!(
@@ -2149,7 +2165,7 @@ mod tests {
 
   #[test]
   fn test_ivf_pq_serialized_size() {
-    let mut index = IvfPqIndex::new(16, test_config()).unwrap();
+    let mut index = IvfPqIndex::new(16, test_config()).expect("expected value");
 
     // Train
     let mut vectors = Vec::new();
@@ -2158,13 +2174,15 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 8000.0);
       }
     }
-    index.add_training_vectors(&vectors, 500).unwrap();
-    index.train().unwrap();
+    index
+      .add_training_vectors(&vectors, 500)
+      .expect("expected value");
+    index.train().expect("expected value");
 
     // Insert some vectors
     for i in 0..5 {
       let vector: Vec<f32> = (0..16).map(|d| (i * 16 + d) as f32 / 80.0).collect();
-      index.insert(i as u64, &vector).unwrap();
+      index.insert(i as u64, &vector).expect("expected value");
     }
 
     let size = ivf_pq_serialized_size(&index);
@@ -2179,7 +2197,7 @@ mod tests {
 
   #[test]
   fn test_ivf_pq_search_multi_empty_queries() {
-    let mut index = IvfPqIndex::new(16, test_config()).unwrap();
+    let mut index = IvfPqIndex::new(16, test_config()).expect("expected value");
 
     // Train
     let mut vectors = Vec::new();
@@ -2188,8 +2206,10 @@ mod tests {
         vectors.push((i * 16 + d) as f32 / 8000.0);
       }
     }
-    index.add_training_vectors(&vectors, 500).unwrap();
-    index.train().unwrap();
+    index
+      .add_training_vectors(&vectors, 500)
+      .expect("expected value");
+    index.train().expect("expected value");
 
     // Create a minimal manifest
     let config = crate::vector::types::VectorStoreConfig::new(16);
@@ -2202,7 +2222,7 @@ mod tests {
 
   #[test]
   fn test_ivf_pq_search_multi_not_trained() {
-    let index = IvfPqIndex::new(16, test_config()).unwrap();
+    let index = IvfPqIndex::new(16, test_config()).expect("expected value");
     let config = crate::vector::types::VectorStoreConfig::new(16);
     let manifest = crate::vector::types::VectorManifest::new(config);
 

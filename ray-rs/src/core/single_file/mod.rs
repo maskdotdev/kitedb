@@ -45,6 +45,7 @@ pub use iter::*;
 pub use open::{
   close_single_file, open_single_file, SingleFileOpenOptions, SnapshotParseMode, SyncMode,
 };
+pub use transaction::SingleFileTxGuard;
 
 // Also re-export recovery items that are used externally
 pub use recovery::replay_wal_record;

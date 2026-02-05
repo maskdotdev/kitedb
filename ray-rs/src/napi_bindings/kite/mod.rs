@@ -23,9 +23,7 @@ pub use types::{JsEdgeSpec, JsKeySpec, JsKiteOptions, JsNodeSpec, JsPropSpec};
 
 // Internal imports
 use conversion::js_props_to_map;
-use helpers::{
-  batch_result_to_js, execute_batch_ops, get_node_props, get_node_props_selected, node_to_js,
-};
+use helpers::{batch_result_to_js, execute_batch_ops, node_props, node_props_selected, node_to_js};
 use key_spec::{parse_key_spec, prop_spec_to_def, KeySpec};
 
 use napi::bindgen_prelude::*;
@@ -209,7 +207,7 @@ impl Kite {
       match node_ref {
         Some(node_ref) => {
           let (node_id, node_key, node_type) = node_ref.into_parts();
-          let props = get_node_props_selected(ray, node_id, selected_props.as_ref());
+          let props = node_props_selected(ray, node_id, selected_props.as_ref());
           let obj = node_to_js(&env, node_id, node_key, &node_type, props)?;
           Ok(Some(obj))
         }
@@ -219,8 +217,8 @@ impl Kite {
   }
 
   /// Get a node by ID (returns node object with props)
-  #[napi]
-  pub fn get_by_id(
+  #[napi(js_name = "get_by_id")]
+  pub fn by_id(
     &self,
     env: Env,
     node_id: i64,
@@ -234,7 +232,7 @@ impl Kite {
       match node_ref {
         Some(node_ref) => {
           let (node_id, node_key, node_type) = node_ref.into_parts();
-          let props = get_node_props_selected(ray, node_id, selected_props.as_ref());
+          let props = node_props_selected(ray, node_id, selected_props.as_ref());
           let obj = node_to_js(&env, node_id, node_key, &node_type, props)?;
           Ok(Some(obj))
         }
@@ -244,8 +242,8 @@ impl Kite {
   }
 
   /// Get a lightweight node reference by key (no properties)
-  #[napi]
-  pub fn get_ref(&self, env: Env, node_type: String, key: Unknown) -> Result<Option<Object<'_>>> {
+  #[napi(js_name = "get_ref")]
+  pub fn node_ref(&self, env: Env, node_type: String, key: Unknown) -> Result<Option<Object<'_>>> {
     let key_suffix = {
       let spec = self.key_spec(&node_type)?;
       key_suffix_from_js(&env, spec.as_ref(), key)?
@@ -267,8 +265,8 @@ impl Kite {
   }
 
   /// Get a node ID by key (no properties)
-  #[napi]
-  pub fn get_id(&self, env: Env, node_type: String, key: Unknown) -> Result<Option<i64>> {
+  #[napi(js_name = "get_id")]
+  pub fn node_id(&self, env: Env, node_type: String, key: Unknown) -> Result<Option<i64>> {
     let key_suffix = {
       let spec = self.key_spec(&node_type)?;
       key_suffix_from_js(&env, spec.as_ref(), key)?
@@ -284,8 +282,8 @@ impl Kite {
   }
 
   /// Get multiple nodes by ID (returns node objects with props)
-  #[napi]
-  pub fn get_by_ids(
+  #[napi(js_name = "get_by_ids")]
+  pub fn by_ids(
     &self,
     env: Env,
     node_ids: Vec<i64>,
@@ -304,7 +302,7 @@ impl Kite {
           .map_err(|e| Error::from_reason(e.to_string()))?;
         if let Some(node_ref) = node_ref {
           let (node_id, node_key, node_type) = node_ref.into_parts();
-          let props = get_node_props_selected(ray, node_id, selected_props.as_ref());
+          let props = node_props_selected(ray, node_id, selected_props.as_ref());
           out.push(node_to_js(&env, node_id, node_key, &node_type, props)?);
         }
       }
@@ -313,8 +311,8 @@ impl Kite {
   }
 
   /// Get a node property value
-  #[napi]
-  pub fn get_prop(&self, node_id: i64, prop_name: String) -> Result<Option<JsPropValue>> {
+  #[napi(js_name = "get_prop")]
+  pub fn prop(&self, node_id: i64, prop_name: String) -> Result<Option<JsPropValue>> {
     let value = self.with_kite(|ray| Ok(ray.prop(node_id as NodeId, &prop_name)))?;
     Ok(value.map(JsPropValue::from))
   }
@@ -495,8 +493,8 @@ impl Kite {
   }
 
   /// Get an edge property value
-  #[napi]
-  pub fn get_edge_prop(
+  #[napi(js_name = "get_edge_prop")]
+  pub fn edge_prop(
     &self,
     src: i64,
     edge_type: String,
@@ -512,8 +510,8 @@ impl Kite {
   }
 
   /// Get all edge properties
-  #[napi]
-  pub fn get_edge_props(
+  #[napi(js_name = "get_edge_props")]
+  pub fn edge_props(
     &self,
     src: i64,
     edge_type: String,
@@ -650,7 +648,7 @@ impl Kite {
       let mut out = Vec::new();
       for node_ref in nodes {
         let (node_id, node_key, node_type) = node_ref.into_parts();
-        let props = get_node_props(ray, node_id);
+        let props = node_props(ray, node_id);
         out.push(node_to_js(&env, node_id, node_key, &node_type, props)?);
       }
       Ok(out)

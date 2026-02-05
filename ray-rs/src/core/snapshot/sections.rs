@@ -179,7 +179,7 @@ mod tests {
     let buffer = build_empty_snapshot();
     let version = read_u32(&buffer, 4);
     let section_count = section_count_for_version(version);
-    let parsed = parse_section_table(&buffer, section_count, 0).unwrap();
+    let parsed = parse_section_table(&buffer, section_count, 0).expect("expected value");
     assert_eq!(parsed.sections.len(), section_count);
     assert!(parsed.max_section_end >= SNAPSHOT_HEADER_SIZE);
   }
@@ -189,7 +189,7 @@ mod tests {
     let mut buffer = build_empty_snapshot();
     let version = read_u32(&buffer, 4);
     let section_count = section_count_for_version(version);
-    let parsed = parse_section_table(&buffer, section_count, 0).unwrap();
+    let parsed = parse_section_table(&buffer, section_count, 0).expect("expected value");
     let (idx, section) = parsed
       .sections
       .iter()

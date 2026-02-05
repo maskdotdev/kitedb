@@ -2459,7 +2459,7 @@ fn resolve_edge_cache_entry<'a>(
   edge_type: &str,
 ) -> Result<&'a mut EdgeCacheEntry> {
   if edge_cache.contains_key(edge_type) {
-    return Ok(edge_cache.get_mut(edge_type).unwrap());
+    return Ok(edge_cache.get_mut(edge_type).expect("expected value"));
   }
 
   let edge_def = edges
@@ -2478,7 +2478,7 @@ fn resolve_edge_cache_entry<'a>(
     },
   );
 
-  Ok(edge_cache.get_mut(edge_type).unwrap())
+  Ok(edge_cache.get_mut(edge_type).expect("expected value"))
 }
 
 impl Kite {
@@ -3726,252 +3726,327 @@ mod tests {
 
   #[test]
   fn test_open_database() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     assert_eq!(ray.node_types().len(), 2);
     assert_eq!(ray.edge_types().len(), 2);
     assert!(ray.node_def("User").is_some());
     assert!(ray.edge_def("FOLLOWS").is_some());
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
-  fn test_create_and_get_node() {
-    let temp_dir = tempdir().unwrap();
+  fn test_create_and_find_node() {
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create a user
     let mut props = HashMap::new();
     props.insert("name".to_string(), PropValue::String("Alice".to_string()));
     props.insert("age".to_string(), PropValue::I64(30));
 
-    let user_ref = ray.create_node("User", "alice", props).unwrap();
+    let user_ref = ray
+      .create_node("User", "alice", props)
+      .expect("expected value");
     assert!(user_ref.id > 0);
     assert_eq!(user_ref.key, Some("user:alice".to_string()));
 
     // Get the user
-    let found = ray.get("User", "alice").unwrap();
+    let found = ray.get("User", "alice").expect("expected value");
     assert!(found.is_some());
-    assert_eq!(found.unwrap().id, user_ref.id);
+    assert_eq!(found.expect("expected value").id, user_ref.id);
 
     // Non-existent user
-    let not_found = ray.get("User", "bob").unwrap();
+    let not_found = ray.get("User", "bob").expect("expected value");
     assert!(not_found.is_none());
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_link_and_unlink() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create two users
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
     // Link them
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
     // Check edge exists
-    assert!(ray.has_edge(alice.id, "FOLLOWS", bob.id).unwrap());
-    assert!(!ray.has_edge(bob.id, "FOLLOWS", alice.id).unwrap());
+    assert!(ray
+      .has_edge(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value"));
+    assert!(!ray
+      .has_edge(bob.id, "FOLLOWS", alice.id)
+      .expect("expected value"));
 
     // Check neighbors
-    let alice_follows = ray.neighbors_out(alice.id, Some("FOLLOWS")).unwrap();
+    let alice_follows = ray
+      .neighbors_out(alice.id, Some("FOLLOWS"))
+      .expect("expected value");
     assert_eq!(alice_follows, vec![bob.id]);
 
-    let bob_followers = ray.neighbors_in(bob.id, Some("FOLLOWS")).unwrap();
+    let bob_followers = ray
+      .neighbors_in(bob.id, Some("FOLLOWS"))
+      .expect("expected value");
     assert_eq!(bob_followers, vec![alice.id]);
 
     // Unlink
-    ray.unlink(alice.id, "FOLLOWS", bob.id).unwrap();
-    assert!(!ray.has_edge(alice.id, "FOLLOWS", bob.id).unwrap());
+    ray
+      .unlink(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
+    assert!(!ray
+      .has_edge(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value"));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_properties() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create a user
     let mut props = HashMap::new();
     props.insert("name".to_string(), PropValue::String("Alice".to_string()));
-    let user = ray.create_node("User", "alice", props).unwrap();
+    let user = ray
+      .create_node("User", "alice", props)
+      .expect("expected value");
 
     // Get property
     let name = ray.prop(user.id, "name");
     assert_eq!(name, Some(PropValue::String("Alice".to_string())));
 
     // Set property
-    ray.set_prop(user.id, "age", PropValue::I64(25)).unwrap();
+    ray
+      .set_prop(user.id, "age", PropValue::I64(25))
+      .expect("expected value");
     let age = ray.prop(user.id, "age");
     assert_eq!(age, Some(PropValue::I64(25)));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_count_nodes() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     assert_eq!(ray.count_nodes(), 0);
 
-    ray.create_node("User", "alice", HashMap::new()).unwrap();
-    ray.create_node("User", "bob", HashMap::new()).unwrap();
-    ray.create_node("Post", "post1", HashMap::new()).unwrap();
+    ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    ray
+      .create_node("Post", "post1", HashMap::new())
+      .expect("expected value");
 
     assert_eq!(ray.count_nodes(), 3);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_delete_node() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let user = ray.create_node("User", "alice", HashMap::new()).unwrap();
+    let user = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
     assert!(ray.exists(user.id));
 
-    ray.delete_node(user.id).unwrap();
+    ray.delete_node(user.id).expect("expected value");
     assert!(!ray.exists(user.id));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
-  fn test_get_ref() {
-    let temp_dir = tempdir().unwrap();
+  fn test_ref() {
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create a user
-    let user = ray.create_node("User", "alice", HashMap::new()).unwrap();
+    let user = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
 
     // Get lightweight reference
-    let node_ref = ray.node_ref("User", "alice").unwrap();
+    let node_ref = ray.node_ref("User", "alice").expect("expected value");
     assert!(node_ref.is_some());
-    let node_ref = node_ref.unwrap();
+    let node_ref = node_ref.expect("expected value");
     assert_eq!(node_ref.id(), user.id);
     assert_eq!(node_ref.key(), Some("user:alice"));
 
     // Non-existent user
-    let not_found = ray.node_ref("User", "bob").unwrap();
+    let not_found = ray.node_ref("User", "bob").expect("expected value");
     assert!(not_found.is_none());
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_all_nodes_by_type() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create some users and posts
-    ray.create_node("User", "alice", HashMap::new()).unwrap();
-    ray.create_node("User", "bob", HashMap::new()).unwrap();
-    ray.create_node("Post", "post1", HashMap::new()).unwrap();
+    ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    ray
+      .create_node("Post", "post1", HashMap::new())
+      .expect("expected value");
 
     // Iterate all users
-    let users: Vec<_> = ray.all("User").unwrap().collect();
+    let users: Vec<_> = ray.all("User").expect("expected value").collect();
     assert_eq!(users.len(), 2);
 
     // Iterate all posts
-    let posts: Vec<_> = ray.all("Post").unwrap().collect();
+    let posts: Vec<_> = ray.all("Post").expect("expected value").collect();
     assert_eq!(posts.len(), 1);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_count_nodes_by_type() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create some users and posts
-    ray.create_node("User", "alice", HashMap::new()).unwrap();
-    ray.create_node("User", "bob", HashMap::new()).unwrap();
-    ray.create_node("Post", "post1", HashMap::new()).unwrap();
+    ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    ray
+      .create_node("Post", "post1", HashMap::new())
+      .expect("expected value");
 
     // Count by type
-    assert_eq!(ray.count_nodes_by_type("User").unwrap(), 2);
-    assert_eq!(ray.count_nodes_by_type("Post").unwrap(), 1);
+    assert_eq!(ray.count_nodes_by_type("User").expect("expected value"), 2);
+    assert_eq!(ray.count_nodes_by_type("Post").expect("expected value"), 1);
     assert_eq!(ray.count_nodes(), 3);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_all_edges() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create nodes and edges
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    let post = ray.create_node("Post", "post1", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    let post = ray
+      .create_node("Post", "post1", HashMap::new())
+      .expect("expected value");
 
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
-    ray.link(alice.id, "AUTHORED", post.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
+    ray
+      .link(alice.id, "AUTHORED", post.id)
+      .expect("expected value");
 
     // List all edges
-    let all_edges: Vec<_> = ray.all_edges(None).unwrap().collect();
+    let all_edges: Vec<_> = ray.all_edges(None).expect("expected value").collect();
     assert_eq!(all_edges.len(), 2);
 
     // List FOLLOWS edges only
-    let follows_edges: Vec<_> = ray.all_edges(Some("FOLLOWS")).unwrap().collect();
+    let follows_edges: Vec<_> = ray
+      .all_edges(Some("FOLLOWS"))
+      .expect("expected value")
+      .collect();
     assert_eq!(follows_edges.len(), 1);
     assert_eq!(follows_edges[0].src, alice.id);
     assert_eq!(follows_edges[0].dst, bob.id);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_count_edges_by_type() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    let post = ray.create_node("Post", "post1", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    let post = ray
+      .create_node("Post", "post1", HashMap::new())
+      .expect("expected value");
 
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
-    ray.link(alice.id, "AUTHORED", post.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
+    ray
+      .link(alice.id, "AUTHORED", post.id)
+      .expect("expected value");
 
     // Count by type
-    assert_eq!(ray.count_edges_by_type("FOLLOWS").unwrap(), 1);
-    assert_eq!(ray.count_edges_by_type("AUTHORED").unwrap(), 1);
+    assert_eq!(
+      ray.count_edges_by_type("FOLLOWS").expect("expected value"),
+      1
+    );
+    assert_eq!(
+      ray.count_edges_by_type("AUTHORED").expect("expected value"),
+      1
+    );
     assert_eq!(ray.count_edges(), 2);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   // ============================================================================
@@ -3980,81 +4055,119 @@ mod tests {
 
   #[test]
   fn test_from_traversal() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create a chain: alice -> bob -> charlie
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    let charlie = ray.create_node("User", "charlie", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    let charlie = ray
+      .create_node("User", "charlie", HashMap::new())
+      .expect("expected value");
 
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
-    ray.link(bob.id, "FOLLOWS", charlie.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
+    ray
+      .link(bob.id, "FOLLOWS", charlie.id)
+      .expect("expected value");
 
     // Single hop traversal
-    let friends = ray.from(alice.id).out(Some("FOLLOWS")).unwrap().to_vec();
+    let friends = ray
+      .from(alice.id)
+      .out(Some("FOLLOWS"))
+      .expect("expected value")
+      .to_vec();
     assert_eq!(friends, vec![bob.id]);
 
     // Two hop traversal
     let friends_of_friends = ray
       .from(alice.id)
       .out(Some("FOLLOWS"))
-      .unwrap()
+      .expect("expected value")
       .out(Some("FOLLOWS"))
-      .unwrap()
+      .expect("expected value")
       .to_vec();
     assert_eq!(friends_of_friends, vec![charlie.id]);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_traversal_first() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
     // Get first result
     let first = ray
       .from(alice.id)
       .out(Some("FOLLOWS"))
-      .unwrap()
+      .expect("expected value")
       .first_node();
     assert_eq!(first, Some(bob.id));
 
     // No results
-    let no_result = ray.from(bob.id).out(Some("FOLLOWS")).unwrap().first_node();
+    let no_result = ray
+      .from(bob.id)
+      .out(Some("FOLLOWS"))
+      .expect("expected value")
+      .first_node();
     assert_eq!(no_result, None);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_traversal_count() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    let charlie = ray.create_node("User", "charlie", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    let charlie = ray
+      .create_node("User", "charlie", HashMap::new())
+      .expect("expected value");
 
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
-    ray.link(alice.id, "FOLLOWS", charlie.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
+    ray
+      .link(alice.id, "FOLLOWS", charlie.id)
+      .expect("expected value");
 
-    let count = ray.from(alice.id).out(Some("FOLLOWS")).unwrap().count();
+    let count = ray
+      .from(alice.id)
+      .out(Some("FOLLOWS"))
+      .expect("expected value")
+      .count();
     assert_eq!(count, 2);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   // ============================================================================
@@ -4063,129 +4176,191 @@ mod tests {
 
   #[test]
   fn test_shortest_path() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create a chain: alice -> bob -> charlie
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    let charlie = ray.create_node("User", "charlie", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    let charlie = ray
+      .create_node("User", "charlie", HashMap::new())
+      .expect("expected value");
 
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
-    ray.link(bob.id, "FOLLOWS", charlie.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
+    ray
+      .link(bob.id, "FOLLOWS", charlie.id)
+      .expect("expected value");
 
     // Find path
     let path = ray
       .shortest_path(alice.id, charlie.id)
       .via("FOLLOWS")
-      .unwrap()
+      .expect("expected value")
       .find();
 
     assert!(path.found);
     assert_eq!(path.path, vec![alice.id, bob.id, charlie.id]);
     assert_eq!(path.edges.len(), 2);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_shortest_path_not_found() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
     // No edge between them
     let path = ray
       .shortest_path(alice.id, bob.id)
       .via("FOLLOWS")
-      .unwrap()
+      .expect("expected value")
       .find();
 
     assert!(!path.found);
     assert!(path.path.is_empty());
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_has_path() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    let charlie = ray.create_node("User", "charlie", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    let charlie = ray
+      .create_node("User", "charlie", HashMap::new())
+      .expect("expected value");
 
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
-    assert!(ray.has_path(alice.id, bob.id, Some("FOLLOWS")).unwrap());
-    assert!(!ray.has_path(alice.id, charlie.id, Some("FOLLOWS")).unwrap());
-    assert!(!ray.has_path(bob.id, alice.id, Some("FOLLOWS")).unwrap()); // No reverse
+    assert!(ray
+      .has_path(alice.id, bob.id, Some("FOLLOWS"))
+      .expect("expected value"));
+    assert!(!ray
+      .has_path(alice.id, charlie.id, Some("FOLLOWS"))
+      .expect("expected value"));
+    assert!(!ray
+      .has_path(bob.id, alice.id, Some("FOLLOWS"))
+      .expect("expected value")); // No reverse
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_reachable_from() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create: alice -> bob -> charlie -> dave
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    let charlie = ray.create_node("User", "charlie", HashMap::new()).unwrap();
-    let dave = ray.create_node("User", "dave", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    let charlie = ray
+      .create_node("User", "charlie", HashMap::new())
+      .expect("expected value");
+    let dave = ray
+      .create_node("User", "dave", HashMap::new())
+      .expect("expected value");
 
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
-    ray.link(bob.id, "FOLLOWS", charlie.id).unwrap();
-    ray.link(charlie.id, "FOLLOWS", dave.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
+    ray
+      .link(bob.id, "FOLLOWS", charlie.id)
+      .expect("expected value");
+    ray
+      .link(charlie.id, "FOLLOWS", dave.id)
+      .expect("expected value");
 
     // Reachable within 2 hops
-    let reachable = ray.reachable_from(alice.id, 2, Some("FOLLOWS")).unwrap();
+    let reachable = ray
+      .reachable_from(alice.id, 2, Some("FOLLOWS"))
+      .expect("expected value");
     assert!(reachable.contains(&bob.id));
     assert!(reachable.contains(&charlie.id));
     assert!(!reachable.contains(&dave.id)); // 3 hops away
 
     // Reachable within 3 hops
-    let reachable_3 = ray.reachable_from(alice.id, 3, Some("FOLLOWS")).unwrap();
+    let reachable_3 = ray
+      .reachable_from(alice.id, 3, Some("FOLLOWS"))
+      .expect("expected value");
     assert!(reachable_3.contains(&dave.id));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_k_shortest_paths() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create a diamond: alice -> bob -> dave, alice -> charlie -> dave
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    let charlie = ray.create_node("User", "charlie", HashMap::new()).unwrap();
-    let dave = ray.create_node("User", "dave", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    let charlie = ray
+      .create_node("User", "charlie", HashMap::new())
+      .expect("expected value");
+    let dave = ray
+      .create_node("User", "dave", HashMap::new())
+      .expect("expected value");
 
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
-    ray.link(alice.id, "FOLLOWS", charlie.id).unwrap();
-    ray.link(bob.id, "FOLLOWS", dave.id).unwrap();
-    ray.link(charlie.id, "FOLLOWS", dave.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
+    ray
+      .link(alice.id, "FOLLOWS", charlie.id)
+      .expect("expected value");
+    ray
+      .link(bob.id, "FOLLOWS", dave.id)
+      .expect("expected value");
+    ray
+      .link(charlie.id, "FOLLOWS", dave.id)
+      .expect("expected value");
 
     // Find 2 shortest paths
     let paths = ray
       .shortest_path(alice.id, dave.id)
       .via("FOLLOWS")
-      .unwrap()
+      .expect("expected value")
       .find_k_shortest(2);
 
     assert_eq!(paths.len(), 2);
@@ -4195,7 +4370,7 @@ mod tests {
     assert_eq!(paths[0].edges.len(), 2);
     assert_eq!(paths[1].edges.len(), 2);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   // ============================================================================
@@ -4204,10 +4379,10 @@ mod tests {
 
   #[test]
   fn test_batch_create_nodes() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create multiple nodes in a batch
     let results = ray
@@ -4228,25 +4403,25 @@ mod tests {
           props: HashMap::new(),
         },
       ])
-      .unwrap();
+      .expect("expected value");
 
     assert_eq!(results.len(), 3);
 
     // Verify all nodes were created
     assert_eq!(ray.count_nodes(), 3);
-    assert!(ray.get("User", "alice").unwrap().is_some());
-    assert!(ray.get("User", "bob").unwrap().is_some());
-    assert!(ray.get("Post", "post1").unwrap().is_some());
+    assert!(ray.get("User", "alice").expect("expected value").is_some());
+    assert!(ray.get("User", "bob").expect("expected value").is_some());
+    assert!(ray.get("Post", "post1").expect("expected value").is_some());
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_batch_create_and_link() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // First batch: create nodes
     let results = ray
@@ -4262,7 +4437,7 @@ mod tests {
           props: HashMap::new(),
         },
       ])
-      .unwrap();
+      .expect("expected value");
 
     // Extract node IDs from results
     let alice_id = match &results[0] {
@@ -4281,23 +4456,29 @@ mod tests {
         edge_type: "FOLLOWS".into(),
         dst: bob_id,
       }])
-      .unwrap();
+      .expect("expected value");
 
     // Verify edge was created
-    assert!(ray.has_edge(alice_id, "FOLLOWS", bob_id).unwrap());
+    assert!(ray
+      .has_edge(alice_id, "FOLLOWS", bob_id)
+      .expect("expected value"));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_batch_link_with_props() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
     let mut props = HashMap::new();
     props.insert("weight".to_string(), PropValue::F64(0.9));
@@ -4310,28 +4491,32 @@ mod tests {
         dst: bob.id,
         props,
       }])
-      .unwrap();
+      .expect("expected value");
 
     let weight = ray
       .edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
-      .unwrap();
+      .expect("expected value");
     assert_eq!(weight, Some(PropValue::F64(0.9)));
 
-    let since = ray.edge_prop(alice.id, "FOLLOWS", bob.id, "since").unwrap();
+    let since = ray
+      .edge_prop(alice.id, "FOLLOWS", bob.id, "since")
+      .expect("expected value");
     assert_eq!(since, Some(PropValue::String("2025".into())));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_batch_set_properties() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create a node
-    let user = ray.create_node("User", "alice", HashMap::new()).unwrap();
+    let user = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
 
     // Batch set properties
     ray
@@ -4347,7 +4532,7 @@ mod tests {
           value: PropValue::I64(30),
         },
       ])
-      .unwrap();
+      .expect("expected value");
 
     // Verify properties
     assert_eq!(
@@ -4356,19 +4541,25 @@ mod tests {
     );
     assert_eq!(ray.prop(user.id, "age"), Some(PropValue::I64(30)));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_batch_set_edge_properties() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
     ray
       .batch(vec![
@@ -4387,32 +4578,40 @@ mod tests {
           value: PropValue::String("2024".into()),
         },
       ])
-      .unwrap();
+      .expect("expected value");
 
     assert_eq!(
       ray
         .edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
-        .unwrap(),
+        .expect("expected value"),
       Some(PropValue::F64(0.75))
     );
     assert_eq!(
-      ray.edge_prop(alice.id, "FOLLOWS", bob.id, "since").unwrap(),
+      ray
+        .edge_prop(alice.id, "FOLLOWS", bob.id, "since")
+        .expect("expected value"),
       Some(PropValue::String("2024".into()))
     );
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_batch_set_edge_props() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
     let mut props = HashMap::new();
     props.insert("weight".to_string(), PropValue::F64(0.33));
@@ -4425,32 +4624,40 @@ mod tests {
         dst: bob.id,
         props,
       }])
-      .unwrap();
+      .expect("expected value");
 
     let weight = ray
       .edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
-      .unwrap();
+      .expect("expected value");
     assert_eq!(weight, Some(PropValue::F64(0.33)));
 
-    let since = ray.edge_prop(alice.id, "FOLLOWS", bob.id, "since").unwrap();
+    let since = ray
+      .edge_prop(alice.id, "FOLLOWS", bob.id, "since")
+      .expect("expected value");
     assert_eq!(since, Some(PropValue::String("2023".into())));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_batch_mixed_operations() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create initial nodes
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
     // Mixed batch: link, set prop, create node, unlink
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
     let results = ray
       .batch(vec![
@@ -4470,7 +4677,7 @@ mod tests {
           dst: bob.id,
         },
       ])
-      .unwrap();
+      .expect("expected value");
 
     assert_eq!(results.len(), 3);
 
@@ -4479,23 +4686,34 @@ mod tests {
       ray.prop(alice.id, "name"),
       Some(PropValue::String("Alice".into()))
     );
-    assert!(ray.get("User", "charlie").unwrap().is_some());
-    assert!(!ray.has_edge(alice.id, "FOLLOWS", bob.id).unwrap());
+    assert!(ray
+      .get("User", "charlie")
+      .expect("expected value")
+      .is_some());
+    assert!(!ray
+      .has_edge(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value"));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_batch_delete_operations() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create nodes and edges
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
     // Batch delete
     let results = ray
@@ -4507,7 +4725,7 @@ mod tests {
         },
         BatchOp::DeleteNode { node_id: bob.id },
       ])
-      .unwrap();
+      .expect("expected value");
 
     // Verify
     match &results[0] {
@@ -4521,7 +4739,7 @@ mod tests {
 
     assert!(!ray.exists(bob.id));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   // ============================================================================
@@ -4530,10 +4748,10 @@ mod tests {
 
   #[test]
   fn test_transaction_basic() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Execute a transaction
     let (alice, bob) = ray
@@ -4543,22 +4761,24 @@ mod tests {
         ctx.link(alice.id, "FOLLOWS", bob.id)?;
         Ok((alice, bob))
       })
-      .unwrap();
+      .expect("expected value");
 
     // Verify results
     assert!(ray.exists(alice.id));
     assert!(ray.exists(bob.id));
-    assert!(ray.has_edge(alice.id, "FOLLOWS", bob.id).unwrap());
+    assert!(ray
+      .has_edge(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value"));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_transaction_with_properties() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create node with properties in transaction
     let alice = ray
@@ -4569,7 +4789,7 @@ mod tests {
         ctx.set_prop(alice.id, "age", PropValue::I64(30))?;
         Ok(alice)
       })
-      .unwrap();
+      .expect("expected value");
 
     // Verify properties
     assert_eq!(
@@ -4578,15 +4798,15 @@ mod tests {
     );
     assert_eq!(ray.prop(alice.id, "age"), Some(PropValue::I64(30)));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_transaction_rollback_on_error() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Transaction that fails partway through
     let result: Result<()> = ray.transaction(|ctx| {
@@ -4603,21 +4823,23 @@ mod tests {
     // Note: Due to WAL-based implementation, rollback happens at commit time
     // so we need to verify the final state
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_transaction_read_operations() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create some data first
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
     ray
       .set_prop(alice.id, "name", PropValue::String("Alice".into()))
-      .unwrap();
+      .expect("expected value");
 
     // Transaction that reads and writes
     let name = ray
@@ -4634,25 +4856,31 @@ mod tests {
 
         Ok(name)
       })
-      .unwrap();
+      .expect("expected value");
 
     assert_eq!(name, Some(PropValue::String("Alice".into())));
-    assert!(ray.get("User", "bob").unwrap().is_some());
+    assert!(ray.get("User", "bob").expect("expected value").is_some());
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_transaction_edge_operations() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create nodes first
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    let charlie = ray.create_node("User", "charlie", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    let charlie = ray
+      .create_node("User", "charlie", HashMap::new())
+      .expect("expected value");
 
     // Link edges in transaction
     ray
@@ -4661,12 +4889,18 @@ mod tests {
         ctx.link(bob.id, "FOLLOWS", charlie.id)?;
         Ok(())
       })
-      .unwrap();
+      .expect("expected value");
 
     // Verify edges exist after commit
-    assert!(ray.has_edge(alice.id, "FOLLOWS", bob.id).unwrap());
-    assert!(ray.has_edge(bob.id, "FOLLOWS", charlie.id).unwrap());
-    assert!(!ray.has_edge(alice.id, "FOLLOWS", charlie.id).unwrap());
+    assert!(ray
+      .has_edge(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value"));
+    assert!(ray
+      .has_edge(bob.id, "FOLLOWS", charlie.id)
+      .expect("expected value"));
+    assert!(!ray
+      .has_edge(alice.id, "FOLLOWS", charlie.id)
+      .expect("expected value"));
 
     // Test unlink in transaction
     ray
@@ -4674,14 +4908,18 @@ mod tests {
         ctx.unlink(alice.id, "FOLLOWS", bob.id)?;
         Ok(())
       })
-      .unwrap();
+      .expect("expected value");
 
     // Verify edge was removed
-    assert!(!ray.has_edge(alice.id, "FOLLOWS", bob.id).unwrap());
+    assert!(!ray
+      .has_edge(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value"));
     // Other edge still exists
-    assert!(ray.has_edge(bob.id, "FOLLOWS", charlie.id).unwrap());
+    assert!(ray
+      .has_edge(bob.id, "FOLLOWS", charlie.id)
+      .expect("expected value"));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   // ============================================================================
@@ -4690,10 +4928,10 @@ mod tests {
 
   #[test]
   fn test_tx_builder() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Use the builder pattern
     let results = ray
@@ -4701,7 +4939,7 @@ mod tests {
       .create_node("User", "alice", HashMap::new())
       .create_node("User", "bob", HashMap::new())
       .execute(&mut ray)
-      .unwrap();
+      .expect("expected value");
 
     assert_eq!(results.len(), 2);
 
@@ -4720,15 +4958,17 @@ mod tests {
       .link(alice_id, "FOLLOWS", bob_id)
       .set_prop(alice_id, "name", PropValue::String("Alice".into()))
       .execute(&mut ray)
-      .unwrap();
+      .expect("expected value");
 
-    assert!(ray.has_edge(alice_id, "FOLLOWS", bob_id).unwrap());
+    assert!(ray
+      .has_edge(alice_id, "FOLLOWS", bob_id)
+      .expect("expected value"));
     assert_eq!(
       ray.prop(alice_id, "name"),
       Some(PropValue::String("Alice".into()))
     );
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
@@ -4749,13 +4989,17 @@ mod tests {
 
   #[test]
   fn test_link_with_props() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
     // Link with properties
     let mut props = HashMap::new();
@@ -4764,98 +5008,120 @@ mod tests {
 
     ray
       .link_with_props(alice.id, "FOLLOWS", bob.id, props)
-      .unwrap();
+      .expect("expected value");
 
     // Verify edge exists
-    assert!(ray.has_edge(alice.id, "FOLLOWS", bob.id).unwrap());
+    assert!(ray
+      .has_edge(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value"));
 
     // Verify edge properties
     let weight = ray
       .edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
-      .unwrap();
+      .expect("expected value");
     assert_eq!(weight, Some(PropValue::F64(0.8)));
 
-    let since = ray.edge_prop(alice.id, "FOLLOWS", bob.id, "since").unwrap();
+    let since = ray
+      .edge_prop(alice.id, "FOLLOWS", bob.id, "since")
+      .expect("expected value");
     assert_eq!(since, Some(PropValue::String("2024".into())));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_set_edge_prop() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
     // Create edge without properties
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
     // Set edge property
     ray
       .set_edge_prop(alice.id, "FOLLOWS", bob.id, "weight", PropValue::F64(0.5))
-      .unwrap();
+      .expect("expected value");
 
     // Get edge property
     let weight = ray
       .edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
-      .unwrap();
+      .expect("expected value");
     assert_eq!(weight, Some(PropValue::F64(0.5)));
 
     // Update edge property
     ray
       .set_edge_prop(alice.id, "FOLLOWS", bob.id, "weight", PropValue::F64(0.9))
-      .unwrap();
+      .expect("expected value");
     let new_weight = ray
       .edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
-      .unwrap();
+      .expect("expected value");
     assert_eq!(new_weight, Some(PropValue::F64(0.9)));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_set_edge_props() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
     let mut props = HashMap::new();
     props.insert("weight".to_string(), PropValue::F64(0.6));
     props.insert("since".to_string(), PropValue::String("2024".into()));
     ray
       .set_edge_props(alice.id, "FOLLOWS", bob.id, props)
-      .unwrap();
+      .expect("expected value");
 
     let weight = ray
       .edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
-      .unwrap();
+      .expect("expected value");
     assert_eq!(weight, Some(PropValue::F64(0.6)));
 
-    let since = ray.edge_prop(alice.id, "FOLLOWS", bob.id, "since").unwrap();
+    let since = ray
+      .edge_prop(alice.id, "FOLLOWS", bob.id, "since")
+      .expect("expected value");
     assert_eq!(since, Some(PropValue::String("2024".into())));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
-  fn test_get_edge_props() {
-    let temp_dir = tempdir().unwrap();
+  fn test_edge_props() {
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
     // Create edge with properties
     let mut props = HashMap::new();
@@ -4863,67 +5129,79 @@ mod tests {
     props.insert("type".to_string(), PropValue::String("friend".into()));
     ray
       .link_with_props(alice.id, "FOLLOWS", bob.id, props)
-      .unwrap();
+      .expect("expected value");
 
     // Get all properties
-    let all_props = ray.edge_props(alice.id, "FOLLOWS", bob.id).unwrap();
+    let all_props = ray
+      .edge_props(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
     assert!(all_props.is_some());
 
-    let all_props = all_props.unwrap();
+    let all_props = all_props.expect("expected value");
     assert_eq!(all_props.get("weight"), Some(&PropValue::F64(0.7)));
     assert_eq!(
       all_props.get("type"),
       Some(&PropValue::String("friend".into()))
     );
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_del_edge_prop() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
     // Create edge with property
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
     ray
       .set_edge_prop(alice.id, "FOLLOWS", bob.id, "weight", PropValue::F64(0.5))
-      .unwrap();
+      .expect("expected value");
 
     // Verify property exists
     let weight = ray
       .edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
-      .unwrap();
+      .expect("expected value");
     assert_eq!(weight, Some(PropValue::F64(0.5)));
 
     // Delete property
     ray
       .del_edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
-      .unwrap();
+      .expect("expected value");
 
     // Verify property is gone
     let weight = ray
       .edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
-      .unwrap();
+      .expect("expected value");
     assert_eq!(weight, None);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_edge_prop_nonexistent_edge() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
     // Try to get prop on nonexistent edge - should fail gracefully
     // First we need to create the prop key
@@ -4932,80 +5210,102 @@ mod tests {
       .ok();
 
     // Edge doesn't exist, so getting props should return None
-    let _props = ray.edge_props(alice.id, "FOLLOWS", bob.id).unwrap();
+    let _props = ray
+      .edge_props(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
     // The edge was implicitly created when we set the prop, so it exists now
     // Let's test with a truly nonexistent edge
-    let charlie = ray.create_node("User", "charlie", HashMap::new()).unwrap();
-    let props2 = ray.edge_props(alice.id, "FOLLOWS", charlie.id).unwrap();
+    let charlie = ray
+      .create_node("User", "charlie", HashMap::new())
+      .expect("expected value");
+    let props2 = ray
+      .edge_props(alice.id, "FOLLOWS", charlie.id)
+      .expect("expected value");
     assert!(props2.is_none());
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_update_edge_builder() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
     // Create edge first
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
     // Update edge properties using the builder
     ray
       .update_edge(alice.id, "FOLLOWS", bob.id)
-      .unwrap()
+      .expect("expected value")
       .set("weight", PropValue::F64(0.9))
       .set("since", PropValue::String("2024".into()))
       .execute()
-      .unwrap();
+      .expect("expected value");
 
     // Verify properties were set
     let weight = ray
       .edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
-      .unwrap();
+      .expect("expected value");
     assert_eq!(weight, Some(PropValue::F64(0.9)));
 
-    let since = ray.edge_prop(alice.id, "FOLLOWS", bob.id, "since").unwrap();
+    let since = ray
+      .edge_prop(alice.id, "FOLLOWS", bob.id, "since")
+      .expect("expected value");
     assert_eq!(since, Some(PropValue::String("2024".into())));
 
     // Update with unset
     ray
       .update_edge(alice.id, "FOLLOWS", bob.id)
-      .unwrap()
+      .expect("expected value")
       .set("weight", PropValue::F64(0.5))
       .unset("since")
       .execute()
-      .unwrap();
+      .expect("expected value");
 
     // Verify update and unset
     let weight = ray
       .edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
-      .unwrap();
+      .expect("expected value");
     assert_eq!(weight, Some(PropValue::F64(0.5)));
 
-    let since = ray.edge_prop(alice.id, "FOLLOWS", bob.id, "since").unwrap();
+    let since = ray
+      .edge_prop(alice.id, "FOLLOWS", bob.id, "since")
+      .expect("expected value");
     assert_eq!(since, None);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_update_edge_builder_set_all() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
     // Create edge
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
     // Update using set_all
     let mut props = HashMap::new();
@@ -5014,92 +5314,106 @@ mod tests {
 
     ray
       .update_edge(alice.id, "FOLLOWS", bob.id)
-      .unwrap()
+      .expect("expected value")
       .set_all(props)
       .execute()
-      .unwrap();
+      .expect("expected value");
 
     // Verify
     let all_props = ray
       .edge_props(alice.id, "FOLLOWS", bob.id)
-      .unwrap()
-      .unwrap();
+      .expect("expected value")
+      .expect("expected value");
     assert_eq!(all_props.get("weight"), Some(&PropValue::F64(0.8)));
     assert_eq!(
       all_props.get("type"),
       Some(&PropValue::String("close_friend".into()))
     );
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_update_edge_builder_empty() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
     // Create edge
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
     // Empty update should succeed (no-op)
     ray
       .update_edge(alice.id, "FOLLOWS", bob.id)
-      .unwrap()
+      .expect("expected value")
       .execute()
-      .unwrap();
+      .expect("expected value");
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_upsert_edge_builder() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
 
     ray
       .upsert_edge(alice.id, "FOLLOWS", bob.id)
-      .unwrap()
+      .expect("expected value")
       .set("since", PropValue::I64(2020))
       .execute()
-      .unwrap();
+      .expect("expected value");
 
-    let since = ray.edge_prop(alice.id, "FOLLOWS", bob.id, "since").unwrap();
+    let since = ray
+      .edge_prop(alice.id, "FOLLOWS", bob.id, "since")
+      .expect("expected value");
     assert_eq!(since, Some(PropValue::I64(2020)));
 
     ray
       .upsert_edge(alice.id, "FOLLOWS", bob.id)
-      .unwrap()
+      .expect("expected value")
       .set("weight", PropValue::F64(0.5))
       .unset("since")
       .execute()
-      .unwrap();
+      .expect("expected value");
 
-    let since = ray.edge_prop(alice.id, "FOLLOWS", bob.id, "since").unwrap();
+    let since = ray
+      .edge_prop(alice.id, "FOLLOWS", bob.id, "since")
+      .expect("expected value");
     assert_eq!(since, None);
     let weight = ray
       .edge_prop(alice.id, "FOLLOWS", bob.id, "weight")
-      .unwrap();
+      .expect("expected value");
     assert_eq!(weight, Some(PropValue::F64(0.5)));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_insert_builder_returning() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Insert with returning
     let mut props = HashMap::new();
@@ -5108,11 +5422,11 @@ mod tests {
 
     let alice = ray
       .insert("User")
-      .unwrap()
+      .expect("expected value")
       .values("alice", props)
-      .unwrap()
+      .expect("expected value")
       .returning()
-      .unwrap();
+      .expect("expected value");
 
     // Verify the returned node
     assert!(alice.id > 0);
@@ -5126,15 +5440,15 @@ mod tests {
     let age = ray.prop(alice.id, "age");
     assert_eq!(age, Some(PropValue::I64(30)));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_insert_builder_execute() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Insert without returning
     let mut props = HashMap::new();
@@ -5142,29 +5456,29 @@ mod tests {
 
     ray
       .insert("User")
-      .unwrap()
+      .expect("expected value")
       .values("bob", props)
-      .unwrap()
+      .expect("expected value")
       .execute()
-      .unwrap();
+      .expect("expected value");
 
     // Verify node was created
-    let bob = ray.get("User", "bob").unwrap();
+    let bob = ray.get("User", "bob").expect("expected value");
     assert!(bob.is_some());
 
-    let bob = bob.unwrap();
+    let bob = bob.expect("expected value");
     let name = ray.prop(bob.id, "name");
     assert_eq!(name, Some(PropValue::String("Bob".into())));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_insert_builder_values_many() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Insert multiple nodes
     let mut alice_props = HashMap::new();
@@ -5178,15 +5492,15 @@ mod tests {
 
     let users = ray
       .insert("User")
-      .unwrap()
+      .expect("expected value")
       .values_many(vec![
         ("alice", alice_props),
         ("bob", bob_props),
         ("charlie", charlie_props),
       ])
-      .unwrap()
+      .expect("expected value")
       .returning()
-      .unwrap();
+      .expect("expected value");
 
     // Verify all nodes were created
     assert_eq!(users.len(), 3);
@@ -5197,39 +5511,39 @@ mod tests {
     // Verify count
     assert_eq!(ray.count_nodes(), 3);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_insert_builder_empty_values_many() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Empty insert should succeed
     let users = ray
       .insert("User")
-      .unwrap()
+      .expect("expected value")
       .values_many(vec![])
-      .unwrap()
+      .expect("expected value")
       .returning()
-      .unwrap();
+      .expect("expected value");
 
     assert_eq!(users.len(), 0);
     assert_eq!(ray.count_nodes(), 0);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_check_empty_database() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
-    let result = ray.check().unwrap();
+    let result = ray.check().expect("expected value");
     assert!(result.valid);
     assert!(result.errors.is_empty());
     // Should warn about an empty database
@@ -5238,27 +5552,39 @@ mod tests {
       .iter()
       .any(|w| w.contains("No nodes in database")));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_check_valid_database() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create some nodes and edges
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    let charlie = ray.create_node("User", "charlie", HashMap::new()).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    let charlie = ray
+      .create_node("User", "charlie", HashMap::new())
+      .expect("expected value");
 
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
-    ray.link(bob.id, "FOLLOWS", charlie.id).unwrap();
-    ray.link(charlie.id, "FOLLOWS", alice.id).unwrap();
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
+    ray
+      .link(bob.id, "FOLLOWS", charlie.id)
+      .expect("expected value");
+    ray
+      .link(charlie.id, "FOLLOWS", alice.id)
+      .expect("expected value");
 
     // Check should pass
-    let result = ray.check().unwrap();
+    let result = ray.check().expect("expected value");
     assert!(
       result.valid,
       "Expected valid database, got errors: {:?}",
@@ -5266,35 +5592,39 @@ mod tests {
     );
     assert!(result.errors.is_empty());
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_check_with_properties() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create nodes with properties
     let mut props = HashMap::new();
     props.insert("name".to_string(), PropValue::String("Alice".into()));
     props.insert("age".to_string(), PropValue::I64(30));
-    let alice = ray.create_node("User", "alice", props).unwrap();
+    let alice = ray
+      .create_node("User", "alice", props)
+      .expect("expected value");
 
     let mut props2 = HashMap::new();
     props2.insert("name".to_string(), PropValue::String("Bob".into()));
-    let bob = ray.create_node("User", "bob", props2).unwrap();
+    let bob = ray
+      .create_node("User", "bob", props2)
+      .expect("expected value");
 
     // Create edge with properties
     let mut edge_props = HashMap::new();
     edge_props.insert("weight".to_string(), PropValue::F64(0.9));
     ray
       .link_with_props(alice.id, "FOLLOWS", bob.id, edge_props)
-      .unwrap();
+      .expect("expected value");
 
     // Check should pass
-    let result = ray.check().unwrap();
+    let result = ray.check().expect("expected value");
     assert!(
       result.valid,
       "Expected valid database, got errors: {:?}",
@@ -5302,30 +5632,32 @@ mod tests {
     );
     assert!(result.errors.is_empty());
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_update_node_by_ref() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create a node
     let mut props = HashMap::new();
     props.insert("name".to_string(), PropValue::String("Alice".into()));
     props.insert("age".to_string(), PropValue::I64(30));
-    let alice = ray.create_node("User", "alice", props).unwrap();
+    let alice = ray
+      .create_node("User", "alice", props)
+      .expect("expected value");
 
     // Update by reference
     ray
       .update(&alice)
-      .unwrap()
+      .expect("expected value")
       .set("name", PropValue::String("Alice Updated".into()))
       .set("age", PropValue::I64(31))
       .execute()
-      .unwrap();
+      .expect("expected value");
 
     // Verify updates
     let name = ray.prop(alice.id, "name");
@@ -5334,83 +5666,90 @@ mod tests {
     let age = ray.prop(alice.id, "age");
     assert_eq!(age, Some(PropValue::I64(31)));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_update_node_by_key() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create a node
     let mut props = HashMap::new();
     props.insert("name".to_string(), PropValue::String("Bob".into()));
-    ray.create_node("User", "bob", props).unwrap();
+    ray
+      .create_node("User", "bob", props)
+      .expect("expected value");
 
     // Update by key
     ray
       .update_by_key("User", "bob")
-      .unwrap()
+      .expect("expected value")
       .set("name", PropValue::String("Bob Updated".into()))
       .set("age", PropValue::I64(25))
       .execute()
-      .unwrap();
+      .expect("expected value");
 
     // Verify updates
-    let bob = ray.get("User", "bob").unwrap().unwrap();
+    let bob = ray
+      .get("User", "bob")
+      .expect("expected value")
+      .expect("expected value");
     let name = ray.prop(bob.id, "name");
     assert_eq!(name, Some(PropValue::String("Bob Updated".into())));
 
     let age = ray.prop(bob.id, "age");
     assert_eq!(age, Some(PropValue::I64(25)));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_update_node_by_id() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create a node
     let mut props = HashMap::new();
     props.insert("name".to_string(), PropValue::String("Charlie".into()));
-    let charlie = ray.create_node("User", "charlie", props).unwrap();
+    let charlie = ray
+      .create_node("User", "charlie", props)
+      .expect("expected value");
 
     // Update by ID
     ray
       .update_by_id(charlie.id)
-      .unwrap()
+      .expect("expected value")
       .set("name", PropValue::String("Charlie Updated".into()))
       .execute()
-      .unwrap();
+      .expect("expected value");
 
     // Verify updates
     let name = ray.prop(charlie.id, "name");
     assert_eq!(name, Some(PropValue::String("Charlie Updated".into())));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_upsert_node_by_id_builder() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create by ID
     ray
       .upsert_by_id("User", 42)
-      .unwrap()
+      .expect("expected value")
       .set("name", PropValue::String("Alice".into()))
       .set("age", PropValue::I64(30))
       .execute()
-      .unwrap();
+      .expect("expected value");
 
     assert!(ray.exists(42));
 
@@ -5422,32 +5761,34 @@ mod tests {
     // Update same ID
     ray
       .upsert_by_id("User", 42)
-      .unwrap()
+      .expect("expected value")
       .set("age", PropValue::I64(31))
       .unset("name")
       .execute()
-      .unwrap();
+      .expect("expected value");
 
     let name = ray.prop(42, "name");
     assert_eq!(name, None);
     let age = ray.prop(42, "age");
     assert_eq!(age, Some(PropValue::I64(31)));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_update_node_unset() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create a node with properties
     let mut props = HashMap::new();
     props.insert("name".to_string(), PropValue::String("Dave".into()));
     props.insert("age".to_string(), PropValue::I64(40));
-    let dave = ray.create_node("User", "dave", props).unwrap();
+    let dave = ray
+      .create_node("User", "dave", props)
+      .expect("expected value");
 
     // Verify properties exist
     assert!(ray.prop(dave.id, "age").is_some());
@@ -5455,11 +5796,11 @@ mod tests {
     // Update with unset
     ray
       .update(&dave)
-      .unwrap()
+      .expect("expected value")
       .set("name", PropValue::String("Dave Updated".into()))
       .unset("age")
       .execute()
-      .unwrap();
+      .expect("expected value");
 
     // Verify name updated and age removed
     let name = ray.prop(dave.id, "name");
@@ -5468,18 +5809,20 @@ mod tests {
     let age = ray.prop(dave.id, "age");
     assert_eq!(age, None);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_update_node_set_all() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create a node
-    let eve = ray.create_node("User", "eve", HashMap::new()).unwrap();
+    let eve = ray
+      .create_node("User", "eve", HashMap::new())
+      .expect("expected value");
 
     // Update with set_all
     let mut updates = HashMap::new();
@@ -5488,10 +5831,10 @@ mod tests {
 
     ray
       .update(&eve)
-      .unwrap()
+      .expect("expected value")
       .set_all(updates)
       .execute()
-      .unwrap();
+      .expect("expected value");
 
     // Verify all properties set
     let name = ray.prop(eve.id, "name");
@@ -5500,15 +5843,15 @@ mod tests {
     let age = ray.prop(eve.id, "age");
     assert_eq!(age, Some(PropValue::I64(28)));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_update_node_nonexistent() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Try to update non-existent node by ID
     let result = ray.update_by_id(999999);
@@ -5518,42 +5861,54 @@ mod tests {
     let result = ray.update_by_key("User", "nonexistent");
     assert!(result.is_err());
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_update_node_empty() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create a node
     let mut props = HashMap::new();
     props.insert("name".to_string(), PropValue::String("Frank".into()));
-    let frank = ray.create_node("User", "frank", props).unwrap();
+    let frank = ray
+      .create_node("User", "frank", props)
+      .expect("expected value");
 
     // Empty update should succeed (no-op)
-    ray.update(&frank).unwrap().execute().unwrap();
+    ray
+      .update(&frank)
+      .expect("expected value")
+      .execute()
+      .expect("expected value");
 
     // Verify nothing changed
     let name = ray.prop(frank.id, "name");
     assert_eq!(name, Some(PropValue::String("Frank".into())));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_describe() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create some data
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
     // Get description
     let desc = ray.describe();
@@ -5570,20 +5925,26 @@ mod tests {
     assert!(desc.contains("Nodes:"));
     assert!(desc.contains("Edges:"));
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 
   #[test]
   fn test_stats() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
 
-    let mut ray = Kite::open(temp_db_path(&temp_dir), options).unwrap();
+    let mut ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
 
     // Create some data
-    let alice = ray.create_node("User", "alice", HashMap::new()).unwrap();
-    let bob = ray.create_node("User", "bob", HashMap::new()).unwrap();
-    ray.link(alice.id, "FOLLOWS", bob.id).unwrap();
+    let alice = ray
+      .create_node("User", "alice", HashMap::new())
+      .expect("expected value");
+    let bob = ray
+      .create_node("User", "bob", HashMap::new())
+      .expect("expected value");
+    ray
+      .link(alice.id, "FOLLOWS", bob.id)
+      .expect("expected value");
 
     // Get stats
     let stats = ray.stats();
@@ -5592,6 +5953,6 @@ mod tests {
     assert!(stats.snapshot_nodes + stats.delta_nodes_created as u64 >= 2);
     assert!(stats.snapshot_edges + stats.delta_edges_added as u64 >= 1);
 
-    ray.close().unwrap();
+    ray.close().expect("expected value");
   }
 }

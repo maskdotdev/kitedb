@@ -801,8 +801,8 @@ mod tests {
     assert_eq!(user.props.len(), 2);
     assert!(user.prop("name").is_some());
     assert!(user.prop("age").is_some());
-    assert!(!user.prop("name").unwrap().optional);
-    assert!(user.prop("age").unwrap().optional);
+    assert!(!user.prop("name").expect("expected value").optional);
+    assert!(user.prop("age").expect("expected value").optional);
   }
 
   #[test]
@@ -952,7 +952,7 @@ mod tests {
 
     assert!(doc.prop("embedding").is_some());
     assert_eq!(
-      doc.prop("embedding").unwrap().schema_type,
+      doc.prop("embedding").expect("expected value").schema_type,
       SchemaType::Vector
     );
 

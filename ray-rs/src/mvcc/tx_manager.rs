@@ -458,13 +458,13 @@ mod tests {
   }
 
   #[test]
-  fn test_get_tx() {
+  fn test_tx() {
     let mut tx_mgr = TxManager::new();
     let (txid, _) = tx_mgr.begin_tx();
 
     let tx = tx_mgr.tx(txid);
     assert!(tx.is_some());
-    assert_eq!(tx.unwrap().txid, txid);
+    assert_eq!(tx.expect("expected value").txid, txid);
 
     assert!(tx_mgr.tx(999).is_none());
   }
@@ -486,7 +486,7 @@ mod tests {
     tx_mgr.record_read(txid, key("key1"));
     tx_mgr.record_write(txid, key("key2"));
 
-    let tx = tx_mgr.tx(txid).unwrap();
+    let tx = tx_mgr.tx(txid).expect("expected value");
     assert!(tx.read_set.contains(&key("key1")));
     assert!(tx.write_set.contains(&key("key2")));
   }
@@ -498,7 +498,7 @@ mod tests {
 
     tx_mgr.record_write(txid, key("key1"));
 
-    let commit_ts = tx_mgr.commit_tx(txid).unwrap();
+    let commit_ts = tx_mgr.commit_tx(txid).expect("expected value");
     assert_eq!(commit_ts, 1);
     assert_eq!(tx_mgr.active_count(), 0);
 
@@ -521,7 +521,7 @@ mod tests {
 
     // Start another tx to keep txid in active_txs
     let (txid2, _) = tx_mgr.begin_tx();
-    tx_mgr.commit_tx(txid2).unwrap();
+    tx_mgr.commit_tx(txid2).expect("expected value");
 
     // Try to commit already aborted (which was removed)
     let result = tx_mgr.commit_tx(txid);
@@ -551,7 +551,7 @@ mod tests {
     assert_eq!(tx_mgr.min_active_ts(), 1);
 
     // Commit tx1 (advances commit_ts)
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     // Start tx2 after commit
     let (_txid2, _) = tx_mgr.begin_tx();
@@ -559,7 +559,7 @@ mod tests {
   }
 
   #[test]
-  fn test_get_active_tx_ids() {
+  fn test_active_tx_ids() {
     let mut tx_mgr = TxManager::new();
 
     let (txid1, _) = tx_mgr.begin_tx();
@@ -570,7 +570,7 @@ mod tests {
     assert!(active_ids.contains(&txid1));
     assert!(active_ids.contains(&txid2));
 
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
     let active_ids = tx_mgr.active_tx_ids();
     assert_eq!(active_ids.len(), 1);
     assert!(active_ids.contains(&txid2));
@@ -597,7 +597,7 @@ mod tests {
 
     let (txid, _) = tx_mgr.begin_tx();
     tx_mgr.record_write(txid, key("key1"));
-    tx_mgr.commit_tx(txid).unwrap();
+    tx_mgr.commit_tx(txid).expect("expected value");
 
     // After commit at ts=1
     assert!(tx_mgr.has_conflicting_write(&key("key1"), 1));
@@ -607,11 +607,11 @@ mod tests {
   }
 
   #[test]
-  fn test_get_committed_write_ts() {
+  fn test_committed_write_ts() {
     let mut tx_mgr = TxManager::new();
     let (txid, _) = tx_mgr.begin_tx();
     tx_mgr.record_write(txid, key("key1"));
-    tx_mgr.commit_tx(txid).unwrap();
+    tx_mgr.commit_tx(txid).expect("expected value");
 
     assert_eq!(tx_mgr.committed_write_ts(&key("key1"), 0), Some(1));
     assert_eq!(tx_mgr.committed_write_ts(&key("key1"), 1), Some(1));
@@ -638,7 +638,7 @@ mod tests {
     for i in 0..10 {
       let (txid, _) = tx_mgr.begin_tx();
       tx_mgr.record_write(txid, TxKey::Key(format!("key{i}").into()));
-      tx_mgr.commit_tx(txid).unwrap();
+      tx_mgr.commit_tx(txid).expect("expected value");
     }
 
     // After serial commits, no transactions should remain in active_txs
@@ -665,7 +665,7 @@ mod tests {
     tx_mgr.record_write(txid3, key("a")); // Same key as tx1
 
     // Commit tx1
-    let commit_ts1 = tx_mgr.commit_tx(txid1).unwrap();
+    let commit_ts1 = tx_mgr.commit_tx(txid1).expect("expected value");
     assert_eq!(commit_ts1, 1);
     assert_eq!(tx_mgr.active_count(), 2);
 
@@ -673,7 +673,7 @@ mod tests {
     assert!(tx_mgr.has_conflicting_write(&key("a"), start_ts3));
 
     // Commit tx2 (no conflict)
-    let commit_ts2 = tx_mgr.commit_tx(txid2).unwrap();
+    let commit_ts2 = tx_mgr.commit_tx(txid2).expect("expected value");
     assert_eq!(commit_ts2, 2);
     assert_eq!(tx_mgr.active_count(), 1);
 
@@ -690,7 +690,7 @@ mod tests {
     let (txid1, _) = tx_mgr.begin_tx();
     let (txid2, _) = tx_mgr.begin_tx();
 
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     // tx1 should still be in active_txs because there's another active tx
     assert!(tx_mgr.tx(txid1).is_some());

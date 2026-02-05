@@ -90,8 +90,9 @@ mod tests {
   }
 
   fn setup_test_db(node_count: usize, edge_count: usize) -> (tempfile::TempDir, Kite) {
-    let temp_dir = tempdir().unwrap();
-    let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
+    let temp_dir = tempdir().expect("expected value");
+    let mut ray =
+      Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
 
     // Create nodes
     let mut node_ids = Vec::with_capacity(node_count);
@@ -100,7 +101,9 @@ mod tests {
       props.insert("name".to_string(), PropValue::String(format!("User{i}")));
       props.insert("age".to_string(), PropValue::I64(20 + (i % 50) as i64));
       props.insert("score".to_string(), PropValue::F64(i as f64 * 0.1));
-      let node = ray.create_node("User", &format!("user{i}"), props).unwrap();
+      let node = ray
+        .create_node("User", &format!("user{i}"), props)
+        .expect("expected value");
       node_ids.push(node.id());
     }
 
@@ -149,7 +152,10 @@ mod tests {
       })
       .collect();
 
-    let total_successes: usize = handles.into_iter().map(|h| h.join().unwrap()).sum();
+    let total_successes: usize = handles
+      .into_iter()
+      .map(|h| h.join().expect("expected value"))
+      .sum();
 
     // All reads should succeed
     assert_eq!(
@@ -194,7 +200,10 @@ mod tests {
       })
       .collect();
 
-    let total_successes: usize = handles.into_iter().map(|h| h.join().unwrap()).sum();
+    let total_successes: usize = handles
+      .into_iter()
+      .map(|h| h.join().expect("expected value"))
+      .sum();
 
     // All reads should succeed
     assert_eq!(
@@ -253,7 +262,10 @@ mod tests {
       })
       .collect();
 
-    let total_successes: usize = handles.into_iter().map(|h| h.join().unwrap()).sum();
+    let total_successes: usize = handles
+      .into_iter()
+      .map(|h| h.join().expect("expected value"))
+      .sum();
 
     // Each thread does 2 property reads per iteration
     assert_eq!(
@@ -312,7 +324,10 @@ mod tests {
       })
       .collect();
 
-    let total_traversals: usize = handles.into_iter().map(|h| h.join().unwrap()).sum();
+    let total_traversals: usize = handles
+      .into_iter()
+      .map(|h| h.join().expect("expected value"))
+      .sum();
 
     assert_eq!(
       total_traversals,
@@ -368,7 +383,10 @@ mod tests {
       })
       .collect();
 
-    let total_checks: usize = handles.into_iter().map(|h| h.join().unwrap()).sum();
+    let total_checks: usize = handles
+      .into_iter()
+      .map(|h| h.join().expect("expected value"))
+      .sum();
 
     assert_eq!(
       total_checks,
@@ -433,9 +451,9 @@ mod tests {
 
     // Wait for all threads
     for handle in reader_handles {
-      handle.join().unwrap();
+      handle.join().expect("expected value");
     }
-    writer_handle.join().unwrap();
+    writer_handle.join().expect("expected value");
 
     let total_reads = reads_completed.load(Ordering::SeqCst);
     let total_writes = writes_completed.load(Ordering::SeqCst);
@@ -525,12 +543,12 @@ mod tests {
       })
     };
 
-    reader1_handle.join().unwrap();
-    reader2_handle.join().unwrap();
-    writer_handle.join().unwrap();
+    reader1_handle.join().expect("expected value");
+    reader2_handle.join().expect("expected value");
+    writer_handle.join().expect("expected value");
 
     let times = reader_times.lock();
-    let max_read_time = times.iter().max().unwrap();
+    let max_read_time = times.iter().max().expect("expected value");
 
     // Reads should not be blocked for more than 100ms (generous threshold)
     assert!(
@@ -562,13 +580,13 @@ mod tests {
       detector.validate_commit(&tx_mgr, txid1).is_ok(),
       "Tx1 should not conflict"
     );
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     assert!(
       detector.validate_commit(&tx_mgr, txid2).is_ok(),
       "Tx2 should not conflict"
     );
-    tx_mgr.commit_tx(txid2).unwrap();
+    tx_mgr.commit_tx(txid2).expect("expected value");
   }
 
   #[test]
@@ -586,7 +604,7 @@ mod tests {
 
     // First commits
     assert!(detector.validate_commit(&tx_mgr, txid1).is_ok());
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     // Second should conflict
     assert!(
@@ -609,7 +627,7 @@ mod tests {
     tx_mgr.record_read(txid2, key("key"));
 
     // Tx1 commits first
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     // Tx2 should conflict (read-write conflict)
     assert!(
@@ -627,7 +645,7 @@ mod tests {
     // First, establish some data
     let (setup_tx, _) = tx_mgr.begin_tx();
     tx_mgr.record_write(setup_tx, key("data"));
-    tx_mgr.commit_tx(setup_tx).unwrap();
+    tx_mgr.commit_tx(setup_tx).expect("expected value");
 
     // Start many concurrent read transactions
     let num_readers = 10;
@@ -645,7 +663,7 @@ mod tests {
         detector.validate_commit(&tx_mgr, txid).is_ok(),
         "Read-only transaction should not conflict"
       );
-      tx_mgr.commit_tx(txid).unwrap();
+      tx_mgr.commit_tx(txid).expect("expected value");
     }
   }
 
@@ -663,7 +681,7 @@ mod tests {
         detector.validate_commit(&tx_mgr, txid).is_ok(),
         "Serial transaction {i} should not conflict"
       );
-      tx_mgr.commit_tx(txid).unwrap();
+      tx_mgr.commit_tx(txid).expect("expected value");
     }
   }
 
@@ -679,7 +697,7 @@ mod tests {
     tx_mgr.record_write(txid2, key("conflict_key"));
     tx_mgr.record_write(txid2, key("ok_key"));
 
-    tx_mgr.commit_tx(txid1).unwrap();
+    tx_mgr.commit_tx(txid1).expect("expected value");
 
     let conflicts = detector.check_conflicts(&tx_mgr, txid2);
     assert!(!conflicts.is_empty(), "Should detect conflicts");
@@ -728,7 +746,7 @@ mod tests {
       .collect();
 
     for handle in handles {
-      handle.join().unwrap();
+      handle.join().expect("expected value");
     }
 
     let elapsed = start.elapsed();
@@ -809,10 +827,10 @@ mod tests {
 
     // Wait for all
     for handle in reader_handles {
-      handle.join().unwrap();
+      handle.join().expect("expected value");
     }
     for handle in writer_handles {
-      handle.join().unwrap();
+      handle.join().expect("expected value");
     }
 
     let total_reads = read_ops.load(Ordering::Relaxed);
@@ -840,25 +858,25 @@ mod tests {
   fn test_single_file_sequential_reads() {
     // Note: SingleFileDB is not designed for concurrent access from multiple threads.
     // The internal LruCache is not Sync. This test verifies sequential performance.
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir.path().join("test.kitedb");
 
     // Setup: Create database with data
     {
-      let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
-      db.begin(false).unwrap();
+      let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
+      db.begin(false).expect("expected value");
       for i in 0..100 {
         let key = format!("node{i}");
-        let node_id = db.create_node(Some(&key)).unwrap();
+        let node_id = db.create_node(Some(&key)).expect("expected value");
         db.set_node_prop_by_name(node_id, "value", PropValue::I64(i as i64))
-          .unwrap();
+          .expect("expected value");
       }
-      db.commit().unwrap();
-      crate::core::single_file::close_single_file(db).unwrap();
+      db.commit().expect("expected value");
+      crate::core::single_file::close_single_file(db).expect("expected value");
     }
 
     // Test: Sequential reads from single thread
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
     let reads = 400;
 
     let mut success_count = 0;
@@ -871,7 +889,7 @@ mod tests {
 
     assert_eq!(success_count, reads, "All single-file reads should succeed");
 
-    crate::core::single_file::close_single_file(db).unwrap();
+    crate::core::single_file::close_single_file(db).expect("expected value");
   }
 
   // ============================================================================
@@ -914,7 +932,7 @@ mod tests {
         .collect();
 
       for handle in handles {
-        handle.join().unwrap();
+        handle.join().expect("expected value");
       }
 
       let elapsed = start.elapsed();

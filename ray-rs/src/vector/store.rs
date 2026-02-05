@@ -91,13 +91,13 @@ fn vector_store_delete_by_vector_id(manifest: &mut VectorManifest, vector_id: u6
 /// Get a vector by node ID
 ///
 /// Returns the vector data as a slice, or None if not found
-pub fn vector_store_get(manifest: &VectorManifest, node_id: NodeId) -> Option<&[f32]> {
+pub fn vector_store_node_vector(manifest: &VectorManifest, node_id: NodeId) -> Option<&[f32]> {
   let vector_id = manifest.node_to_vector.get(&node_id)?;
-  vector_store_get_by_id(manifest, *vector_id)
+  vector_store_vector_by_id(manifest, *vector_id)
 }
 
 /// Get a vector by vector ID
-pub fn vector_store_get_by_id(manifest: &VectorManifest, vector_id: u64) -> Option<&[f32]> {
+pub fn vector_store_vector_by_id(manifest: &VectorManifest, vector_id: u64) -> Option<&[f32]> {
   let location = manifest.vector_locations.get(&vector_id)?;
   let fragment = manifest
     .fragments
@@ -142,20 +142,17 @@ pub fn vector_store_has(manifest: &VectorManifest, node_id: NodeId) -> bool {
 }
 
 /// Get the vector ID for a node
-pub fn vector_store_get_vector_id(manifest: &VectorManifest, node_id: NodeId) -> Option<u64> {
+pub fn vector_store_vector_id(manifest: &VectorManifest, node_id: NodeId) -> Option<u64> {
   manifest.node_to_vector.get(&node_id).copied()
 }
 
 /// Get the node ID for a vector ID
-pub fn vector_store_get_node_id(manifest: &VectorManifest, vector_id: u64) -> Option<NodeId> {
+pub fn vector_store_node_id(manifest: &VectorManifest, vector_id: u64) -> Option<NodeId> {
   manifest.vector_to_node.get(&vector_id).copied()
 }
 
 /// Get the location of a vector
-pub fn vector_store_get_location(
-  manifest: &VectorManifest,
-  vector_id: u64,
-) -> Option<VectorLocation> {
+pub fn vector_store_location(manifest: &VectorManifest, vector_id: u64) -> Option<VectorLocation> {
   manifest.vector_locations.get(&vector_id).copied()
 }
 
@@ -182,9 +179,7 @@ pub fn vector_store_batch_insert(
 
 /// Get all vectors as a flat Vec<f32> (for training/serialization)
 /// Only includes non-deleted vectors
-pub fn vector_store_get_all_vectors(
-  manifest: &VectorManifest,
-) -> (Vec<f32>, Vec<NodeId>, Vec<u64>) {
+pub fn vector_store_all_vectors(manifest: &VectorManifest) -> (Vec<f32>, Vec<NodeId>, Vec<u64>) {
   let live_count = manifest.live_count();
   let dimensions = manifest.config.dimensions;
 
@@ -193,7 +188,7 @@ pub fn vector_store_get_all_vectors(
   let mut vector_ids = Vec::with_capacity(live_count);
 
   for (&node_id, &vector_id) in &manifest.node_to_vector {
-    if let Some(vec) = vector_store_get_by_id(manifest, vector_id) {
+    if let Some(vec) = vector_store_vector_by_id(manifest, vector_id) {
       data.extend_from_slice(vec);
       node_ids.push(node_id);
       vector_ids.push(vector_id);
@@ -546,7 +541,7 @@ mod tests {
     let mut manifest = create_vector_store(config);
 
     let vector = vec![1.0, 0.0, 0.0, 0.0];
-    let vector_id = vector_store_insert(&mut manifest, 1, &vector).unwrap();
+    let vector_id = vector_store_insert(&mut manifest, 1, &vector).expect("expected value");
 
     assert_eq!(vector_id, 0);
     assert_eq!(manifest.total_vectors, 1);
@@ -590,26 +585,26 @@ mod tests {
   }
 
   #[test]
-  fn test_get_vector() {
+  fn test_vector() {
     let config = test_config().with_normalize(false);
     let mut manifest = create_vector_store(config);
 
     let vector = vec![1.0, 2.0, 3.0, 4.0];
-    vector_store_insert(&mut manifest, 1, &vector).unwrap();
+    vector_store_insert(&mut manifest, 1, &vector).expect("expected value");
 
-    let retrieved = vector_store_get(&manifest, 1).unwrap();
+    let retrieved = vector_store_node_vector(&manifest, 1).expect("expected value");
     assert_eq!(retrieved, &vector[..]);
   }
 
   #[test]
-  fn test_get_vector_normalized() {
+  fn test_vector_normalized() {
     let config = test_config().with_normalize(true);
     let mut manifest = create_vector_store(config);
 
     let vector = vec![3.0, 4.0, 0.0, 0.0]; // norm = 5
-    vector_store_insert(&mut manifest, 1, &vector).unwrap();
+    vector_store_insert(&mut manifest, 1, &vector).expect("expected value");
 
-    let retrieved = vector_store_get(&manifest, 1).unwrap();
+    let retrieved = vector_store_node_vector(&manifest, 1).expect("expected value");
     assert!((retrieved[0] - 0.6).abs() < 1e-6);
     assert!((retrieved[1] - 0.8).abs() < 1e-6);
   }
@@ -620,7 +615,7 @@ mod tests {
     let mut manifest = create_vector_store(config);
 
     let vector = vec![1.0, 0.0, 0.0, 0.0];
-    vector_store_insert(&mut manifest, 1, &vector).unwrap();
+    vector_store_insert(&mut manifest, 1, &vector).expect("expected value");
 
     assert!(vector_store_has(&manifest, 1));
     assert!(vector_store_delete(&mut manifest, 1));
@@ -642,17 +637,17 @@ mod tests {
     let mut manifest = create_vector_store(config);
 
     let vector1 = vec![1.0, 0.0, 0.0, 0.0];
-    let id1 = vector_store_insert(&mut manifest, 1, &vector1).unwrap();
+    let id1 = vector_store_insert(&mut manifest, 1, &vector1).expect("expected value");
 
     let vector2 = vec![0.0, 1.0, 0.0, 0.0];
-    let id2 = vector_store_insert(&mut manifest, 1, &vector2).unwrap();
+    let id2 = vector_store_insert(&mut manifest, 1, &vector2).expect("expected value");
 
     // Should have different IDs (old was deleted)
     assert_ne!(id1, id2);
     assert_eq!(manifest.total_deleted, 1);
 
     // Should retrieve new vector
-    let retrieved = vector_store_get(&manifest, 1).unwrap();
+    let retrieved = vector_store_node_vector(&manifest, 1).expect("expected value");
     assert_eq!(retrieved, &vector2[..]);
   }
 
@@ -663,16 +658,16 @@ mod tests {
 
     for i in 0..20 {
       let vector = vec![i as f32, 0.0, 0.0, 1.0];
-      vector_store_insert(&mut manifest, i as u64, &vector).unwrap();
+      vector_store_insert(&mut manifest, i as u64, &vector).expect("expected value");
     }
 
     assert_eq!(manifest.total_vectors, 20);
 
     // Check a few
-    let v5 = vector_store_get(&manifest, 5).unwrap();
+    let v5 = vector_store_node_vector(&manifest, 5).expect("expected value");
     assert_eq!(v5[0], 5.0);
 
-    let v15 = vector_store_get(&manifest, 15).unwrap();
+    let v15 = vector_store_node_vector(&manifest, 15).expect("expected value");
     assert_eq!(v15[0], 15.0);
   }
 
@@ -685,26 +680,26 @@ mod tests {
       .map(|i| (i as u64, vec![i as f32, 0.0, 0.0, 1.0]))
       .collect();
 
-    let ids = vector_store_batch_insert(&mut manifest, &entries).unwrap();
+    let ids = vector_store_batch_insert(&mut manifest, &entries).expect("expected value");
 
     assert_eq!(ids.len(), 10);
     assert_eq!(manifest.total_vectors, 10);
   }
 
   #[test]
-  fn test_get_all_vectors() {
+  fn test_all_vectors() {
     let config = test_config().with_normalize(false);
     let mut manifest = create_vector_store(config);
 
     for i in 0..5 {
       let vector = vec![i as f32, 0.0, 0.0, 1.0];
-      vector_store_insert(&mut manifest, i as u64, &vector).unwrap();
+      vector_store_insert(&mut manifest, i as u64, &vector).expect("expected value");
     }
 
     // Delete one
     vector_store_delete(&mut manifest, 2);
 
-    let (data, node_ids, vector_ids) = vector_store_get_all_vectors(&manifest);
+    let (data, node_ids, vector_ids) = vector_store_all_vectors(&manifest);
 
     assert_eq!(node_ids.len(), 4); // 5 - 1 deleted
     assert_eq!(vector_ids.len(), 4);
@@ -718,7 +713,7 @@ mod tests {
 
     for i in 0..5 {
       let vector = vec![i as f32, 0.0, 0.0, 1.0];
-      vector_store_insert(&mut manifest, i as u64, &vector).unwrap();
+      vector_store_insert(&mut manifest, i as u64, &vector).expect("expected value");
     }
 
     vector_store_delete(&mut manifest, 2);
@@ -737,7 +732,7 @@ mod tests {
 
     for i in 0..5 {
       let vector = vec![i as f32, 0.0, 0.0, 1.0];
-      vector_store_insert(&mut manifest, i as u64, &vector).unwrap();
+      vector_store_insert(&mut manifest, i as u64, &vector).expect("expected value");
     }
 
     vector_store_clear(&mut manifest);
@@ -753,7 +748,7 @@ mod tests {
     let mut manifest = create_vector_store(config);
 
     let vector = vec![1.0, 0.0, 0.0, 0.0];
-    vector_store_insert(&mut manifest, 1, &vector).unwrap();
+    vector_store_insert(&mut manifest, 1, &vector).expect("expected value");
 
     vector_store_seal_active(&mut manifest);
 
@@ -773,7 +768,7 @@ mod tests {
     // Insert more than fragment target size
     for i in 0..10 {
       let vector = vec![i as f32, 0.0, 0.0, 1.0];
-      vector_store_insert(&mut manifest, i as u64, &vector).unwrap();
+      vector_store_insert(&mut manifest, i as u64, &vector).expect("expected value");
     }
 
     // Should have multiple fragments

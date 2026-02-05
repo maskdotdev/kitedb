@@ -1948,7 +1948,7 @@ mod tests {
       .first();
 
     assert!(first.is_some());
-    assert_eq!(first.unwrap().node_id, 2);
+    assert_eq!(first.expect("expected value").node_id, 2);
   }
 
   #[test]
@@ -2044,7 +2044,7 @@ mod tests {
       .first(&neighbors);
 
     assert!(first.is_some());
-    assert_eq!(first.unwrap().node_id, 2);
+    assert_eq!(first.expect("expected value").node_id, 2);
   }
 
   #[test]
@@ -2134,7 +2134,7 @@ mod tests {
       .with_keys();
 
     assert!(opts.node_props.is_some());
-    assert_eq!(opts.node_props.as_ref().unwrap().len(), 2);
+    assert_eq!(opts.node_props.as_ref().expect("expected value").len(), 2);
     assert!(opts.edge_props.is_some());
     assert!(opts.load_keys);
   }
@@ -2151,7 +2151,7 @@ mod tests {
 
     let selected = builder.selected_properties();
     assert!(selected.is_some());
-    let props = selected.unwrap();
+    let props = selected.expect("expected value");
     assert_eq!(props.len(), 2);
     assert!(props.contains(&"name".to_string()));
     assert!(props.contains(&"age".to_string()));
@@ -2165,7 +2165,7 @@ mod tests {
 
     let selected = builder.selected_properties();
     assert!(selected.is_some());
-    let props = selected.unwrap();
+    let props = selected.expect("expected value");
     assert_eq!(props.len(), 2);
     assert!(props.contains(&"name".to_string()));
     assert!(props.contains(&"email".to_string()));
@@ -2187,7 +2187,7 @@ mod tests {
     let opts = builder.collect_options();
 
     assert!(opts.node_props.is_some());
-    let props = opts.node_props.unwrap();
+    let props = opts.node_props.expect("expected value");
     assert_eq!(props.len(), 2);
     assert!(props.contains(&"name".to_string()));
     assert!(props.contains(&"age".to_string()));

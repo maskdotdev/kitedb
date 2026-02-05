@@ -1086,12 +1086,12 @@ mod tests {
     );
 
     let bytes = record.build();
-    let parsed = parse_wal_record(&bytes, 0).unwrap();
+    let parsed = parse_wal_record(&bytes, 0).expect("expected value");
 
     assert_eq!(parsed.record_type, WalRecordType::CreateNode);
     assert_eq!(parsed.txid, 42);
 
-    let data = parse_create_node_payload(&parsed.payload).unwrap();
+    let data = parse_create_node_payload(&parsed.payload).expect("expected value");
     assert_eq!(data.node_id, 123);
     assert_eq!(data.key, Some("test_key".to_string()));
   }
@@ -1099,7 +1099,7 @@ mod tests {
   #[test]
   fn test_edge_payload() {
     let payload = build_add_edge_payload(1, 100, 2);
-    let data = parse_add_edge_payload(&payload).unwrap();
+    let data = parse_add_edge_payload(&payload).expect("expected value");
 
     assert_eq!(data.src, 1);
     assert_eq!(data.etype, 100);
@@ -1110,7 +1110,7 @@ mod tests {
   fn test_create_nodes_batch_payload() {
     let entries = vec![(1, Some("a")), (2, None), (3, Some("ccc"))];
     let payload = build_create_nodes_batch_payload(&entries);
-    let data = parse_create_nodes_batch_payload(&payload).unwrap();
+    let data = parse_create_nodes_batch_payload(&payload).expect("expected value");
 
     assert_eq!(data.len(), 3);
     assert_eq!(data[0].node_id, 1);
@@ -1125,7 +1125,7 @@ mod tests {
   fn test_add_edges_batch_payload() {
     let edges = vec![(1, 10, 2), (2, 11, 3)];
     let payload = build_add_edges_batch_payload(&edges);
-    let data = parse_add_edges_batch_payload(&payload).unwrap();
+    let data = parse_add_edges_batch_payload(&payload).expect("expected value");
 
     assert_eq!(data.len(), 2);
     assert_eq!(data[0].src, 1);
@@ -1151,7 +1151,7 @@ mod tests {
       ),
     ];
     let payload = build_add_edges_props_batch_payload(&edges);
-    let data = parse_add_edges_props_batch_payload(&payload).unwrap();
+    let data = parse_add_edges_props_batch_payload(&payload).expect("expected value");
 
     assert_eq!(data.len(), 2);
     assert_eq!(data[0].src, 1);
@@ -1174,7 +1174,7 @@ mod tests {
   fn test_add_edge_props_payload() {
     let props = vec![(10, PropValue::I64(7)), (11, PropValue::String("v".into()))];
     let payload = build_add_edge_props_payload(1, 2, 3, &props);
-    let data = parse_add_edge_props_payload(&payload).unwrap();
+    let data = parse_add_edge_props_payload(&payload).expect("expected value");
 
     assert_eq!(data.src, 1);
     assert_eq!(data.etype, 2);
@@ -1193,7 +1193,7 @@ mod tests {
       (11, PropValue::String("ok".into())),
     ];
     let payload = build_set_edge_props_payload(1, 2, 3, &props);
-    let data = parse_set_edge_props_payload(&payload).unwrap();
+    let data = parse_set_edge_props_payload(&payload).expect("expected value");
 
     assert_eq!(data.src, 1);
     assert_eq!(data.etype, 2);
@@ -1209,7 +1209,7 @@ mod tests {
   fn test_prop_value_string() {
     let value = PropValue::String("hello world".to_string());
     let payload = build_set_node_prop_payload(42, 5, &value);
-    let data = parse_set_node_prop_payload(&payload).unwrap();
+    let data = parse_set_node_prop_payload(&payload).expect("expected value");
 
     assert_eq!(data.node_id, 42);
     assert_eq!(data.key_id, 5);
@@ -1220,7 +1220,7 @@ mod tests {
   fn test_prop_value_i64() {
     let value = PropValue::I64(-12345);
     let payload = build_set_node_prop_payload(1, 2, &value);
-    let data = parse_set_node_prop_payload(&payload).unwrap();
+    let data = parse_set_node_prop_payload(&payload).expect("expected value");
     assert_eq!(data.value, PropValue::I64(-12345));
   }
 
@@ -1228,7 +1228,7 @@ mod tests {
   fn test_vector_payload() {
     let vector = vec![1.0, 2.0, 3.0, 4.0];
     let payload = build_set_node_vector_payload(100, 10, &vector);
-    let data = parse_set_node_vector_payload(&payload).unwrap();
+    let data = parse_set_node_vector_payload(&payload).expect("expected value");
 
     assert_eq!(data.node_id, 100);
     assert_eq!(data.prop_key_id, 10);

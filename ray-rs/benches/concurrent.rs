@@ -58,12 +58,12 @@ fn setup_ray_db(
   edge_count: usize,
   group_commit: bool,
 ) -> (tempfile::TempDir, Kite) {
-  let temp_dir = tempdir().unwrap();
+  let temp_dir = tempdir().expect("expected value");
   let mut ray = Kite::open(
     temp_db_path(&temp_dir),
     create_test_schema_with_group_commit(group_commit),
   )
-  .unwrap();
+  .expect("expected value");
 
   let mut node_ids = Vec::with_capacity(node_count);
   for i in 0..node_count {
@@ -71,12 +71,14 @@ fn setup_ray_db(
     props.insert("name".to_string(), PropValue::String(format!("User{i}")));
     props.insert("age".to_string(), PropValue::I64(20 + (i % 50) as i64));
     props.insert("score".to_string(), PropValue::F64(i as f64 * 0.1));
-    let node = ray.create_node("User", &format!("user{i}"), props).unwrap();
+    let node = ray
+      .create_node("User", &format!("user{i}"), props)
+      .expect("expected value");
     node_ids.push(node.id());
 
     // Optimize periodically to avoid WAL overflow
     if (i + 1) % 1000 == 0 {
-      ray.optimize().unwrap();
+      ray.optimize().expect("expected value");
     }
   }
 
@@ -89,11 +91,11 @@ fn setup_ray_db(
     }
     // Optimize periodically to avoid WAL overflow
     if (i + 1) % 1000 == 0 {
-      ray.optimize().unwrap();
+      ray.optimize().expect("expected value");
     }
   }
 
-  ray.optimize().unwrap();
+  ray.optimize().expect("expected value");
   (temp_dir, ray)
 }
 
@@ -189,7 +191,7 @@ fn bench_concurrent_reads(c: &mut Criterion) {
               .collect();
 
             for handle in handles {
-              handle.join().unwrap();
+              handle.join().expect("expected value");
             }
           });
         },
@@ -241,7 +243,7 @@ fn bench_read_scaling(c: &mut Criterion) {
             .collect();
 
           for handle in handles {
-            handle.join().unwrap();
+            handle.join().expect("expected value");
           }
         });
       },
@@ -310,7 +312,7 @@ fn bench_property_read_scaling(c: &mut Criterion) {
             .collect();
 
           for handle in handles {
-            handle.join().unwrap();
+            handle.join().expect("expected value");
           }
         });
       },
@@ -381,7 +383,7 @@ fn bench_traversal_scaling(c: &mut Criterion) {
             .collect();
 
           for handle in handles {
-            handle.join().unwrap();
+            handle.join().expect("expected value");
           }
         });
       },
@@ -420,7 +422,9 @@ fn bench_reader_writer_contention_variant(
     };
     let initial_edges = {
       let ray_guard = ray.read();
-      ray_guard.count_edges_by_type("FOLLOWS").unwrap()
+      ray_guard
+        .count_edges_by_type("FOLLOWS")
+        .expect("expected value")
     };
 
     #[cfg(feature = "bench-profile")]
@@ -547,7 +551,7 @@ fn bench_reader_writer_contention_variant(
                           break;
                         }
                         Err(KiteError::WalBufferFull) if attempts == 0 => {
-                          ray_guard.optimize().unwrap();
+                          ray_guard.optimize().expect("expected value");
                           attempts += 1;
                         }
                         Err(err) => {
@@ -602,7 +606,7 @@ fn bench_reader_writer_contention_variant(
                           break;
                         }
                         Err(KiteError::WalBufferFull) if attempts == 0 => {
-                          ray_guard.optimize().unwrap();
+                          ray_guard.optimize().expect("expected value");
                           attempts += 1;
                         }
                         Err(err) => {
@@ -621,7 +625,7 @@ fn bench_reader_writer_contention_variant(
           }
 
           for handle in handles {
-            handle.join().unwrap();
+            handle.join().expect("expected value");
           }
 
           let counter_end = key_counter.load(Ordering::SeqCst);
@@ -629,13 +633,13 @@ fn bench_reader_writer_contention_variant(
           let ray_guard = ray.read();
           let expected_nodes = initial_nodes + success_total;
           assert_eq!(ray_guard.count_nodes(), expected_nodes);
-          let actual_edges = ray_guard.count_edges_by_type("FOLLOWS").unwrap();
+          let actual_edges = ray_guard.count_edges_by_type("FOLLOWS").expect("expected value");
           assert_eq!(actual_edges, initial_edges);
           for counter in created_keys.lock().iter().copied() {
             if counter < counter_start || counter >= counter_end {
               continue;
             }
-            let node = ray_guard.get("User", &format!("bench{counter}")).unwrap();
+            let node = ray_guard.get("User", &format!("bench{counter}")).expect("expected value");
             assert!(node.is_some());
           }
 
@@ -691,7 +695,7 @@ fn bench_mvcc_transaction_overhead(c: &mut Criterion) {
       for i in 0..100 {
         let (txid, _) = tx_mgr.begin_tx();
         tx_mgr.record_read(txid, TxKey::Node(i as u64));
-        black_box(tx_mgr.commit_tx(txid).unwrap());
+        black_box(tx_mgr.commit_tx(txid).expect("expected value"));
       }
     });
   });
@@ -702,7 +706,7 @@ fn bench_mvcc_transaction_overhead(c: &mut Criterion) {
       for i in 0..100 {
         let (txid, _) = tx_mgr.begin_tx();
         tx_mgr.record_write(txid, TxKey::Node(i as u64));
-        black_box(tx_mgr.commit_tx(txid).unwrap());
+        black_box(tx_mgr.commit_tx(txid).expect("expected value"));
       }
     });
   });
@@ -714,7 +718,7 @@ fn bench_mvcc_transaction_overhead(c: &mut Criterion) {
       for i in 0..1000 {
         tx_mgr.record_read(txid, TxKey::Node(i as u64));
       }
-      black_box(tx_mgr.commit_tx(txid).unwrap());
+      black_box(tx_mgr.commit_tx(txid).expect("expected value"));
     });
   });
 
@@ -725,7 +729,7 @@ fn bench_mvcc_transaction_overhead(c: &mut Criterion) {
       for i in 0..1000 {
         tx_mgr.record_write(txid, TxKey::Node(i as u64));
       }
-      black_box(tx_mgr.commit_tx(txid).unwrap());
+      black_box(tx_mgr.commit_tx(txid).expect("expected value"));
     });
   });
 
@@ -742,7 +746,7 @@ fn bench_single_file_sequential_reads(c: &mut Criterion) {
   let mut group = c.benchmark_group("single_file_sequential");
   group.sample_size(20);
 
-  let temp_dir = tempdir().unwrap();
+  let temp_dir = tempdir().expect("expected value");
   let db_path = temp_dir.path().join("bench.kitedb");
 
   // Setup database
@@ -751,23 +755,23 @@ fn bench_single_file_sequential_reads(c: &mut Criterion) {
       &db_path,
       SingleFileOpenOptions::new().sync_mode(SyncMode::Normal),
     )
-    .unwrap();
-    db.begin(false).unwrap();
+    .expect("expected value");
+    db.begin(false).expect("expected value");
     for i in 0..1000 {
       let key = format!("node{i}");
-      let node_id = db.create_node(Some(&key)).unwrap();
+      let node_id = db.create_node(Some(&key)).expect("expected value");
       db.set_node_prop_by_name(node_id, "value", PropValue::I64(i as i64))
-        .unwrap();
+        .expect("expected value");
     }
-    db.commit().unwrap();
-    kitedb::core::single_file::close_single_file(db).unwrap();
+    db.commit().expect("expected value");
+    kitedb::core::single_file::close_single_file(db).expect("expected value");
   }
 
   let db = open_single_file(
     &db_path,
     SingleFileOpenOptions::new().sync_mode(SyncMode::Normal),
   )
-  .unwrap();
+  .expect("expected value");
 
   group.throughput(Throughput::Elements(1000));
 
@@ -845,7 +849,7 @@ fn bench_edge_check_scaling(c: &mut Criterion) {
             .collect();
 
           for handle in handles {
-            handle.join().unwrap();
+            handle.join().expect("expected value");
           }
         });
       },

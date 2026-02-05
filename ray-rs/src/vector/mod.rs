@@ -38,11 +38,11 @@ pub use ivf_pq::{
 };
 pub use pq::{PqError, PqIndex, PqSearchResult, PqStats};
 pub use store::{
-  create_vector_store, vector_store_batch_insert, vector_store_clear, vector_store_delete,
-  vector_store_fragment_stats, vector_store_get, vector_store_get_all_vectors,
-  vector_store_get_by_id, vector_store_get_location, vector_store_get_node_id,
-  vector_store_get_vector_id, vector_store_has, vector_store_insert, vector_store_seal_active,
-  vector_store_stats, FragmentStats, VectorStoreError, VectorStoreStats,
+  create_vector_store, vector_store_all_vectors, vector_store_batch_insert, vector_store_clear,
+  vector_store_delete, vector_store_fragment_stats, vector_store_has, vector_store_insert,
+  vector_store_location, vector_store_node_id, vector_store_node_vector, vector_store_seal_active,
+  vector_store_stats, vector_store_vector_by_id, vector_store_vector_id, FragmentStats,
+  VectorStoreError, VectorStoreStats,
 };
 pub use types::{
   DistanceMetric, Fragment, FragmentState, IvfConfig, MultiQueryAggregation, PqConfig, RowGroup,

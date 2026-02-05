@@ -4,8 +4,8 @@ use crate::core::single_file::SingleFileDB as RustSingleFileDB;
 use crate::streaming;
 
 use crate::pyo3_bindings::ops::edges::count_edges_single;
-use crate::pyo3_bindings::ops::nodes::{count_nodes_single, get_node_key_single};
-use crate::pyo3_bindings::ops::properties::{get_edge_props_single, get_node_props_single};
+use crate::pyo3_bindings::ops::nodes::{count_nodes_single, node_key_single};
+use crate::pyo3_bindings::ops::properties::{edge_props_single, node_props_single};
 use crate::pyo3_bindings::types::{EdgePage, EdgeWithProps, FullEdge, NodePage, NodeWithProps};
 
 /// Trait for streaming operations
@@ -15,9 +15,9 @@ pub trait StreamingOps {
   /// Stream edges in batches
   fn stream_edges_impl(&self, options: streaming::StreamOptions) -> Vec<Vec<FullEdge>>;
   /// Get a page of node IDs
-  fn get_nodes_page_impl(&self, options: streaming::PaginationOptions) -> NodePage;
+  fn nodes_page_impl(&self, options: streaming::PaginationOptions) -> NodePage;
   /// Get a page of edges
-  fn get_edges_page_impl(&self, options: streaming::PaginationOptions) -> EdgePage;
+  fn edges_page_impl(&self, options: streaming::PaginationOptions) -> EdgePage;
 }
 
 // ============================================================================
@@ -45,8 +45,8 @@ pub fn stream_nodes_with_props_single(
       batch
         .into_iter()
         .map(|node_id| {
-          let key = get_node_key_single(db, node_id);
-          let props = get_node_props_single(db, node_id).unwrap_or_default();
+          let key = node_key_single(db, node_id);
+          let props = node_props_single(db, node_id).unwrap_or_default();
           NodeWithProps {
             id: node_id as i64,
             key,
@@ -88,7 +88,7 @@ pub fn stream_edges_with_props_single(
       batch
         .into_iter()
         .map(|edge| {
-          let props = get_edge_props_single(db, edge.src, edge.etype, edge.dst).unwrap_or_default();
+          let props = edge_props_single(db, edge.src, edge.etype, edge.dst).unwrap_or_default();
           EdgeWithProps {
             src: edge.src as i64,
             etype: edge.etype,

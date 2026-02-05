@@ -8,6 +8,8 @@ use crate::core::wal::record::{
 use crate::error::{KiteError, Result};
 use crate::types::*;
 use parking_lot::Mutex;
+use std::marker::PhantomData;
+use std::rc::Rc;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,6 +18,53 @@ use std::time::Instant;
 
 use super::open::SyncMode;
 use super::{SingleFileDB, SingleFileTxState};
+
+/// RAII transaction guard for SingleFileDB.
+/// Rolls back the transaction on drop unless committed or rolled back.
+pub struct SingleFileTxGuard<'db> {
+  db: &'db SingleFileDB,
+  txid: TxId,
+  active: bool,
+  _nosend: PhantomData<Rc<()>>,
+}
+
+impl<'db> SingleFileTxGuard<'db> {
+  fn new(db: &'db SingleFileDB, txid: TxId) -> Self {
+    Self {
+      db,
+      txid,
+      active: true,
+      _nosend: PhantomData,
+    }
+  }
+
+  pub fn txid(&self) -> TxId {
+    self.txid
+  }
+
+  pub fn commit(mut self) -> Result<()> {
+    self.active = false;
+    self.db.commit()
+  }
+
+  pub fn rollback(mut self) -> Result<()> {
+    self.active = false;
+    self.db.rollback()
+  }
+}
+
+impl Drop for SingleFileTxGuard<'_> {
+  fn drop(&mut self) {
+    if !self.active {
+      return;
+    }
+    self.active = false;
+    if self.db.current_txid() != Some(self.txid) {
+      return;
+    }
+    let _ = self.db.rollback();
+  }
+}
 
 impl SingleFileDB {
   fn begin_with_mode(&self, read_only: bool, bulk_load: bool) -> Result<TxId> {
@@ -97,9 +146,21 @@ impl SingleFileDB {
     self.begin_with_mode(read_only, false)
   }
 
+  /// Begin a new transaction guard (rolls back on drop)
+  pub fn begin_guard(&self, read_only: bool) -> Result<SingleFileTxGuard<'_>> {
+    let txid = self.begin_with_mode(read_only, false)?;
+    Ok(SingleFileTxGuard::new(self, txid))
+  }
+
   /// Begin a bulk-load transaction (fast path, MVCC disabled)
   pub fn begin_bulk(&self) -> Result<TxId> {
     self.begin_with_mode(false, true)
+  }
+
+  /// Begin a bulk-load transaction guard (rolls back on drop)
+  pub fn begin_bulk_guard(&self) -> Result<SingleFileTxGuard<'_>> {
+    let txid = self.begin_with_mode(false, true)?;
+    Ok(SingleFileTxGuard::new(self, txid))
   }
 
   fn apply_mvcc_commit(
@@ -690,4 +751,34 @@ fn merge_pending_delta(target: &mut DeltaState, mut pending: DeltaState) {
   target
     .key_index_deleted
     .extend(pending.key_index_deleted.drain());
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::core::single_file::{close_single_file, open_single_file, SingleFileOpenOptions};
+  use std::panic::{catch_unwind, AssertUnwindSafe};
+  use tempfile::tempdir;
+
+  #[test]
+  fn tx_guard_rolls_back_on_drop() -> Result<()> {
+    let temp_dir = tempdir()?;
+    let db_path = temp_dir.path().join("tx-guard.kitedb");
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new())?;
+
+    let result = catch_unwind(AssertUnwindSafe(|| {
+      let _tx = db.begin_guard(false).expect("expected value");
+      db.create_node(Some("guarded")).expect("expected value");
+      panic!("boom");
+    }));
+
+    assert!(result.is_err());
+    assert!(!db.has_transaction());
+
+    db.begin(false)?;
+    db.commit()?;
+    close_single_file(db)?;
+
+    Ok(())
+  }
 }

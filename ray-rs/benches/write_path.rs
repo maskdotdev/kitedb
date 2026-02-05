@@ -149,12 +149,12 @@ fn bench_write_concurrent_variant(
       move |bencher, &num_threads| {
         bencher.iter_batched(
           || {
-            let temp_dir = tempdir().unwrap();
+            let temp_dir = tempdir().expect("expected value");
             let kite = Kite::open(
               temp_db_path(&temp_dir),
               create_write_schema(group_commit, None, None),
             )
-            .unwrap();
+            .expect("expected value");
             let kite = Arc::new(parking_lot::RwLock::new(kite));
             (temp_dir, kite)
           },
@@ -175,7 +175,7 @@ fn bench_write_concurrent_variant(
                     for _ in 0..ops_per_thread {
                       let idx = counter.fetch_add(1, Ordering::SeqCst) as usize;
                       let mut guard = kite.write();
-                      create_user_with_retry(&mut guard, idx).unwrap();
+                      create_user_with_retry(&mut guard, idx).expect("expected value");
                     }
                   }
                   LockMode::Batched => {
@@ -184,7 +184,8 @@ fn bench_write_concurrent_variant(
                       let batch = (ops_per_thread - i).min(100);
                       let start = counter.fetch_add(batch as u64, Ordering::SeqCst) as usize;
                       let mut guard = kite.write();
-                      create_users_batched_with_retry(&mut guard, start, batch).unwrap();
+                      create_users_batched_with_retry(&mut guard, start, batch)
+                        .expect("expected value");
                       i += batch;
                     }
                   }
@@ -193,7 +194,7 @@ fn bench_write_concurrent_variant(
             }
 
             for handle in handles {
-              handle.join().unwrap();
+              handle.join().expect("expected value");
             }
 
             #[cfg(feature = "bench-profile")]
@@ -207,7 +208,7 @@ fn bench_write_concurrent_variant(
 
             if let Ok(lock) = Arc::try_unwrap(kite) {
               let kite = lock.into_inner();
-              kite.close().unwrap();
+              kite.close().expect("expected value");
             }
           },
           BatchSize::SmallInput,
@@ -233,21 +234,21 @@ fn bench_write_single(c: &mut Criterion) {
         move |bencher, &count| {
           bencher.iter_batched(
             || {
-              let temp_dir = tempdir().unwrap();
+              let temp_dir = tempdir().expect("expected value");
               let kite = Kite::open(
                 temp_db_path(&temp_dir),
                 create_write_schema(group_commit, None, None),
               )
-              .unwrap();
+              .expect("expected value");
               (temp_dir, kite)
             },
             |(_temp_dir, mut kite)| {
               for i in 0..count {
-                create_user_with_retry(&mut kite, i).unwrap();
+                create_user_with_retry(&mut kite, i).expect("expected value");
               }
               #[cfg(feature = "bench-profile")]
               maybe_log_profile(&kite, &format!("single count={count} gc={group_commit}"));
-              kite.close().unwrap();
+              kite.close().expect("expected value");
               black_box(());
             },
             BatchSize::SmallInput,
@@ -276,19 +277,19 @@ fn bench_write_batch_tx(c: &mut Criterion) {
           move |bencher, &total_ops| {
             bencher.iter_batched(
               || {
-                let temp_dir = tempdir().unwrap();
+                let temp_dir = tempdir().expect("expected value");
                 let kite = Kite::open(
                   temp_db_path(&temp_dir),
                   create_write_schema(group_commit, None, None),
                 )
-                .unwrap();
+                .expect("expected value");
                 (temp_dir, kite)
               },
               |(_temp_dir, mut kite)| {
                 let mut start = 0usize;
                 while start < total_ops {
                   let count = (total_ops - start).min(batch_size);
-                  create_users_batched_with_retry(&mut kite, start, count).unwrap();
+                  create_users_batched_with_retry(&mut kite, start, count).expect("expected value");
                   start += count;
                 }
                 #[cfg(feature = "bench-profile")]
@@ -296,7 +297,7 @@ fn bench_write_batch_tx(c: &mut Criterion) {
                   &kite,
                   &format!("batch total={total_ops} batch_size={batch_size} gc={group_commit}"),
                 );
-                kite.close().unwrap();
+                kite.close().expect("expected value");
                 black_box(());
               },
               BatchSize::SmallInput,
@@ -329,19 +330,19 @@ fn bench_write_batch_tx_wal_sweep(c: &mut Criterion) {
         move |bencher, &total_ops| {
           bencher.iter_batched(
             || {
-              let temp_dir = tempdir().unwrap();
+              let temp_dir = tempdir().expect("expected value");
               let kite = Kite::open(
                 temp_db_path(&temp_dir),
                 create_write_schema(false, Some(wal_mb), Some(threshold)),
               )
-              .unwrap();
+              .expect("expected value");
               (temp_dir, kite)
             },
             |(_temp_dir, mut kite)| {
               let mut start = 0usize;
               while start < total_ops {
                 let count = (total_ops - start).min(batch_size);
-                create_users_batched_with_retry(&mut kite, start, count).unwrap();
+                create_users_batched_with_retry(&mut kite, start, count).expect("expected value");
                 start += count;
               }
               #[cfg(feature = "bench-profile")]
@@ -351,7 +352,7 @@ fn bench_write_batch_tx_wal_sweep(c: &mut Criterion) {
                   "wal_sweep total={total_ops} batch_size={batch_size} wal_mb={wal_mb} thr={threshold}"
                 ),
               );
-              kite.close().unwrap();
+              kite.close().expect("expected value");
               black_box(());
             },
             BatchSize::SmallInput,

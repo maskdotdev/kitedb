@@ -10,8 +10,8 @@ use std::sync::Arc;
 use crate::cache::lru::LruCache;
 use crate::types::NodeId;
 use crate::vector::{
-  create_vector_store, vector_store_clear, vector_store_delete, vector_store_get,
-  vector_store_insert, vector_store_stats, DistanceMetric, IvfConfig, IvfError, IvfIndex,
+  create_vector_store, vector_store_clear, vector_store_delete, vector_store_insert,
+  vector_store_node_vector, vector_store_stats, DistanceMetric, IvfConfig, IvfError, IvfIndex,
   SearchOptions, VectorManifest, VectorSearchResult, VectorStoreConfig,
 };
 
@@ -318,7 +318,7 @@ impl VectorIndex {
     if let Some(&existing_vector_id) = self.manifest.node_to_vector.get(&node_id) {
       if let Some(ref mut index) = self.index {
         if index.trained {
-          if let Some(existing_vector) = vector_store_get(&self.manifest, node_id) {
+          if let Some(existing_vector) = vector_store_node_vector(&self.manifest, node_id) {
             index.delete(existing_vector_id, existing_vector);
           }
         }
@@ -336,7 +336,7 @@ impl VectorIndex {
     // Add to index if trained, otherwise mark for training
     if let Some(ref mut index) = self.index {
       if index.trained {
-        if let Some(stored_vector) = vector_store_get(&self.manifest, node_id) {
+        if let Some(stored_vector) = vector_store_node_vector(&self.manifest, node_id) {
           if let Err(err) = index.insert(vector_id as u64, stored_vector) {
             self.index = None;
             self.needs_training = true;
@@ -355,7 +355,7 @@ impl VectorIndex {
 
   /// Get the vector for a node (if any)
   pub fn get(&self, node_id: NodeId) -> Option<Vec<f32>> {
-    vector_store_get(&self.manifest, node_id).map(|s| s.to_vec())
+    vector_store_node_vector(&self.manifest, node_id).map(|s| s.to_vec())
   }
 
   /// Delete the vector for a node
@@ -371,7 +371,7 @@ impl VectorIndex {
     if let Some(ref mut index) = self.index {
       if index.trained {
         if let Some(&vector_id) = self.manifest.node_to_vector.get(&node_id) {
-          if let Some(vector) = vector_store_get(&self.manifest, node_id) {
+          if let Some(vector) = vector_store_node_vector(&self.manifest, node_id) {
             index.delete(vector_id, vector);
           }
         }
@@ -432,7 +432,7 @@ impl VectorIndex {
     let mut vector_ids = Vec::with_capacity(live_vectors);
 
     for (&node_id, &vector_id) in &self.manifest.node_to_vector {
-      if let Some(vector) = vector_store_get(&self.manifest, node_id) {
+      if let Some(vector) = vector_store_node_vector(&self.manifest, node_id) {
         training_data.extend_from_slice(vector);
         vector_ids.push(vector_id);
       }
@@ -558,7 +558,7 @@ impl VectorIndex {
     let mut candidates: Vec<VectorSearchResult> = Vec::new();
 
     for (&node_id, &vector_id) in &self.manifest.node_to_vector {
-      if let Some(vector) = vector_store_get(&self.manifest, node_id) {
+      if let Some(vector) = vector_store_node_vector(&self.manifest, node_id) {
         let distance = match metric {
           DistanceMetric::Cosine => cosine_distance(query_for_search, vector),
           DistanceMetric::Euclidean => euclidean_distance(query_for_search, vector),
@@ -618,7 +618,7 @@ impl VectorIndex {
         }
       }
 
-      if let Some(vector) = vector_store_get(&self.manifest, node_id) {
+      if let Some(vector) = vector_store_node_vector(&self.manifest, node_id) {
         let distance = match metric {
           DistanceMetric::Cosine => cosine_distance(query_for_search, vector),
           DistanceMetric::Euclidean => euclidean_distance(query_for_search, vector),
@@ -833,12 +833,12 @@ mod tests {
     let mut index = VectorIndex::new(VectorIndexOptions::new(4));
 
     let vector = vec![1.0, 0.0, 0.0, 0.0];
-    index.set(1, &vector).unwrap();
+    index.set(1, &vector).expect("expected value");
 
     assert!(index.has(1));
     assert!(!index.has(2));
 
-    let retrieved = index.get(1).unwrap();
+    let retrieved = index.get(1).expect("expected value");
     // Note: may be normalized if cosine metric
     assert_eq!(retrieved.len(), 4);
   }
@@ -848,10 +848,10 @@ mod tests {
     let mut index = VectorIndex::new(VectorIndexOptions::new(4));
 
     let vector = vec![1.0, 0.0, 0.0, 0.0];
-    index.set(1, &vector).unwrap();
+    index.set(1, &vector).expect("expected value");
 
     assert!(index.has(1));
-    let deleted = index.delete(1).unwrap();
+    let deleted = index.delete(1).expect("expected value");
     assert!(deleted);
     assert!(!index.has(1));
   }
@@ -885,8 +885,8 @@ mod tests {
   fn test_vector_index_clear() {
     let mut index = VectorIndex::new(VectorIndexOptions::new(4));
 
-    index.set(1, &[1.0, 0.0, 0.0, 0.0]).unwrap();
-    index.set(2, &[0.0, 1.0, 0.0, 0.0]).unwrap();
+    index.set(1, &[1.0, 0.0, 0.0, 0.0]).expect("expected value");
+    index.set(2, &[0.0, 1.0, 0.0, 0.0]).expect("expected value");
 
     assert_eq!(index.len(), 2);
 
@@ -900,8 +900,8 @@ mod tests {
   fn test_vector_index_stats() {
     let mut index = VectorIndex::new(VectorIndexOptions::new(4));
 
-    index.set(1, &[1.0, 0.0, 0.0, 0.0]).unwrap();
-    index.set(2, &[0.0, 1.0, 0.0, 0.0]).unwrap();
+    index.set(1, &[1.0, 0.0, 0.0, 0.0]).expect("expected value");
+    index.set(2, &[0.0, 1.0, 0.0, 0.0]).expect("expected value");
 
     let stats = index.stats();
     assert_eq!(stats.dimensions, 4);
@@ -916,13 +916,17 @@ mod tests {
     );
 
     // Insert some vectors
-    index.set(1, &[1.0, 0.0, 0.0, 0.0]).unwrap();
-    index.set(2, &[0.0, 1.0, 0.0, 0.0]).unwrap();
-    index.set(3, &[0.707, 0.707, 0.0, 0.0]).unwrap();
+    index.set(1, &[1.0, 0.0, 0.0, 0.0]).expect("expected value");
+    index.set(2, &[0.0, 1.0, 0.0, 0.0]).expect("expected value");
+    index
+      .set(3, &[0.707, 0.707, 0.0, 0.0])
+      .expect("expected value");
 
     // Search for vector similar to [1, 0, 0, 0]
     let query = vec![1.0, 0.0, 0.0, 0.0];
-    let results = index.search(&query, SimilarOptions::new(3)).unwrap();
+    let results = index
+      .search(&query, SimilarOptions::new(3))
+      .expect("expected value");
 
     assert!(!results.is_empty());
     // First result should be node 1 (exact match)
@@ -934,13 +938,13 @@ mod tests {
   fn test_search_with_threshold() {
     let mut index = VectorIndex::new(VectorIndexOptions::new(4).with_training_threshold(1000));
 
-    index.set(1, &[1.0, 0.0, 0.0, 0.0]).unwrap();
-    index.set(2, &[0.0, 1.0, 0.0, 0.0]).unwrap(); // Orthogonal
+    index.set(1, &[1.0, 0.0, 0.0, 0.0]).expect("expected value");
+    index.set(2, &[0.0, 1.0, 0.0, 0.0]).expect("expected value"); // Orthogonal
 
     let query = vec![1.0, 0.0, 0.0, 0.0];
     let results = index
       .search(&query, SimilarOptions::new(10).with_threshold(0.5))
-      .unwrap();
+      .expect("expected value");
 
     // Should only return node 1 (high similarity)
     // Node 2 is orthogonal (similarity ~0)
@@ -954,12 +958,18 @@ mod tests {
 
     // Disallowed exact matches - would dominate top-k without filter
     for node_id in 1..=10 {
-      index.set(node_id, &[1.0, 0.0, 0.0, 0.0]).unwrap();
+      index
+        .set(node_id, &[1.0, 0.0, 0.0, 0.0])
+        .expect("expected value");
     }
 
     // Allowed but less-similar
-    index.set(100, &[0.8, 0.6, 0.0, 0.0]).unwrap();
-    index.set(101, &[0.0, 1.0, 0.0, 0.0]).unwrap();
+    index
+      .set(100, &[0.8, 0.6, 0.0, 0.0])
+      .expect("expected value");
+    index
+      .set(101, &[0.0, 1.0, 0.0, 0.0])
+      .expect("expected value");
 
     let query = vec![1.0, 0.0, 0.0, 0.0];
     let results = index
@@ -967,7 +977,7 @@ mod tests {
         &query,
         SimilarOptions::new(1).with_filter(|node_id| node_id >= 100),
       )
-      .unwrap();
+      .expect("expected value");
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].node_id, 100);
@@ -984,12 +994,18 @@ mod tests {
 
     // Disallowed exact matches
     for node_id in 1..=10 {
-      index.set(node_id, &[1.0, 0.0, 0.0, 0.0]).unwrap();
+      index
+        .set(node_id, &[1.0, 0.0, 0.0, 0.0])
+        .expect("expected value");
     }
-    index.set(100, &[0.8, 0.6, 0.0, 0.0]).unwrap();
-    index.set(101, &[0.0, 1.0, 0.0, 0.0]).unwrap();
+    index
+      .set(100, &[0.8, 0.6, 0.0, 0.0])
+      .expect("expected value");
+    index
+      .set(101, &[0.0, 1.0, 0.0, 0.0])
+      .expect("expected value");
 
-    index.build_index().unwrap();
+    index.build_index().expect("expected value");
     let stats = index.stats();
     assert!(stats.index_trained);
     assert_eq!(stats.index_clusters, Some(1));
@@ -1000,7 +1016,7 @@ mod tests {
         &query,
         SimilarOptions::new(1).with_filter(|node_id| node_id >= 100),
       )
-      .unwrap();
+      .expect("expected value");
 
     assert_eq!(results.len(), 1);
     assert_eq!(results[0].node_id, 100);

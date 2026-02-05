@@ -393,7 +393,7 @@ pub fn import_from_object_single(
   let mut skipped = 0usize;
   let mut batch_count = 0usize;
 
-  db.begin(false)?;
+  let mut tx = db.begin_guard(false)?;
   for node in &data.nodes {
     if options.skip_existing {
       if let Some(ref key) = node.key {
@@ -418,19 +418,21 @@ pub fn import_from_object_single(
     batch_count += 1;
 
     if batch_count >= options.batch_size {
-      db.commit()?;
-      db.begin(false)?;
+      tx.commit()?;
+      tx = db.begin_guard(false)?;
       batch_count = 0;
     }
   }
 
   if batch_count > 0 {
-    db.commit()?;
+    tx.commit()?;
+  } else {
+    tx.rollback()?;
   }
 
   let mut edge_count = 0usize;
   let mut batch_count = 0usize;
-  db.begin(false)?;
+  let mut tx = db.begin_guard(false)?;
   for edge in &data.edges {
     let src = match old_to_new.get(&(edge.src as NodeId)) {
       Some(id) => *id,
@@ -452,14 +454,16 @@ pub fn import_from_object_single(
     batch_count += 1;
 
     if batch_count >= options.batch_size {
-      db.commit()?;
-      db.begin(false)?;
+      tx.commit()?;
+      tx = db.begin_guard(false)?;
       batch_count = 0;
     }
   }
 
   if batch_count > 0 {
-    db.commit()?;
+    tx.commit()?;
+  } else {
+    tx.rollback()?;
   }
 
   Ok(ImportResult {

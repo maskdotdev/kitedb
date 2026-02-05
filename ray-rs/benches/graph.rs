@@ -103,14 +103,14 @@ fn build_code_graph_fixture(
   for i in 0..file_count {
     let file = ray
       .create_node("File", &format!("file{i}"), HashMap::new())
-      .unwrap();
+      .expect("expected value");
     file_ids.push(file.id());
 
     let mut chunks = Vec::with_capacity(chunks_per_file);
     for c in 0..chunks_per_file {
       let chunk = ray
         .create_node("Chunk", &format!("file{i}:chunk{c}"), HashMap::new())
-        .unwrap();
+        .expect("expected value");
       chunks.push(chunk.id());
     }
     chunk_ids.push(chunks);
@@ -119,7 +119,7 @@ fn build_code_graph_fixture(
     for s in 0..symbols_per_file {
       let symbol = ray
         .create_node("Symbol", &format!("file{i}:sym{s}"), HashMap::new())
-        .unwrap();
+        .expect("expected value");
       symbols.push(symbol.id());
     }
     symbol_ids.push(symbols);
@@ -205,7 +205,7 @@ fn apply_code_graph_edges_batched(ray: &mut Kite, fixture: &CodeGraphFixture, ba
   let flush = |ray: &mut Kite, ops: &mut Vec<BatchOp>| {
     if !ops.is_empty() {
       let pending = std::mem::take(ops);
-      ray.batch(pending).unwrap();
+      ray.batch(pending).expect("expected value");
     }
   };
 
@@ -287,8 +287,9 @@ fn bench_create_node(c: &mut Criterion) {
       |bencher, &count| {
         bencher.iter_with_setup(
           || {
-            let temp_dir = tempdir().unwrap();
-            let ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
+            let temp_dir = tempdir().expect("expected value");
+            let ray =
+              Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
             (temp_dir, ray)
           },
           |(_temp_dir, mut ray)| {
@@ -311,14 +312,16 @@ fn bench_get_node_by_key(c: &mut Criterion) {
   let mut group = c.benchmark_group("node_get_by_key");
 
   // Setup: Create database with nodes
-  let temp_dir = tempdir().unwrap();
-  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
+  let temp_dir = tempdir().expect("expected value");
+  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
 
   // Create 1000 nodes (smaller for faster setup)
   for i in 0..1000 {
     let mut props = HashMap::new();
     props.insert("name".to_string(), PropValue::String(format!("User{i}")));
-    ray.create_node("User", &format!("user{i}"), props).unwrap();
+    ray
+      .create_node("User", &format!("user{i}"), props)
+      .expect("expected value");
   }
 
   group.bench_function("get_existing", |bencher| {
@@ -337,19 +340,21 @@ fn bench_get_node_by_key(c: &mut Criterion) {
   });
 
   group.finish();
-  ray.close().unwrap();
+  ray.close().expect("expected value");
 }
 
 fn bench_get_node_by_key_micro(c: &mut Criterion) {
   let mut group = c.benchmark_group("node_get_by_key_micro");
 
-  let temp_dir = tempdir().unwrap();
-  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
+  let temp_dir = tempdir().expect("expected value");
+  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
 
   let mut keys = Vec::with_capacity(1000);
   for i in 0..1000 {
     let key = format!("user{i}");
-    ray.create_node("User", &key, HashMap::new()).unwrap();
+    ray
+      .create_node("User", &key, HashMap::new())
+      .expect("expected value");
     keys.push(key);
   }
 
@@ -369,21 +374,21 @@ fn bench_get_node_by_key_micro(c: &mut Criterion) {
   });
 
   group.finish();
-  ray.close().unwrap();
+  ray.close().expect("expected value");
 }
 
 fn bench_node_exists(c: &mut Criterion) {
   let mut group = c.benchmark_group("node_exists");
 
-  let temp_dir = tempdir().unwrap();
-  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
+  let temp_dir = tempdir().expect("expected value");
+  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
 
   // Create nodes and store IDs
   let mut node_ids = Vec::new();
   for i in 0..1000 {
     let node = ray
       .create_node("User", &format!("user{i}"), HashMap::new())
-      .unwrap();
+      .expect("expected value");
     node_ids.push(node.id());
   }
 
@@ -403,7 +408,7 @@ fn bench_node_exists(c: &mut Criterion) {
   });
 
   group.finish();
-  ray.close().unwrap();
+  ray.close().expect("expected value");
 }
 
 // =============================================================================
@@ -423,8 +428,9 @@ fn bench_link(c: &mut Criterion) {
       |bencher, &edge_count| {
         bencher.iter_with_setup(
           || {
-            let temp_dir = tempdir().unwrap();
-            let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
+            let temp_dir = tempdir().expect("expected value");
+            let mut ray =
+              Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
 
             // Create nodes first
             let node_count = ((edge_count as f64).sqrt() as usize).max(10);
@@ -432,7 +438,7 @@ fn bench_link(c: &mut Criterion) {
             for i in 0..node_count {
               let node = ray
                 .create_node("User", &format!("user{i}"), HashMap::new())
-                .unwrap();
+                .expect("expected value");
               node_ids.push(node.id());
             }
 
@@ -459,21 +465,23 @@ fn bench_link(c: &mut Criterion) {
 fn bench_has_edge(c: &mut Criterion) {
   let mut group = c.benchmark_group("edge_has_edge");
 
-  let temp_dir = tempdir().unwrap();
-  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
+  let temp_dir = tempdir().expect("expected value");
+  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
 
   // Create nodes and edges
   let mut node_ids = Vec::new();
   for i in 0..100 {
     let node = ray
       .create_node("User", &format!("user{i}"), HashMap::new())
-      .unwrap();
+      .expect("expected value");
     node_ids.push(node.id());
   }
 
   // Create edges in a chain
   for i in 0..99 {
-    ray.link(node_ids[i], "FOLLOWS", node_ids[i + 1]).unwrap();
+    ray
+      .link(node_ids[i], "FOLLOWS", node_ids[i + 1])
+      .expect("expected value");
   }
 
   group.bench_function("has_edge_true", |bencher| {
@@ -498,7 +506,7 @@ fn bench_has_edge(c: &mut Criterion) {
   });
 
   group.finish();
-  ray.close().unwrap();
+  ray.close().expect("expected value");
 }
 
 // =============================================================================
@@ -518,15 +526,16 @@ fn bench_set_edge_prop(c: &mut Criterion) {
       |bencher, &edge_count| {
         bencher.iter_with_setup(
           || {
-            let temp_dir = tempdir().unwrap();
-            let mut ray = Kite::open(temp_db_path(&temp_dir), create_edge_prop_schema()).unwrap();
+            let temp_dir = tempdir().expect("expected value");
+            let mut ray = Kite::open(temp_db_path(&temp_dir), create_edge_prop_schema())
+              .expect("expected value");
 
             let node_count = ((edge_count as f64).sqrt() as usize).max(10);
             let mut node_ids = Vec::new();
             for i in 0..node_count {
               let node = ray
                 .create_node("User", &format!("user{i}"), HashMap::new())
-                .unwrap();
+                .expect("expected value");
               node_ids.push(node.id());
             }
 
@@ -559,8 +568,9 @@ fn bench_set_edge_prop(c: &mut Criterion) {
 fn bench_get_edge_prop(c: &mut Criterion) {
   let mut group = c.benchmark_group("edge_prop_get");
 
-  let temp_dir = tempdir().unwrap();
-  let mut ray = Kite::open(temp_db_path(&temp_dir), create_edge_prop_schema()).unwrap();
+  let temp_dir = tempdir().expect("expected value");
+  let mut ray =
+    Kite::open(temp_db_path(&temp_dir), create_edge_prop_schema()).expect("expected value");
 
   let edge_count = 1000usize;
   let node_count = (edge_count as f64).sqrt() as usize;
@@ -568,7 +578,7 @@ fn bench_get_edge_prop(c: &mut Criterion) {
   for i in 0..node_count {
     let node = ray
       .create_node("User", &format!("user{i}"), HashMap::new())
-      .unwrap();
+      .expect("expected value");
     node_ids.push(node.id());
   }
 
@@ -594,7 +604,7 @@ fn bench_get_edge_prop(c: &mut Criterion) {
   });
 
   group.finish();
-  ray.close().unwrap();
+  ray.close().expect("expected value");
 }
 
 fn bench_edge_prop_codegraph_write(c: &mut Criterion) {
@@ -604,8 +614,9 @@ fn bench_edge_prop_codegraph_write(c: &mut Criterion) {
   group.bench_function("write", |bencher| {
     bencher.iter_with_setup(
       || {
-        let temp_dir = tempdir().unwrap();
-        let mut ray = Kite::open(temp_db_path(&temp_dir), create_code_graph_schema()).unwrap();
+        let temp_dir = tempdir().expect("expected value");
+        let mut ray =
+          Kite::open(temp_db_path(&temp_dir), create_code_graph_schema()).expect("expected value");
         let file_count = env::var("KITE_BENCH_FILES")
           .ok()
           .and_then(|v| v.parse().ok())
@@ -662,8 +673,9 @@ fn bench_edge_prop_codegraph_write_batched(c: &mut Criterion) {
   group.bench_function("write_batched", |bencher| {
     bencher.iter_with_setup(
       || {
-        let temp_dir = tempdir().unwrap();
-        let mut ray = Kite::open(temp_db_path(&temp_dir), create_code_graph_schema()).unwrap();
+        let temp_dir = tempdir().expect("expected value");
+        let mut ray =
+          Kite::open(temp_db_path(&temp_dir), create_code_graph_schema()).expect("expected value");
         let file_count = env::var("KITE_BENCH_FILES")
           .ok()
           .and_then(|v| v.parse().ok())
@@ -711,8 +723,9 @@ fn bench_edge_prop_codegraph_write_batched(c: &mut Criterion) {
 fn bench_edge_prop_codegraph_read(c: &mut Criterion) {
   let mut group = c.benchmark_group("edge_prop_codegraph_read");
 
-  let temp_dir = tempdir().unwrap();
-  let mut ray = Kite::open(temp_db_path(&temp_dir), create_code_graph_schema()).unwrap();
+  let temp_dir = tempdir().expect("expected value");
+  let mut ray =
+    Kite::open(temp_db_path(&temp_dir), create_code_graph_schema()).expect("expected value");
   let file_count = env::var("KITE_BENCH_FILES")
     .ok()
     .and_then(|v| v.parse().ok())
@@ -759,7 +772,7 @@ fn bench_edge_prop_codegraph_read(c: &mut Criterion) {
   });
 
   group.finish();
-  ray.close().unwrap();
+  ray.close().expect("expected value");
 }
 // =============================================================================
 // Traversal Benchmarks
@@ -769,21 +782,23 @@ fn bench_neighbors_out(c: &mut Criterion) {
   let mut group = c.benchmark_group("traversal_neighbors_out");
 
   // Create a graph with varying out-degrees (smaller for faster setup)
-  let temp_dir = tempdir().unwrap();
-  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
+  let temp_dir = tempdir().expect("expected value");
+  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
 
   let mut node_ids = Vec::new();
   for i in 0..100 {
     let node = ray
       .create_node("User", &format!("user{i}"), HashMap::new())
-      .unwrap();
+      .expect("expected value");
     node_ids.push(node.id());
   }
 
   // Create edges: each node follows the next 10 nodes
   for i in 0..90 {
     for j in 1..=10 {
-      ray.link(node_ids[i], "FOLLOWS", node_ids[i + j]).unwrap();
+      ray
+        .link(node_ids[i], "FOLLOWS", node_ids[i + j])
+        .expect("expected value");
     }
   }
 
@@ -797,7 +812,7 @@ fn bench_neighbors_out(c: &mut Criterion) {
   });
 
   group.finish();
-  ray.close().unwrap();
+  ray.close().expect("expected value");
 }
 
 fn bench_edge_prop_codegraph_props_only(c: &mut Criterion) {
@@ -832,8 +847,9 @@ fn bench_edge_prop_codegraph_props_only(c: &mut Criterion) {
   group.bench_function("set_props", |bencher| {
     bencher.iter_with_setup(
       || {
-        let temp_dir = tempdir().unwrap();
-        let mut ray = Kite::open(temp_db_path(&temp_dir), create_code_graph_schema()).unwrap();
+        let temp_dir = tempdir().expect("expected value");
+        let mut ray =
+          Kite::open(temp_db_path(&temp_dir), create_code_graph_schema()).expect("expected value");
 
         let fixture = build_code_graph_fixture(
           &mut ray,
@@ -888,27 +904,33 @@ fn bench_edge_prop_codegraph_props_only(c: &mut Criterion) {
 fn bench_multi_hop_traversal(c: &mut Criterion) {
   let mut group = c.benchmark_group("traversal_multi_hop");
 
-  let temp_dir = tempdir().unwrap();
-  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
+  let temp_dir = tempdir().expect("expected value");
+  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
 
   // Create a chain of 100 nodes (smaller for faster setup)
   let mut node_ids = Vec::new();
   for i in 0..100 {
     let node = ray
       .create_node("User", &format!("user{i}"), HashMap::new())
-      .unwrap();
+      .expect("expected value");
     node_ids.push(node.id());
   }
 
   // Linear chain
   for i in 0..99 {
-    ray.link(node_ids[i], "FOLLOWS", node_ids[i + 1]).unwrap();
+    ray
+      .link(node_ids[i], "FOLLOWS", node_ids[i + 1])
+      .expect("expected value");
   }
 
   // Benchmark single hop repeatedly (simulating multi-hop with manual iteration)
   group.bench_function("single_hop", |bencher| {
     bencher.iter(|| {
-      let result = ray.from(node_ids[0]).out(Some("FOLLOWS")).unwrap().to_vec();
+      let result = ray
+        .from(node_ids[0])
+        .out(Some("FOLLOWS"))
+        .expect("expected value")
+        .to_vec();
       black_box(result)
     });
   });
@@ -919,9 +941,9 @@ fn bench_multi_hop_traversal(c: &mut Criterion) {
       let result = ray
         .from(node_ids[0])
         .out(Some("FOLLOWS"))
-        .unwrap()
+        .expect("expected value")
         .out(Some("FOLLOWS"))
-        .unwrap()
+        .expect("expected value")
         .to_vec();
       black_box(result)
     });
@@ -933,18 +955,18 @@ fn bench_multi_hop_traversal(c: &mut Criterion) {
       let result = ray
         .from(node_ids[0])
         .out(Some("FOLLOWS"))
-        .unwrap()
+        .expect("expected value")
         .out(Some("FOLLOWS"))
-        .unwrap()
+        .expect("expected value")
         .out(Some("FOLLOWS"))
-        .unwrap()
+        .expect("expected value")
         .to_vec();
       black_box(result)
     });
   });
 
   group.finish();
-  ray.close().unwrap();
+  ray.close().expect("expected value");
 }
 
 // =============================================================================
@@ -954,8 +976,8 @@ fn bench_multi_hop_traversal(c: &mut Criterion) {
 fn bench_get_prop(c: &mut Criterion) {
   let mut group = c.benchmark_group("property_get");
 
-  let temp_dir = tempdir().unwrap();
-  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
+  let temp_dir = tempdir().expect("expected value");
+  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
 
   // Create nodes with properties (smaller for faster setup)
   let mut node_ids = Vec::new();
@@ -963,7 +985,9 @@ fn bench_get_prop(c: &mut Criterion) {
     let mut props = HashMap::new();
     props.insert("name".to_string(), PropValue::String(format!("User{i}")));
     props.insert("age".to_string(), PropValue::I64(i as i64));
-    let node = ray.create_node("User", &format!("user{i}"), props).unwrap();
+    let node = ray
+      .create_node("User", &format!("user{i}"), props)
+      .expect("expected value");
     node_ids.push(node.id());
   }
 
@@ -986,7 +1010,7 @@ fn bench_get_prop(c: &mut Criterion) {
   });
 
   group.finish();
-  ray.close().unwrap();
+  ray.close().expect("expected value");
 }
 
 fn bench_set_prop(c: &mut Criterion) {
@@ -995,9 +1019,12 @@ fn bench_set_prop(c: &mut Criterion) {
   group.bench_function("set_string", |bencher| {
     bencher.iter_with_setup(
       || {
-        let temp_dir = tempdir().unwrap();
-        let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
-        let node = ray.create_node("User", "testuser", HashMap::new()).unwrap();
+        let temp_dir = tempdir().expect("expected value");
+        let mut ray =
+          Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
+        let node = ray
+          .create_node("User", "testuser", HashMap::new())
+          .expect("expected value");
         (temp_dir, ray, node.id())
       },
       |(_temp_dir, mut ray, node_id)| {
@@ -1017,9 +1044,12 @@ fn bench_set_prop_tx(c: &mut Criterion) {
   group.bench_function("set_string_tx_100", |bencher| {
     bencher.iter_with_setup(
       || {
-        let temp_dir = tempdir().unwrap();
-        let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
-        let node = ray.create_node("User", "testuser", HashMap::new()).unwrap();
+        let temp_dir = tempdir().expect("expected value");
+        let mut ray =
+          Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
+        let node = ray
+          .create_node("User", "testuser", HashMap::new())
+          .expect("expected value");
         (temp_dir, ray, node.id())
       },
       |(_temp_dir, mut ray, node_id)| {
@@ -1043,8 +1073,8 @@ fn bench_set_prop_tx(c: &mut Criterion) {
 fn bench_shortest_path(c: &mut Criterion) {
   let mut group = c.benchmark_group("pathfinding_shortest");
 
-  let temp_dir = tempdir().unwrap();
-  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
+  let temp_dir = tempdir().expect("expected value");
+  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
 
   // Create a grid-like graph (10x10 = 100 nodes)
   let grid_size = 10;
@@ -1052,7 +1082,7 @@ fn bench_shortest_path(c: &mut Criterion) {
   for i in 0..(grid_size * grid_size) {
     let node = ray
       .create_node("User", &format!("user{i}"), HashMap::new())
-      .unwrap();
+      .expect("expected value");
     node_ids.push(node.id());
   }
 
@@ -1064,13 +1094,13 @@ fn bench_shortest_path(c: &mut Criterion) {
       if col < grid_size - 1 {
         ray
           .link(node_ids[idx], "FOLLOWS", node_ids[idx + 1])
-          .unwrap();
+          .expect("expected value");
       }
       // Down neighbor
       if row < grid_size - 1 {
         ray
           .link(node_ids[idx], "FOLLOWS", node_ids[idx + grid_size])
-          .unwrap();
+          .expect("expected value");
       }
     }
   }
@@ -1084,14 +1114,14 @@ fn bench_shortest_path(c: &mut Criterion) {
       let result = ray
         .shortest_path(start, end)
         .via("FOLLOWS")
-        .unwrap()
+        .expect("expected value")
         .find_bfs();
       black_box(result)
     });
   });
 
   group.finish();
-  ray.close().unwrap();
+  ray.close().expect("expected value");
 }
 
 // =============================================================================
@@ -1101,21 +1131,23 @@ fn bench_shortest_path(c: &mut Criterion) {
 fn bench_count(c: &mut Criterion) {
   let mut group = c.benchmark_group("count");
 
-  let temp_dir = tempdir().unwrap();
-  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
+  let temp_dir = tempdir().expect("expected value");
+  let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
 
   // Create 1000 nodes and 5000 edges (smaller for faster setup)
   let mut node_ids = Vec::new();
   for i in 0..1000 {
     let node = ray
       .create_node("User", &format!("user{i}"), HashMap::new())
-      .unwrap();
+      .expect("expected value");
     node_ids.push(node.id());
   }
 
   for i in 0..995 {
     for j in 1..=5 {
-      ray.link(node_ids[i], "FOLLOWS", node_ids[i + j]).unwrap();
+      ray
+        .link(node_ids[i], "FOLLOWS", node_ids[i + j])
+        .expect("expected value");
     }
   }
 
@@ -1128,7 +1160,7 @@ fn bench_count(c: &mut Criterion) {
   });
 
   group.finish();
-  ray.close().unwrap();
+  ray.close().expect("expected value");
 }
 
 fn bench_batch_create_node(c: &mut Criterion) {
@@ -1142,8 +1174,9 @@ fn bench_batch_create_node(c: &mut Criterion) {
       BenchmarkId::new("count", count),
       count,
       |bencher, &count| {
-        let temp_dir = tempdir().unwrap();
-        let mut ray = Kite::open(temp_db_path(&temp_dir), create_test_schema()).unwrap();
+        let temp_dir = tempdir().expect("expected value");
+        let mut ray =
+          Kite::open(temp_db_path(&temp_dir), create_test_schema()).expect("expected value");
         let mut batch_num = 0;
 
         bencher.iter(|| {
@@ -1158,7 +1191,7 @@ fn bench_batch_create_node(c: &mut Criterion) {
           let _ = black_box(ray.batch(ops));
         });
 
-        ray.close().unwrap();
+        ray.close().expect("expected value");
       },
     );
   }

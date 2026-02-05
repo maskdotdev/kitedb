@@ -9,8 +9,8 @@ use crate::core::wal::record::{
 use crate::error::{KiteError, Result};
 use crate::types::*;
 use crate::vector::store::{
-  create_vector_store, validate_vector, vector_store_delete, vector_store_get, vector_store_has,
-  vector_store_insert,
+  create_vector_store, validate_vector, vector_store_delete, vector_store_has, vector_store_insert,
+  vector_store_node_vector,
 };
 use crate::vector::types::{VectorManifest, VectorStoreConfig};
 use std::collections::HashMap;
@@ -144,7 +144,7 @@ impl SingleFileDB {
     // Fall back to committed storage
     let stores = self.vector_stores.read();
     let store = stores.get(&prop_key_id)?;
-    vector_store_get(store, node_id).map(Arc::from)
+    vector_store_node_vector(store, node_id).map(Arc::from)
   }
 
   /// Check if a node has a vector embedding
@@ -296,14 +296,14 @@ mod tests {
 
   #[test]
   fn test_set_node_vector_rejects_invalid_vectors() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir.path().join("invalid-vectors.kitedb");
 
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
-    db.begin(false).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
+    db.begin(false).expect("expected value");
 
-    let node_id = db.create_node(None).unwrap();
-    let prop_key_id = db.define_propkey("embedding").unwrap();
+    let node_id = db.create_node(None).expect("expected value");
+    let prop_key_id = db.define_propkey("embedding").expect("expected value");
 
     // All-zero vector should be rejected (would otherwise be silently dropped on commit).
     assert!(db
@@ -315,62 +315,66 @@ mod tests {
       .set_node_vector(node_id, prop_key_id, &[0.1, f32::NAN, 0.3])
       .is_err());
 
-    db.rollback().unwrap();
-    close_single_file(db).unwrap();
+    db.rollback().expect("expected value");
+    close_single_file(db).expect("expected value");
   }
 
   #[test]
   fn test_vector_persistence_across_checkpoint() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir.path().join("vectors.kitedb");
 
     // Create DB and insert a vector
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
-    db.begin(false).unwrap();
-    let node_id = db.create_node(None).unwrap();
-    let prop_key_id = db.define_propkey("embedding").unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
+    db.begin(false).expect("expected value");
+    let node_id = db.create_node(None).expect("expected value");
+    let prop_key_id = db.define_propkey("embedding").expect("expected value");
     db.set_node_vector(node_id, prop_key_id, &[0.1, 0.2, 0.3])
-      .unwrap();
-    db.commit().unwrap();
+      .expect("expected value");
+    db.commit().expect("expected value");
 
     // Force checkpoint to persist snapshot
-    db.checkpoint().unwrap();
-    close_single_file(db).unwrap();
+    db.checkpoint().expect("expected value");
+    close_single_file(db).expect("expected value");
 
     // Reopen and verify vector is restored from snapshot
-    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).unwrap();
-    let vec = db.node_vector(node_id, prop_key_id).unwrap();
+    let db = open_single_file(&db_path, SingleFileOpenOptions::new()).expect("expected value");
+    let vec = db
+      .node_vector(node_id, prop_key_id)
+      .expect("expected value");
     let expected = normalize(&[0.1, 0.2, 0.3]);
     assert_eq!(vec.len(), expected.len());
     for (got, exp) in vec.iter().zip(expected.iter()) {
       assert!((got - exp).abs() < 1e-6);
     }
-    close_single_file(db).unwrap();
+    close_single_file(db).expect("expected value");
   }
 
   #[test]
   fn test_vector_persistence_across_wal_replay() {
-    let temp_dir = tempdir().unwrap();
+    let temp_dir = tempdir().expect("expected value");
     let db_path = temp_dir.path().join("vectors-wal.kitedb");
 
     // Commit without checkpoint; close; reopen; expect WAL replay to restore vectors.
     let options = SingleFileOpenOptions::new().auto_checkpoint(false);
-    let db = open_single_file(&db_path, options.clone()).unwrap();
-    db.begin(false).unwrap();
-    let node_id = db.create_node(None).unwrap();
-    let prop_key_id = db.define_propkey("embedding").unwrap();
+    let db = open_single_file(&db_path, options.clone()).expect("expected value");
+    db.begin(false).expect("expected value");
+    let node_id = db.create_node(None).expect("expected value");
+    let prop_key_id = db.define_propkey("embedding").expect("expected value");
     db.set_node_vector(node_id, prop_key_id, &[0.1, 0.2, 0.3])
-      .unwrap();
-    db.commit().unwrap();
-    close_single_file(db).unwrap();
+      .expect("expected value");
+    db.commit().expect("expected value");
+    close_single_file(db).expect("expected value");
 
-    let db = open_single_file(&db_path, options).unwrap();
-    let vec = db.node_vector(node_id, prop_key_id).unwrap();
+    let db = open_single_file(&db_path, options).expect("expected value");
+    let vec = db
+      .node_vector(node_id, prop_key_id)
+      .expect("expected value");
     let expected = normalize(&[0.1, 0.2, 0.3]);
     assert_eq!(vec.len(), expected.len());
     for (got, exp) in vec.iter().zip(expected.iter()) {
       assert!((got - exp).abs() < 1e-6);
     }
-    close_single_file(db).unwrap();
+    close_single_file(db).expect("expected value");
   }
 }

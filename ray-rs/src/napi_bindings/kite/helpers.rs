@@ -129,7 +129,7 @@ pub(crate) fn node_filter_data(
     None => ("".to_string(), "unknown".to_string()),
   };
 
-  let props = get_node_props_selected(ray, node_id, selected_props);
+  let props = node_props_selected(ray, node_id, selected_props);
 
   NodeFilterData {
     id: node_id,
@@ -208,7 +208,7 @@ pub(crate) fn should_include_prop(selected_props: Option<&HashSet<String>>, name
 }
 
 /// Get node properties with optional selection
-pub(crate) fn get_node_props_selected(
+pub(crate) fn node_props_selected(
   ray: &RustKite,
   node_id: NodeId,
   selected_props: Option<&HashSet<String>>,
@@ -227,8 +227,8 @@ pub(crate) fn get_node_props_selected(
 }
 
 /// Get all node properties
-pub(crate) fn get_node_props(ray: &RustKite, node_id: NodeId) -> HashMap<String, PropValue> {
-  get_node_props_selected(ray, node_id, None)
+pub(crate) fn node_props(ray: &RustKite, node_id: NodeId) -> HashMap<String, PropValue> {
+  node_props_selected(ray, node_id, None)
 }
 
 // =============================================================================
@@ -262,7 +262,7 @@ pub(crate) fn execute_batch_ops(ray: &mut RustKite, ops: Vec<BatchOp>) -> Result
 // =============================================================================
 
 /// Get neighbors for a node in a given direction
-pub(crate) fn get_neighbors(
+pub(crate) fn neighbors(
   db: &SingleFileDB,
   node_id: NodeId,
   direction: TraversalDirection,
@@ -293,8 +293,8 @@ pub(crate) fn get_neighbors(
       }
     }
     TraversalDirection::Both => {
-      edges.extend(get_neighbors(db, node_id, TraversalDirection::Out, etype));
-      edges.extend(get_neighbors(db, node_id, TraversalDirection::In, etype));
+      edges.extend(neighbors(db, node_id, TraversalDirection::Out, etype));
+      edges.extend(neighbors(db, node_id, TraversalDirection::In, etype));
     }
   }
 

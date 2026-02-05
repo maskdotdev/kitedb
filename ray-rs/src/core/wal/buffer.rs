@@ -757,10 +757,10 @@ mod tests {
   use tempfile::NamedTempFile;
 
   fn create_test_pager() -> (FilePager, tempfile::NamedTempFile) {
-    let temp_file = NamedTempFile::new().unwrap();
-    let mut pager = create_pager(temp_file.path(), 4096).unwrap();
+    let temp_file = NamedTempFile::new().expect("expected value");
+    let mut pager = create_pager(temp_file.path(), 4096).expect("expected value");
     // Pre-allocate some pages for WAL
-    pager.allocate_pages(10).unwrap();
+    pager.allocate_pages(10).expect("expected value");
     (pager, temp_file)
   }
 
@@ -777,12 +777,12 @@ mod tests {
     let mut buffer = WalBuffer::new(4096, 1024, 4096);
 
     // Reserve some space
-    let pos = buffer.reserve(100).unwrap();
+    let pos = buffer.reserve(100).expect("expected value");
     assert_eq!(pos, 0);
     assert!(!buffer.is_empty());
 
     // Reserve more
-    let pos2 = buffer.reserve(100).unwrap();
+    let pos2 = buffer.reserve(100).expect("expected value");
     assert!(pos2 > pos);
   }
 
@@ -794,9 +794,9 @@ mod tests {
     let mut buffer = WalBuffer::new(4096, 512, 4096);
 
     // Fill up primary region
-    buffer.reserve(100).unwrap(); // 104 bytes
-    buffer.reserve(100).unwrap(); // 208 bytes
-    buffer.reserve(100).unwrap(); // 312 bytes
+    buffer.reserve(100).expect("expected value"); // 104 bytes
+    buffer.reserve(100).expect("expected value"); // 208 bytes
+    buffer.reserve(100).expect("expected value"); // 312 bytes
 
     // Should fail now (need 104, only ~70 left in primary)
     assert!(buffer.reserve(100).is_none());
@@ -805,7 +805,7 @@ mod tests {
   #[test]
   fn test_wal_buffer_reset() {
     let mut buffer = WalBuffer::new(4096, 1024, 4096);
-    buffer.reserve(500).unwrap();
+    buffer.reserve(500).expect("expected value");
     assert!(!buffer.is_empty());
 
     buffer.reset();
@@ -828,12 +828,14 @@ mod tests {
       build_create_node_payload(100, Some("test_key")),
     );
 
-    let new_head = buffer.write_record(&record, &mut pager).unwrap();
+    let new_head = buffer
+      .write_record(&record, &mut pager)
+      .expect("expected value");
     assert!(new_head > 0);
     assert!(buffer.has_pending_writes());
 
     // Flush to disk
-    buffer.flush(&mut pager).unwrap();
+    buffer.flush(&mut pager).expect("expected value");
     assert!(!buffer.has_pending_writes());
   }
 
@@ -851,14 +853,16 @@ mod tests {
         i,
         build_create_node_payload(100 + i, None),
       );
-      buffer.write_record(&record, &mut pager).unwrap();
+      buffer
+        .write_record(&record, &mut pager)
+        .expect("expected value");
     }
 
     // Flush
-    buffer.flush(&mut pager).unwrap();
+    buffer.flush(&mut pager).expect("expected value");
 
     // Scan records
-    let records = buffer.scan_records(&mut pager).unwrap();
+    let records = buffer.scan_records(&mut pager).expect("expected value");
     assert_eq!(records.len(), 5);
 
     for (i, record) in records.iter().enumerate() {
@@ -870,7 +874,7 @@ mod tests {
   #[test]
   fn test_wal_buffer_stats() {
     let mut buffer = WalBuffer::new(4096, 1024, 4096);
-    buffer.reserve(100).unwrap();
+    buffer.reserve(100).expect("expected value");
 
     let stats = buffer.stats();
     assert_eq!(stats.capacity, 1024);
@@ -883,7 +887,9 @@ mod tests {
     let mut buffer = WalBuffer::new(4096, 4 * 4096, 4096);
 
     let record = WalRecord::new(WalRecordType::Begin, 1, Vec::new());
-    buffer.write_record(&record, &mut pager).unwrap();
+    buffer
+      .write_record(&record, &mut pager)
+      .expect("expected value");
     assert!(buffer.has_pending_writes());
 
     buffer.discard_pending();
@@ -900,8 +906,10 @@ mod tests {
 
     // Write to primary
     let record1 = WalRecord::new(WalRecordType::Begin, 1, Vec::new());
-    buffer.write_record(&record1, &mut pager).unwrap();
-    buffer.flush(&mut pager).unwrap();
+    buffer
+      .write_record(&record1, &mut pager)
+      .expect("expected value");
+    buffer.flush(&mut pager).expect("expected value");
 
     let primary_head_before = buffer.primary_head();
     assert!(primary_head_before > 0);
@@ -912,8 +920,10 @@ mod tests {
 
     // Write to secondary
     let record2 = WalRecord::new(WalRecordType::Begin, 2, Vec::new());
-    buffer.write_record(&record2, &mut pager).unwrap();
-    buffer.flush(&mut pager).unwrap();
+    buffer
+      .write_record(&record2, &mut pager)
+      .expect("expected value");
+    buffer.flush(&mut pager).expect("expected value");
 
     // Primary head should be unchanged
     assert_eq!(buffer.primary_head(), primary_head_before);
@@ -932,8 +942,10 @@ mod tests {
       1,
       build_create_node_payload(100, Some("node1")),
     );
-    buffer.write_record(&record1, &mut pager).unwrap();
-    buffer.flush(&mut pager).unwrap();
+    buffer
+      .write_record(&record1, &mut pager)
+      .expect("expected value");
+    buffer.flush(&mut pager).expect("expected value");
 
     // Switch to secondary and write more
     buffer.switch_to_secondary();
@@ -942,23 +954,27 @@ mod tests {
       2,
       build_create_node_payload(101, Some("node2")),
     );
-    buffer.write_record(&record2, &mut pager).unwrap();
-    buffer.flush(&mut pager).unwrap();
+    buffer
+      .write_record(&record2, &mut pager)
+      .expect("expected value");
+    buffer.flush(&mut pager).expect("expected value");
 
     // Verify both regions have data
     assert!(buffer.primary_head() > 0);
     assert!(buffer.secondary_head() > buffer.secondary_region_start);
 
     // Merge secondary into primary (simulates checkpoint completion)
-    buffer.merge_secondary_into_primary(&mut pager).unwrap();
-    buffer.flush(&mut pager).unwrap();
+    buffer
+      .merge_secondary_into_primary(&mut pager)
+      .expect("expected value");
+    buffer.flush(&mut pager).expect("expected value");
 
     // After merge, should be back in primary with just the secondary records
     assert_eq!(buffer.active_region(), 0);
     assert_eq!(buffer.tail(), 0);
 
     // Scan should show the merged record (just the one from secondary)
-    let records = buffer.scan_records(&mut pager).unwrap();
+    let records = buffer.scan_records(&mut pager).expect("expected value");
     assert_eq!(records.len(), 1); // Only secondary record preserved
     assert_eq!(records[0].txid, 2);
   }
