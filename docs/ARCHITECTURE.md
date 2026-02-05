@@ -553,3 +553,6 @@ Single-file raw bench (Rust core, 10k nodes / 50k edges, p50):
 
 See `docs/BENCHMARKS.md` and the raw logs in
 `docs/benchmarks/results/` for full details and run commands.
+
+For the proposed code-intelligence indexing architecture (lexical + vector sidecars, async reranking),
+see `docs/RFC_INDEXING_SIDECARS.md`.
