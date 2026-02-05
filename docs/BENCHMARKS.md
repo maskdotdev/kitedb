@@ -289,6 +289,53 @@ Config: 8 threads, 200 tx/thread, batch=200 nodes, edges/node=1, 3 edge types,
 | Off | 724.42/s | 144.88K/s | 144.88K/s |
 | On | 868.44/s | 173.69K/s | 173.69K/s |
 
+#### Parallel write scaling notes (2026-02-05)
+
+Single-file core write throughput does **not** scale linearly with writer threads because
+commit/WAL + delta ordering is serialized (see `commit_lock` in `ray-rs/src/core/single_file/mod.rs`).
+Best practice for max ingest: **parallelize prep**, funnel into **1 writer** doing **batched txns**
+(or at most a small number of writers if you accept lower per-op latency / higher contention).
+
+Hardware: 10 CPUs (local dev machine).
+
+**Nodes + edges** (measured via `ray-rs/examples/multi_writer_throughput_bench.rs`, config:
+`--tx-per-thread 400 --batch-size 500 --edges-per-node 1 --edge-types 3 --edge-props 0 --wal-size 268435456`):
+
+Sync=Normal, GC off:
+
+| Threads | Node rate |
+|---------|-----------|
+| 1 | 521.89K/s |
+| 2 | 577.43K/s |
+| 4 | 603.92K/s |
+| 8 | 591.62K/s |
+| 10 | 525.41K/s |
+| 16 | 591.61K/s |
+
+Sync=Off, GC off:
+
+| Threads | Node rate |
+|---------|-----------|
+| 1 | 771.18K/s |
+| 2 | 896.99K/s |
+| 4 | 805.34K/s |
+| 8 | 697.73K/s |
+| 10 | 529.21K/s |
+| 16 | 554.09K/s |
+
+**Vector writes** (`set_node_vector`, dims=128) (measured via
+`ray-rs/examples/multi_writer_vector_throughput_bench.rs`, config:
+`--vector-dims 128 --tx-per-thread 200 --batch-size 500 --wal-size 1610612736 --sync-mode normal --no-auto-checkpoint`):
+
+| Threads | Vector rate |
+|---------|-------------|
+| 1 | 529.31K/s |
+| 2 | 452.36K/s |
+| 4 | 388.78K/s |
+| 8 | 349.01K/s |
+| 10 | 313.67K/s |
+| 16 | 296.99K/s |
+
 ## Prior Results (2026-02-03)
 
 Raw logs:
