@@ -85,7 +85,7 @@ export const docsStructure: DocSection[] = [
 			},
 			{
 				title: "Low-Level API",
-				description: "Direct storage access",
+				description: "Direct database primitives",
 				slug: "api/low-level",
 			},
 			{

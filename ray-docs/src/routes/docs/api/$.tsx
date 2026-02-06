@@ -117,7 +117,7 @@ db.countEdges(follows)`}
 
         <h2 id="next-steps">Next Steps</h2>
         <ul>
-          <li><a href="/docs/api/low-level">Low-Level API</a> – Direct storage access</li>
+          <li><a href="/docs/api/low-level">Low-Level API</a> – Direct database primitives</li>
           <li><a href="/docs/api/vector-api">Vector API</a> – Similarity search</li>
         </ul>
       </DocPage>
@@ -128,46 +128,64 @@ db.countEdges(follows)`}
     return (
       <DocPage slug={slug}>
         <p>
-          The low-level API provides direct access to the underlying storage 
-          engine for advanced use cases.
+          The low-level API uses the <code>Database</code> class for direct
+          graph operations, transaction control, and batched writes.
         </p>
 
-        <h2 id="storage-access">Storage Access</h2>
+        <h2 id="storage-access">Open and Write</h2>
         <CodeBlock
-          code={`import { kite } from '@kitedb/core';
+          code={`import { Database, PropType } from '@kitedb/core';
 
-const db = await kite('./data.kitedb', { nodes, edges });
+const db = Database.open('./data.kitedb', { createIfMissing: true });
 
-// Access the underlying storage
-const storage = db.storage;
+db.begin();
+try {
+  const nodeId = db.createNode('user:alice');
+  db.setNodePropByName(nodeId, 'name', {
+    propType: PropType.String,
+    stringValue: 'Alice',
+  });
 
-// Direct key-value operations
-await storage.put('custom:key', value);
-const data = await storage.get('custom:key');
-await storage.delete('custom:key');`}
+  db.commit();
+} catch (err) {
+  db.rollback();
+  throw err;
+}`}
           language="typescript"
         />
 
         <h2 id="batch-operations">Batch Operations</h2>
         <CodeBlock
-          code={`// Efficient batch writes
-await storage.batch([
-  { type: 'put', key: 'key1', value: value1 },
-  { type: 'put', key: 'key2', value: value2 },
-  { type: 'delete', key: 'key3' },
-]);`}
+          code={`// High-throughput bulk ingest
+db.beginBulk();
+const nodeIds = db.createNodesBatch(keys); // Array<string | null>
+db.addEdgesBatch(edges);                   // Array<{ src, etype, dst }>
+db.addEdgesWithPropsBatch(edgesWithProps);
+db.commit();
+
+// Optional maintenance checkpoint after ingest
+db.checkpoint();`}
           language="typescript"
         />
 
-        <h2 id="iterators">Iterators</h2>
+        <h2 id="iterators">Streaming and Pagination</h2>
         <CodeBlock
-          code={`// Iterate over key range
-for await (const { key, value } of storage.iterator({
-  gte: 'user:',
-  lt: 'user:\\xff',
-})) {
-  console.log(key, value);
-}`}
+          code={`// Stream nodes in fixed-size chunks
+for (const batch of db.streamNodes({ batchSize: 1000 })) {
+  for (const nodeId of batch) {
+    // process nodeId
+  }
+}
+
+// Cursor pagination
+let cursor: string | undefined = undefined;
+do {
+  const page = db.getNodesPage({ limit: 100, cursor });
+  for (const node of page.items) {
+    // process node
+  }
+  cursor = page.nextCursor;
+} while (cursor);`}
           language="typescript"
         />
       </DocPage>

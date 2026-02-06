@@ -68,7 +68,7 @@ function DocPageContent(props: { slug: string }) {
           typescript={`import { kite } from '@kitedb/core';
 
 // Define schema inline when opening the database
-const db = kite('./social.kitedb', {
+const db = await kite('./social.kitedb', {
   nodes: [
     {
       name: 'user',
@@ -151,7 +151,7 @@ let bob = db.insert("user")
     .returning()?;
 
 // Create a follow relationship
-db.link(alice.id, "follows", bob.id, Some(json!({
+db.link(alice.id(), "follows", bob.id(), Some(json!({
     "followedAt": std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_secs()
@@ -185,14 +185,14 @@ const followsBob = db.hasEdge(alice.id, 'follows', bob.id);
 console.log('Alice follows Bob:', followsBob);`}
           rust={`// Find all users Alice follows
 let following = db
-    .from(alice.id)
+    .from(alice.id())
     .out(Some("follows"))
     .nodes()?;
 
 println!("Alice follows: {} users", following.len());
 
 // Check if Alice follows Bob
-let follows_bob = db.has_edge(alice.id, "follows", bob.id)?;
+let follows_bob = db.has_edge(alice.id(), "follows", bob.id())?;
 println!("Alice follows Bob: {}", follows_bob);`}
           python={`# Find all users Alice follows
 following = (db

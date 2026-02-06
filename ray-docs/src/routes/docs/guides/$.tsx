@@ -67,7 +67,7 @@ function DocPageContent(props: { slug: string }) {
         <MultiLangCode
           typescript={`import { kite } from '@kitedb/core';
 
-const db = kite('./blog.kitedb', {
+const db = await kite('./blog.kitedb', {
   nodes: [
     {
       name: 'article',
@@ -132,7 +132,7 @@ db = kite("./blog.kitedb", nodes=[article], edges=[])`}
           Edges connect nodes and can have their own properties.
         </p>
         <MultiLangCode
-          typescript={`const db = kite('./blog.kitedb', {
+          typescript={`const db = await kite('./blog.kitedb', {
   nodes: [
     { name: 'user', props: { name: { type: 'string' } } },
     { name: 'article', props: { title: { type: 'string' } } },
@@ -255,31 +255,33 @@ const userCount = db.countNodes('user');`}
           rust={`// Get by key
 let user = db.get("user", "alice")?;
 
-// Get by node ID
-let user_by_id = db.get_by_id(alice.id)?;
+// Get by node ID (filter iterator)
+let user_by_id = db
+    .all("user")?
+    .find(|n| n.id() == alice.id());
 
 // Check if exists
-let exists = db.exists(alice.id)?;
+let exists = db.exists(alice.id());
 
 // List all nodes of a type
-let all_users = db.all("user")?;
+let all_users: Vec<_> = db.all("user")?.collect();
 
 // Count nodes
-let user_count = db.count_nodes(Some("user"))?;`}
+let user_count = db.count_nodes_by_type("user")?;`}
           python={`# Get by key
 user = db.get(user, "alice")
 
-# Get by node ID
-user_by_id = db.get_by_id(alice.id)
+# Get lightweight ref by key
+user_ref = db.get_ref(user, "alice")
 
 # Check if exists
-exists = db.exists(alice.id)
+exists = alice is not None and db.exists(alice)
 
 # List all nodes of a type
-all_users = db.all(user)
+all_users = list(db.all(user))
 
 # Count nodes
-user_count = db.count_nodes("user")`}
+user_count = db.count(user)`}
         />
 
         <h2 id="update">Updating Data</h2>
@@ -299,35 +301,33 @@ db.update(user, 'alice')
   .unset('email')
   .execute();`}
           rust={`// Update by node ID
-db.update_by_id(alice.id)
-    .set("name", "Alice C.")
+db.update_by_id(alice.id())
+    .set("name", PropValue::String("Alice C.".into()))
     .execute()?;
 
 // Update multiple properties
-db.update_by_id(alice.id)
-    .set_all(json!({
-        "name": "Alice Chen",
-        "email": "newemail@example.com"
-    }))
+db.update_by_id(alice.id())
+    .set("name", PropValue::String("Alice Chen".into()))
+    .set("email", PropValue::String("newemail@example.com".into()))
     .execute()?;
 
 // Remove a property
-db.update_by_id(alice.id)
+db.update_by_id(alice.id())
     .unset("email")
     .execute()?;`}
-          python={`# Update by node ID
-(db.update_by_id(alice.id)
-    .set("name", "Alice C.")
+          python={`# Update by node reference
+(db.update(alice)
+    .set(name="Alice C.")
     .execute())
 
 # Update multiple properties
-(db.update_by_id(alice.id)
-    .set_all({"name": "Alice Chen", "email": "newemail@example.com"})
+(db.update(alice)
+    .set({"name": "Alice Chen", "email": "newemail@example.com"})
     .execute())
 
-# Remove a property
-(db.update_by_id(alice.id)
-    .unset("email")
+# Update another property
+(db.update(alice)
+    .set(email="newemail@example.com")
     .execute())`}
         />
 
@@ -339,15 +339,19 @@ db.deleteById(alice.id);
 // Delete by key
 db.deleteByKey('user', 'alice');`}
           rust={`// Delete by node ID
-db.delete_by_id(alice.id)?;
+db.delete_node(alice.id())?;
 
-// Delete by key
-db.delete_by_key("user", "alice")?;`}
-          python={`# Delete by node ID
-db.delete_by_id(alice.id)
+// Delete by key (lookup then delete)
+if let Some(node) = db.get("user", "alice")? {
+    db.delete_node(node.id())?;
+}`}
+          python={`# Delete by node reference
+db.delete(alice)
 
-# Delete by key
-db.delete_by_key(user, "alice")`}
+# Delete by key (lookup then delete)
+node = db.get(user, "alice")
+if node is not None:
+    db.delete(node)`}
         />
 
         <h2 id="next-steps">Next Steps</h2>
@@ -388,19 +392,19 @@ const connections = db
   .nodes();`}
           rust={`// Find all users that Alice follows (outgoing edges)
 let following = db
-    .from(alice.id)
+    .from(alice.id())
     .out(Some("follows"))
     .nodes()?;
 
 // Find all followers of Alice (incoming edges)
 let followers = db
-    .from(alice.id)
+    .from(alice.id())
     .in_(Some("follows"))
     .nodes()?;
 
 // Follow edges in both directions
 let connections = db
-    .from(alice.id)
+    .from(alice.id())
     .both(Some("knows"))
     .nodes()?;`}
           python={`# Find all users that Alice follows (outgoing edges)
@@ -442,14 +446,14 @@ const authorsOfLikedArticles = db
   .nodes();`}
           rust={`// Find friends of friends (2-hop)
 let friends_of_friends = db
-    .from(alice.id)
+    .from(alice.id())
     .out(Some("follows"))
     .out(Some("follows"))
     .nodes()?;
 
 // Chain different edge types
 let authors_of_liked = db
-    .from(alice.id)
+    .from(alice.id())
     .out(Some("likes"))     // Alice -> Articles
     .in_(Some("authored"))  // Articles <- Users
     .nodes()?;`}
@@ -486,7 +490,7 @@ const topConnections = db
   .nodes();`}
           rust={`// Traverse 1-3 hops
 let network = db
-    .from(alice.id)
+    .from(alice.id())
     .traverse(Some("follows"), TraverseOptions {
         min_depth: Some(1),
         max_depth: 3,
@@ -496,7 +500,7 @@ let network = db
 
 // Limit results
 let top_connections = db
-    .from(alice.id)
+    .from(alice.id())
     .out(Some("follows"))
     .take(10)
     .nodes()?;`}
@@ -574,7 +578,7 @@ index.set(doc.id, embedding);`}
 let embedding: Vec<f32> = get_embedding("Your document content")?;
 
 // Store the vector, associated with a node ID
-index.set(doc.id, &embedding)?;`}
+index.set(doc.id(), &embedding)?;`}
           python={`# Generate embedding with your preferred provider
 response = openai.embeddings.create(
     model="text-embedding-ada-002",
@@ -641,13 +645,13 @@ index.buildIndex();
 const stats = index.stats();
 console.log(\`Total vectors: \${stats.totalVectors}\`);`}
           rust={`// Check if a node has a vector
-let has_vector = index.has(doc.id)?;
+let has_vector = index.has(doc.id())?;
 
 // Get a stored vector
-let vector = index.get(doc.id)?;
+let vector = index.get(doc.id())?;
 
 // Delete a vector
-index.delete(doc.id)?;
+index.delete(doc.id())?;
 
 // Build/rebuild the IVF index for faster search
 index.build_index()?;
@@ -713,7 +717,7 @@ let mut db = Kite::open("./my.kitedb", options)?;
 db.transaction(|ctx| {
     let alice = ctx.create_node("user", "alice", HashMap::new())?;
     let bob = ctx.create_node("user", "bob", HashMap::new())?;
-    ctx.link(alice.id, "follows", bob.id)?;
+    ctx.link(alice.id(), "follows", bob.id())?;
     Ok(())
 })?;`}
           python={`from kitedb import kite
@@ -793,7 +797,7 @@ db.commit()`}
           <tbody>
             <tr>
               <td>Max throughput, single writer</td>
-              <td><code>begin_bulk()</code> + batch APIs</td>
+              <td><code>beginBulk()</code> + batch APIs</td>
             </tr>
             <tr>
               <td>Atomic ingest w/ MVCC</td>
@@ -801,7 +805,7 @@ db.commit()`}
             </tr>
             <tr>
               <td>Multi-writer throughput</td>
-              <td><code>sync_mode=Normal</code> + group commit + chunked batches</td>
+              <td><code>syncMode: 'Normal'</code> + group commit + chunked batches</td>
             </tr>
           </tbody>
         </table>
@@ -955,7 +959,7 @@ if db.has_transaction():
           <tbody>
             <tr>
               <td>Max ingest throughput, single writer</td>
-              <td><code>begin_bulk()</code> + batch APIs</td>
+              <td><code>beginBulk()</code> + batch APIs</td>
             </tr>
             <tr>
               <td>Atomic ingest with MVCC</td>
@@ -963,15 +967,15 @@ if db.has_transaction():
             </tr>
             <tr>
               <td>Multi-writer throughput</td>
-              <td><code>sync_mode=Normal</code> + group commit (1-2ms)</td>
+              <td><code>syncMode: 'Normal'</code> + group commit (1-2ms)</td>
             </tr>
             <tr>
               <td>Strong durability per commit</td>
-              <td><code>sync_mode=Full</code></td>
+              <td><code>syncMode: 'Full'</code></td>
             </tr>
             <tr>
               <td>Throwaway or test data</td>
-              <td><code>sync_mode=Off</code></td>
+              <td><code>syncMode: 'Off'</code></td>
             </tr>
           </tbody>
         </table>
@@ -1020,32 +1024,32 @@ db.commit()`}
             <tr>
               <td>Single-writer ingest</td>
               <td>
-                <code>sync_mode=Normal</code>, <code>group_commit=false</code>,
-                WAL ≥ 256MB, <code>auto_checkpoint=false</code>
+                <code>syncMode: 'Normal'</code>, <code>groupCommitEnabled: false</code>,
+                WAL ≥ 256MB, <code>autoCheckpoint: false</code>
               </td>
             </tr>
             <tr>
               <td>Multi-writer throughput</td>
               <td>
-                <code>sync_mode=Normal</code>, <code>group_commit=true</code>
+                <code>syncMode: 'Normal'</code>, <code>groupCommitEnabled: true</code>
                 (1-2ms window), chunked batches
               </td>
             </tr>
             <tr>
               <td>Max durability</td>
-              <td><code>sync_mode=Full</code>, smaller batches</td>
+              <td><code>syncMode: 'Full'</code>, smaller batches</td>
             </tr>
             <tr>
               <td>Max speed (test)</td>
-              <td><code>sync_mode=Off</code></td>
+              <td><code>syncMode: 'Off'</code></td>
             </tr>
           </tbody>
         </table>
 
         <h2 id="checklist">Checklist</h2>
         <ul>
-          <li>Use batch APIs: <code>create_nodes_batch</code>, <code>add_edges_batch</code>, <code>add_edges_with_props_batch</code></li>
-          <li>Prefer <code>begin_bulk()</code> for ingest; commit in chunks</li>
+          <li>Use batch APIs: <code>createNodesBatch</code>, <code>addEdgesBatch</code>, <code>addEdgesWithPropsBatch</code></li>
+          <li>Prefer <code>beginBulk()</code> for ingest; commit in chunks</li>
           <li>Increase WAL size for large ingest (256MB+)</li>
           <li>Disable auto-checkpoint during ingest; checkpoint once at the end</li>
           <li>Use low-level API for hot paths in JS/TS</li>
@@ -1101,15 +1105,17 @@ const results = await Promise.all([
 // Workers can read concurrently from the same database file`}
           rust={`use std::sync::{Arc, RwLock};
 use std::thread;
+use kitedb::api::kite::Kite;
 
-let db = Arc::new(RwLock::new(Kite::open("./data.kitedb")?));
+let db = Arc::new(RwLock::new(Kite::open("./data.kitedb", options)?));
 
 let handles: Vec<_> = (0..4).map(|i| {
     let db = Arc::clone(&db);
     thread::spawn(move || {
         // Multiple threads can acquire read locks simultaneously
+        let key = format!("user{}", i);
         let guard = db.read().unwrap();
-        guard.get_node(format!("user:{}", i))
+        guard.get("user", &key).ok().flatten()
     })
 }).collect();
 
@@ -1141,47 +1147,12 @@ for t in threads:
 print(results)`}
         />
 
-        <h2 id="performance">Performance Scaling</h2>
+        <h2 id="performance">Performance Notes</h2>
         <p>
-          Benchmarks show ~1.5-1.8x throughput improvement with 4-8 reader
-          threads:
+          Read throughput typically improves with parallel readers, while write
+          throughput is constrained by serialized commit ordering. Measure with
+          your workload and tune batch sizes and sync mode accordingly.
         </p>
-        <table>
-          <thead>
-            <tr>
-              <th>Threads</th>
-              <th>Relative Throughput</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>1</td>
-              <td>1.0x (baseline)</td>
-              <td>Single-threaded</td>
-            </tr>
-            <tr>
-              <td>2</td>
-              <td>~1.3x</td>
-              <td>Good scaling</td>
-            </tr>
-            <tr>
-              <td>4</td>
-              <td>~1.5-1.6x</td>
-              <td>Sweet spot for most workloads</td>
-            </tr>
-            <tr>
-              <td>8</td>
-              <td>~1.6-1.8x</td>
-              <td>Diminishing returns</td>
-            </tr>
-            <tr>
-              <td>16</td>
-              <td>~1.7-1.9x</td>
-              <td>Lock contention increases</td>
-            </tr>
-          </tbody>
-        </table>
 
         <h2 id="best-practices">Best Practices</h2>
         <ul>
@@ -1203,63 +1174,44 @@ print(results)`}
           </li>
         </ul>
 
-        <h2 id="mvcc">MVCC and Snapshot Isolation</h2>
+        <h2 id="mvcc">MVCC and Transaction Semantics</h2>
         <p>
-          KiteDB uses Multi-Version Concurrency Control (MVCC) to provide
-          snapshot isolation:
+          KiteDB uses Multi-Version Concurrency Control (MVCC) with serialized
+          writes:
         </p>
         <ul>
-          <li>Readers never block writers</li>
-          <li>Writers never block readers</li>
+          <li>Multiple readers can run concurrently</li>
           <li>
-            Each transaction sees a consistent snapshot from its start time
+            A write waits for in-flight reads, then blocks new reads while it
+            commits
           </li>
-          <li>Write conflicts are detected and one transaction is aborted</li>
+          <li>Each committed transaction is atomic</li>
+          <li>Write conflicts are detected at commit time</li>
         </ul>
 
         <MultiLangCode
-          typescript={`// Transaction isolation example
-const tx1 = db.beginTransaction();
-const tx2 = db.beginTransaction();
-
-// tx1 reads value
-const value1 = tx1.get(user, 'alice');
-
-// tx2 modifies same value
-tx2.update(user, 'alice', { name: 'Alice Updated' });
-tx2.commit();
-
-// tx1 still sees original value (snapshot isolation)
-const value2 = tx1.get(user, 'alice');
-console.log(value1.name === value2.name); // true`}
-          rust={`// Transaction isolation example
-let tx1 = db.begin_transaction()?;
-let tx2 = db.begin_transaction()?;
-
-// tx1 reads value
-let value1 = tx1.get("user", "alice")?;
-
-// tx2 modifies same value
-tx2.update("user", "alice", json!({"name": "Alice Updated"}))?;
-tx2.commit()?;
-
-// tx1 still sees original value (snapshot isolation)
-let value2 = tx1.get("user", "alice")?;
-assert_eq!(value1.name, value2.name); // true`}
-          python={`# Transaction isolation example
-tx1 = db.begin_transaction()
-tx2 = db.begin_transaction()
-
-# tx1 reads value
-value1 = tx1.get(user, "alice")
-
-# tx2 modifies same value
-tx2.update(user, "alice", {"name": "Alice Updated"})
-tx2.commit()
-
-# tx1 still sees original value (snapshot isolation)
-value2 = tx1.get(user, "alice")
-print(value1.name == value2.name)  # True`}
+          typescript={`// Atomic transaction (auto-commit on success, rollback on error)
+await db.transaction(async (ctx) => {
+  const alice = ctx.get(user, 'alice');
+  if (alice) {
+    ctx.update(user, 'alice')
+      .set('name', 'Alice Updated')
+      .execute();
+  }
+});`}
+          rust={`// Atomic transaction with TxContext
+db.transaction(|ctx| {
+    let alice = ctx.get("user", "alice")?;
+    if let Some(node) = alice {
+        ctx.set_prop(node.id(), "name", PropValue::String("Alice Updated".into()))?;
+    }
+    Ok(())
+})?;`}
+          python={`# Atomic transaction (context manager handles commit/rollback)
+with db.transaction():
+    alice = db.get(user, "alice")
+    if alice is not None:
+        db.update(user, "alice").set(name="Alice Updated").execute()`}
         />
 
         <h2 id="limitations">Limitations</h2>

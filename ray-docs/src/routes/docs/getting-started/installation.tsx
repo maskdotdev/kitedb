@@ -20,8 +20,8 @@ function InstallationPage() {
 
       <h2 id="requirements">Requirements</h2>
       <ul>
-        <li><strong>JavaScript/TypeScript:</strong> Bun 1.0+, Node.js 18+, or Deno</li>
-        <li><strong>Rust:</strong> Rust 1.70+</li>
+        <li><strong>JavaScript/TypeScript:</strong> Bun 1.0+ or Node.js 16+</li>
+        <li><strong>Rust:</strong> Stable Rust toolchain</li>
         <li><strong>Python:</strong> Python 3.9+</li>
       </ul>
 
@@ -31,7 +31,7 @@ function InstallationPage() {
         typescript={`import { kite } from '@kitedb/core';
 
 // Open database with a simple schema
-const db = kite('./test.kitedb', {
+const db = await kite('./test.kitedb', {
   nodes: [
     {
       name: 'user',
