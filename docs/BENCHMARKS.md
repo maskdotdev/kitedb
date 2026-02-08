@@ -77,6 +77,17 @@ cargo run --release --example vector_bench --no-default-features -- \
   --vectors 10000 --dimensions 768 --iterations 1000 --k 10 --n-probe 10
 ```
 
+### Vector compaction strategy (Rust)
+
+```bash
+cd ray-rs
+cargo run --release --example vector_compaction_bench --no-default-features -- \
+  --vectors 50000 --dimensions 384 --fragment-target-size 5000 \
+  --delete-ratio 0.35 --min-deletion-ratio 0.30 --max-fragments 4 --min-vectors-to-compact 10000
+```
+
+Use this to compare compaction threshold tradeoffs before changing default vector/ANN maintenance policy.
+
 ### Index pipeline hypothesis (network-dominant)
 
 ```bash

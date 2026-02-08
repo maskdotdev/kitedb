@@ -513,4 +513,32 @@ mod tests {
     let did_compact = run_compaction_if_needed(&mut manifest, &strategy);
     assert!(!did_compact);
   }
+
+  #[test]
+  fn test_compaction_preserves_live_vector_count() {
+    let mut manifest = create_test_manifest(4);
+
+    for i in 0..200 {
+      let vector = vec![1.0 + i as f32, 2.0, 3.0, 4.0];
+      vector_store_insert(&mut manifest, i, &vector).expect("expected value");
+    }
+    vector_store_seal_active(&mut manifest);
+
+    for i in 0..80 {
+      vector_store_delete(&mut manifest, i);
+    }
+
+    let live_before = manifest.live_count();
+    let strategy = CompactionStrategy {
+      min_deletion_ratio: 0.2,
+      max_fragments_per_compaction: 4,
+      min_vectors_to_compact: 1,
+    };
+    assert!(run_compaction_if_needed(&mut manifest, &strategy));
+    assert_eq!(
+      manifest.live_count(),
+      live_before,
+      "compaction must not change logical live vector count",
+    );
+  }
 }
