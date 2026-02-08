@@ -409,9 +409,11 @@ Implemented:
   - Python pytest test (`ray-rs/python/tests/test_replication_transport_flow.py`).
 - Replica source transport hardening in host-runtime open path (required source DB path + source/local sidecar collision fencing).
 - Operator runbook for promotion/reseed/retention tuning (`docs/REPLICATION_RUNBOOK.md`).
+- V1 release checklist finalized in runbook (`docs/REPLICATION_RUNBOOK.md`, section `10. V1 Release Checklist`) including host-runtime flow gates and release/tag checks.
 - Replication benchmark gate script (`ray-rs/scripts/replication-bench-gate.sh`) + benchmark doc wiring.
 - Replica catch-up throughput gate (`ray-rs/scripts/replication-catchup-gate.sh`) and combined perf gate (`ray-rs/scripts/replication-perf-gate.sh`).
 - Replication soak stability harness + gate (`ray-rs/examples/replication_soak_bench.rs`, `ray-rs/scripts/replication-soak-gate.sh`) covering lag churn, promotion fencing, reseed recovery, and zero-divergence checks.
+- Release preflight script (`ray-rs/scripts/release-preflight.sh`) enforcing commit-message format and tag/package/version alignment.
 - Main-branch CI perf-gate enforcement in `ray-rs` workflow (`.github/workflows/ray-rs.yml`) with run-scoped replication benchmark log artifact upload (`ci-<run_id>-<run_attempt>` stamp).
 - Main-branch CI ANN quality-gate enforcement in `ray-rs` workflow (`.github/workflows/ray-rs.yml`) with ANN gate log artifact upload.
 - Vector replication authority decision: canonical vector property mutations replicate (`SetNodeVector`/`DelNodeVector`); derived vector maintenance WAL records are non-authoritative and skipped during replica apply.
@@ -460,5 +462,5 @@ Carry-over to next phase:
    - Keep adapter examples + Node/Python host-runtime flow tests green as API evolves.
    - Add one additional proxy-terminated deployment sample with forwarded-header mTLS auth checks.
 4. Release packaging + docs closeout:
-   - Finalize V1 operator checklist in `docs/REPLICATION_RUNBOOK.md`.
-   - Cut release commit/tag using release-note/tag rules from `AGENTS.md`.
+   - run release checklist (`docs/REPLICATION_RUNBOOK.md`, section `10. V1 Release Checklist`) on release-like hardware.
+   - cut release commit/tag using release-note/tag rules from `AGENTS.md`.

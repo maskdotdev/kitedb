@@ -259,3 +259,33 @@ Playground curl examples:
 - OTLP retry policy is bounded attempt/backoff/jitter with optional adaptive multiplier (`linear` or `ewma`) and circuit-breaker half-open probes. Circuit-breaker state is process-local by default; optional file-backed sharing (`circuit_breaker_state_path`) or shared HTTP store (`circuit_breaker_state_url`) is available with `circuit_breaker_scope_key`; URL backend can enable key-scoped patch mode (`circuit_breaker_state_patch`), batched patch mode (`circuit_breaker_state_patch_batch` with `circuit_breaker_state_patch_batch_max_keys`), compacting merge patch mode (`circuit_breaker_state_patch_merge` with `circuit_breaker_state_patch_merge_max_keys`), bounded patch retries (`circuit_breaker_state_patch_retry_max_attempts`), CAS (`circuit_breaker_state_cas`), and lease header propagation (`circuit_breaker_state_lease_id`).
 - Vector authority boundary: logical vector property mutations (`SetNodeVector` / `DelNodeVector`) are authoritative and replicated; vector batch/fragment maintenance records are treated as derived index artifacts and are skipped during replica apply.
 - `SyncMode::Normal` and `SyncMode::Off` optimize commit latency by batching sidecar frame writes in-memory and refreshing manifest fencing periodically (not every commit). For strict per-commit sidecar visibility/fencing, use `SyncMode::Full`.
+
+## 10. V1 Release Checklist
+
+1. Correctness gate:
+   - `cd ray-rs && cargo test --no-default-features --test replication_phase_a --test replication_phase_b --test replication_phase_c --test replication_phase_d --test replication_faults_phase_d`
+2. Host-runtime flow gate:
+   - `cd ray-rs && bunx ava __test__/replication_transport_auth.spec.ts __test__/replication_transport_flow.spec.ts`
+   - `cd ray-rs && .venv/bin/python -m pytest -q python/tests/test_replication_auth.py python/tests/test_replication_transport_flow.py`
+3. Performance gate (release-like host):
+   - `cd ray-rs && ./scripts/replication-perf-gate.sh`
+   - `cd ray-rs && ./scripts/replication-soak-gate.sh`
+   - `cd ray-rs && ./scripts/vector-ann-gate.sh`
+4. Artifact capture:
+   - ensure benchmark logs are written under `docs/benchmarks/results/` with a dedicated `STAMP` for the release run.
+5. Release preflight checks (AGENTS rules):
+   - `cd ray-rs && ./scripts/release-preflight.sh --commit-msg \"core: X.Y.Z\" --tag vX.Y.Z`
+   - This enforces:
+     - exact commit message format `all|js|ts|py|rs|core: X.Y.Z` (no trailing text),
+     - tag format `vX.Y.Z`,
+     - `ray-rs/package.json` version == tag version,
+     - commit message version == tag version.
+6. Cut release commit and tag:
+   - commit message must be exactly one of:
+     - `all: X.Y.Z`
+     - `js: X.Y.Z`
+     - `ts: X.Y.Z`
+     - `py: X.Y.Z`
+     - `rs: X.Y.Z`
+     - `core: X.Y.Z`
+   - then create tag `vX.Y.Z` and push commit + tag.
