@@ -46,6 +46,9 @@ Metrics surface:
   - Python PyO3: `collect_replication_snapshot_transport_json(db, include_data=False)`,
     `collect_replication_log_transport_json(db, cursor=None, max_frames=128, max_bytes=1048576, include_payload=True)`
   - These are intended for embedding host-side HTTP endpoints beyond playground runtime.
+  - Template files:
+    - Python FastAPI adapter: `docs/examples/replication_adapter_python_fastapi.py`
+    - Generic middleware adapter: `docs/examples/replication_adapter_generic_middleware.ts`
 
 Alert heuristics:
 - `append_failures > 0` growing: primary sidecar durability issue.

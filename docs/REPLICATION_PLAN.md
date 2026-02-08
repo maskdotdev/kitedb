@@ -369,6 +369,9 @@ Implemented:
   - snapshot export (`collectReplicationSnapshotTransportJson` / `collect_replication_snapshot_transport_json`)
   - log page export with cursor/limits (`collectReplicationLogTransportJson` / `collect_replication_log_transport_json`).
   - TypeScript adapter helper (`createReplicationTransportAdapter`) for wiring custom HTTP handlers.
+- Polyglot host-runtime HTTP adapter templates:
+  - Python FastAPI template (`docs/examples/replication_adapter_python_fastapi.py`)
+  - generic middleware template (`docs/examples/replication_adapter_generic_middleware.ts`).
 - Replica source transport hardening in host-runtime open path (required source DB path + source/local sidecar collision fencing).
 - Operator runbook for promotion/reseed/retention tuning (`docs/REPLICATION_RUNBOOK.md`).
 - Replication benchmark gate script (`ray-rs/scripts/replication-bench-gate.sh`) + benchmark doc wiring.
@@ -395,4 +398,4 @@ Known limits:
 - Host-runtime OTLP export currently targets HTTP OTLP-JSON payloads only (no protobuf/gRPC exporter path).
 
 Carry-over to next phase:
-- Polyglot host-runtime HTTP adapter templates (Python + generic middleware examples) on top of transport JSON helpers.
+- Optional OTLP protobuf/gRPC exporter path (current host-runtime exporter is OTLP-JSON over HTTP).
