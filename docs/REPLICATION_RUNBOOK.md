@@ -92,6 +92,8 @@ Metrics surface:
   - TypeScript native TLS matcher helper: `createNodeTlsMtlsMatcher({ requirePeerCertificate? })`
     and probe helper `isNodeTlsClientAuthorized(request, options?)` for common Node request socket shapes
     (`request.socket`, `request.client`, `request.raw.socket`, `request.req.socket`).
+  - TypeScript forwarded-header matcher helper: `createForwardedTlsMtlsMatcher({ requirePeerCertificate?, requireVerifyHeader?, verifyHeaders?, certHeaders?, successValues? })`
+    and probe helper `isForwardedTlsClientAuthorized(request, options?)` for proxy-terminated TLS/mTLS in non-Node-native runtimes.
   - Python PyO3: `collect_replication_snapshot_transport_json(db, include_data=False)`,
     `collect_replication_log_transport_json(db, cursor=None, max_frames=128, max_bytes=1048576, include_payload=True)`
   - Python host auth helper: `create_replication_admin_authorizer(...)` with `ReplicationAdminAuthConfig`

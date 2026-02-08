@@ -2,8 +2,10 @@ import test from 'ava'
 
 import {
   authorizeReplicationAdminRequest,
+  createForwardedTlsMtlsMatcher,
   createNodeTlsMtlsMatcher,
   createReplicationAdminAuthorizer,
+  isForwardedTlsClientAuthorized,
   isReplicationAdminAuthorized,
   isNodeTlsClientAuthorized,
   type ReplicationAdminAuthRequest,
@@ -126,6 +128,74 @@ test('node tls matcher factory composes into auth config', (t) => {
       socket: {
         authorized: true,
         getPeerCertificate: () => ({}),
+      },
+    }),
+  )
+  t.truthy(error)
+})
+
+test('forwarded tls matcher validates proxy verify headers', (t) => {
+  t.true(
+    isForwardedTlsClientAuthorized({
+      headers: { 'x-client-verify': 'SUCCESS' },
+    }),
+  )
+  t.false(
+    isForwardedTlsClientAuthorized({
+      headers: { 'x-client-verify': 'FAILED' },
+    }),
+  )
+  t.false(isForwardedTlsClientAuthorized({ headers: {} }))
+})
+
+test('forwarded tls matcher supports peer certificate and custom verify policy', (t) => {
+  t.true(
+    isForwardedTlsClientAuthorized(
+      {
+        headers: {
+          'x-client-verify': 'SUCCESS',
+          'x-forwarded-client-cert': 'CN=replication-admin,O=RayDB',
+        },
+      },
+      { requirePeerCertificate: true },
+    ),
+  )
+  t.false(
+    isForwardedTlsClientAuthorized(
+      {
+        headers: { 'x-client-verify': 'SUCCESS' },
+      },
+      { requirePeerCertificate: true },
+    ),
+  )
+  t.true(
+    isForwardedTlsClientAuthorized(
+      {
+        headers: { 'x-forwarded-client-cert': 'CN=replication-admin,O=RayDB' },
+      },
+      { requireVerifyHeader: false, requirePeerCertificate: true },
+    ),
+  )
+})
+
+test('forwarded tls matcher factory composes into auth config', (t) => {
+  const requireAdmin = createReplicationAdminAuthorizer({
+    mode: 'mtls',
+    mtlsMatcher: createForwardedTlsMtlsMatcher({ requirePeerCertificate: true }),
+  })
+  t.notThrows(() =>
+    requireAdmin({
+      headers: {
+        'x-client-verify': 'SUCCESS',
+        'x-forwarded-client-cert': 'CN=replication-admin,O=RayDB',
+      },
+    }),
+  )
+  const error = t.throws(() =>
+    requireAdmin({
+      headers: {
+        'x-client-verify': 'FAILED',
+        'x-forwarded-client-cert': 'CN=replication-admin,O=RayDB',
       },
     }),
   )

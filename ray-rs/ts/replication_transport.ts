@@ -86,6 +86,14 @@ export interface ReplicationNodeMtlsMatcherOptions {
   requirePeerCertificate?: boolean
 }
 
+export interface ReplicationForwardedMtlsMatcherOptions {
+  requirePeerCertificate?: boolean
+  requireVerifyHeader?: boolean
+  verifyHeaders?: string[]
+  certHeaders?: string[]
+  successValues?: string[]
+}
+
 const REPLICATION_ADMIN_AUTH_MODES = new Set<ReplicationAdminAuthMode>([
   'none',
   'token',
@@ -93,6 +101,10 @@ const REPLICATION_ADMIN_AUTH_MODES = new Set<ReplicationAdminAuthMode>([
   'token_or_mtls',
   'token_and_mtls',
 ])
+
+const DEFAULT_FORWARDED_VERIFY_HEADERS = ['x-client-verify', 'ssl-client-verify']
+const DEFAULT_FORWARDED_CERT_HEADERS = ['x-forwarded-client-cert', 'x-client-cert']
+const DEFAULT_FORWARDED_SUCCESS_VALUES = ['success', 'successful', 'true', '1', 'yes', 'verified', 'ok']
 
 function hasPeerCertificate(socket: ReplicationNodeTlsLikeSocket): boolean {
   if (!socket.getPeerCertificate) return false
@@ -133,6 +145,56 @@ export function createNodeTlsMtlsMatcher(
   options: ReplicationNodeMtlsMatcherOptions = {},
 ): (request: ReplicationNodeTlsLikeRequest) => boolean {
   return (request: ReplicationNodeTlsLikeRequest): boolean => isNodeTlsClientAuthorized(request, options)
+}
+
+function normalizeHeaderNames(headers: string[] | undefined, fallback: string[]): string[] {
+  const names = (headers ?? fallback)
+    .map((name) => name.trim().toLowerCase())
+    .filter((name) => name.length > 0)
+  if (names.length > 0) return names
+  return fallback
+}
+
+function normalizeHeaderValues(values: string[] | undefined, fallback: string[]): Set<string> {
+  const normalized = (values ?? fallback)
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value.length > 0)
+  if (normalized.length > 0) return new Set(normalized)
+  return new Set(fallback)
+}
+
+export function isForwardedTlsClientAuthorized(
+  request: ReplicationAdminAuthRequest,
+  options: ReplicationForwardedMtlsMatcherOptions = {},
+): boolean {
+  const verifyHeaders = normalizeHeaderNames(options.verifyHeaders, DEFAULT_FORWARDED_VERIFY_HEADERS)
+  const certHeaders = normalizeHeaderNames(options.certHeaders, DEFAULT_FORWARDED_CERT_HEADERS)
+  const successValues = normalizeHeaderValues(options.successValues, DEFAULT_FORWARDED_SUCCESS_VALUES)
+  const requireVerifyHeader = options.requireVerifyHeader ?? true
+  const requirePeerCertificate = options.requirePeerCertificate ?? false
+
+  const verifyValues: string[] = []
+  for (const header of verifyHeaders) {
+    const value = getHeaderValue(request, header)
+    if (value) verifyValues.push(value.toLowerCase())
+  }
+  const verifyOk = verifyValues.length > 0
+    ? verifyValues.some((value) => successValues.has(value))
+    : !requireVerifyHeader
+  if (!verifyOk) return false
+
+  if (!requirePeerCertificate) return true
+  for (const header of certHeaders) {
+    if (getHeaderValue(request, header)) return true
+  }
+  return false
+}
+
+export function createForwardedTlsMtlsMatcher(
+  options: ReplicationForwardedMtlsMatcherOptions = {},
+): (request: ReplicationAdminAuthRequest) => boolean {
+  return (request: ReplicationAdminAuthRequest): boolean =>
+    isForwardedTlsClientAuthorized(request, options)
 }
 
 type NormalizedReplicationAdminAuthConfig<TRequest extends ReplicationAdminAuthRequest = ReplicationAdminAuthRequest> =
