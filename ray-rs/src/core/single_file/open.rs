@@ -3,7 +3,7 @@
 //! Handles opening, creating, and closing single-file databases.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use parking_lot::{Mutex, RwLock};
@@ -15,6 +15,9 @@ use crate::core::snapshot::reader::SnapshotData;
 use crate::core::wal::buffer::WalBuffer;
 use crate::error::{KiteError, Result};
 use crate::mvcc::{GcConfig, MvccManager};
+use crate::replication::primary::PrimaryReplication;
+use crate::replication::replica::ReplicaReplication;
+use crate::replication::types::ReplicationRole;
 use crate::types::*;
 use crate::util::compression::CompressionOptions;
 use crate::util::mmap::map_file;
@@ -97,6 +100,22 @@ pub struct SingleFileOpenOptions {
   pub group_commit_window_ms: u64,
   /// Snapshot parse behavior (default: Strict)
   pub snapshot_parse_mode: SnapshotParseMode,
+  /// Replication role (default: Disabled)
+  pub replication_role: ReplicationRole,
+  /// Optional replication sidecar path (defaults to derived from DB path)
+  pub replication_sidecar_path: Option<PathBuf>,
+  /// Source primary db path (replica role only)
+  pub replication_source_db_path: Option<PathBuf>,
+  /// Source primary sidecar path override (replica role only)
+  pub replication_source_sidecar_path: Option<PathBuf>,
+  /// Fault injection for tests: fail append once `n` successful appends reached
+  pub replication_fail_after_append_for_testing: Option<u64>,
+  /// Rotate replication segments when active segment reaches/exceeds this size
+  pub replication_segment_max_bytes: Option<u64>,
+  /// Retain at least this many entries when pruning old segments
+  pub replication_retention_min_entries: Option<u64>,
+  /// Retain segments newer than this many milliseconds (primary role only)
+  pub replication_retention_min_ms: Option<u64>,
 }
 
 impl Default for SingleFileOpenOptions {
@@ -122,6 +141,14 @@ impl Default for SingleFileOpenOptions {
       group_commit_enabled: false,
       group_commit_window_ms: 2,
       snapshot_parse_mode: SnapshotParseMode::Strict,
+      replication_role: ReplicationRole::Disabled,
+      replication_sidecar_path: None,
+      replication_source_db_path: None,
+      replication_source_sidecar_path: None,
+      replication_fail_after_append_for_testing: None,
+      replication_segment_max_bytes: None,
+      replication_retention_min_entries: None,
+      replication_retention_min_ms: None,
     }
   }
 }
@@ -243,6 +270,54 @@ impl SingleFileOpenOptions {
   /// Set snapshot parse mode (Strict or Salvage)
   pub fn snapshot_parse_mode(mut self, mode: SnapshotParseMode) -> Self {
     self.snapshot_parse_mode = mode;
+    self
+  }
+
+  /// Set replication role (disabled | primary | replica)
+  pub fn replication_role(mut self, role: ReplicationRole) -> Self {
+    self.replication_role = role;
+    self
+  }
+
+  /// Set replication sidecar path (for primary/replica modes)
+  pub fn replication_sidecar_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    self.replication_sidecar_path = Some(path.as_ref().to_path_buf());
+    self
+  }
+
+  /// Set replication source db path (replica role only)
+  pub fn replication_source_db_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    self.replication_source_db_path = Some(path.as_ref().to_path_buf());
+    self
+  }
+
+  /// Set replication source sidecar path (replica role only)
+  pub fn replication_source_sidecar_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    self.replication_source_sidecar_path = Some(path.as_ref().to_path_buf());
+    self
+  }
+
+  /// Test-only fault injection for append failures.
+  pub fn replication_fail_after_append_for_testing(mut self, value: u64) -> Self {
+    self.replication_fail_after_append_for_testing = Some(value);
+    self
+  }
+
+  /// Set replication segment rotation threshold in bytes (primary role only)
+  pub fn replication_segment_max_bytes(mut self, value: u64) -> Self {
+    self.replication_segment_max_bytes = Some(value);
+    self
+  }
+
+  /// Set retention minimum entries to keep when pruning (primary role only)
+  pub fn replication_retention_min_entries(mut self, value: u64) -> Self {
+    self.replication_retention_min_entries = Some(value);
+    self
+  }
+
+  /// Set retention minimum time window in milliseconds (primary role only)
+  pub fn replication_retention_min_ms(mut self, value: u64) -> Self {
+    self.replication_retention_min_ms = Some(value);
     self
   }
 }
@@ -765,6 +840,31 @@ pub fn open_single_file<P: AsRef<Path>>(
     &delta,
   );
 
+  let (primary_replication, replica_replication) = match options.replication_role {
+    ReplicationRole::Disabled => (None, None),
+    ReplicationRole::Primary => (
+      Some(PrimaryReplication::open(
+        path,
+        options.replication_sidecar_path.clone(),
+        options.replication_segment_max_bytes,
+        options.replication_retention_min_entries,
+        options.replication_retention_min_ms,
+        options.sync_mode,
+        options.replication_fail_after_append_for_testing,
+      )?),
+      None,
+    ),
+    ReplicationRole::Replica => (
+      None,
+      Some(ReplicaReplication::open(
+        path,
+        options.replication_sidecar_path.clone(),
+        options.replication_source_db_path.clone(),
+        options.replication_source_sidecar_path.clone(),
+      )?),
+    ),
+  };
+
   Ok(SingleFileDB {
     path: path.to_path_buf(),
     read_only: options.read_only,
@@ -800,6 +900,8 @@ pub fn open_single_file<P: AsRef<Path>>(
     sync_mode: options.sync_mode,
     group_commit_enabled: options.group_commit_enabled,
     group_commit_window_ms: options.group_commit_window_ms,
+    primary_replication,
+    replica_replication,
     #[cfg(feature = "bench-profile")]
     commit_lock_wait_ns: AtomicU64::new(0),
     #[cfg(feature = "bench-profile")]

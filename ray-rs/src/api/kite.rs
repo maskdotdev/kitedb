@@ -16,6 +16,7 @@ use crate::core::single_file::{
   SingleFileDB, SingleFileOpenOptions, SyncMode,
 };
 use crate::error::{KiteError, Result};
+use crate::replication::types::ReplicationRole;
 use crate::types::*;
 
 use std::collections::{HashMap, HashSet};
@@ -565,6 +566,20 @@ pub struct KiteOptions {
   pub wal_size: Option<usize>,
   /// WAL usage threshold (0.0-1.0) to trigger auto-checkpoint
   pub checkpoint_threshold: Option<f64>,
+  /// Replication role (disabled | primary | replica)
+  pub replication_role: ReplicationRole,
+  /// Optional replication sidecar path override
+  pub replication_sidecar_path: Option<PathBuf>,
+  /// Source primary db path (replica role only)
+  pub replication_source_db_path: Option<PathBuf>,
+  /// Source primary sidecar path override (replica role only)
+  pub replication_source_sidecar_path: Option<PathBuf>,
+  /// Segment rotation threshold in bytes (primary role only)
+  pub replication_segment_max_bytes: Option<u64>,
+  /// Minimum retained entries window (primary role only)
+  pub replication_retention_min_entries: Option<u64>,
+  /// Minimum retained segment age in milliseconds (primary role only)
+  pub replication_retention_min_ms: Option<u64>,
 }
 
 impl KiteOptions {
@@ -583,6 +598,13 @@ impl KiteOptions {
       mvcc_max_chain_depth: None,
       wal_size: None,
       checkpoint_threshold: None,
+      replication_role: ReplicationRole::Disabled,
+      replication_sidecar_path: None,
+      replication_source_db_path: None,
+      replication_source_sidecar_path: None,
+      replication_segment_max_bytes: None,
+      replication_retention_min_entries: None,
+      replication_retention_min_ms: None,
     }
   }
 
@@ -667,6 +689,48 @@ impl KiteOptions {
     self.checkpoint_threshold = Some(value.clamp(0.0, 1.0));
     self
   }
+
+  /// Set replication role (disabled | primary | replica)
+  pub fn replication_role(mut self, role: ReplicationRole) -> Self {
+    self.replication_role = role;
+    self
+  }
+
+  /// Set replication sidecar path (for primary/replica modes)
+  pub fn replication_sidecar_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    self.replication_sidecar_path = Some(path.as_ref().to_path_buf());
+    self
+  }
+
+  /// Set replication source db path (replica role only)
+  pub fn replication_source_db_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    self.replication_source_db_path = Some(path.as_ref().to_path_buf());
+    self
+  }
+
+  /// Set replication source sidecar path (replica role only)
+  pub fn replication_source_sidecar_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    self.replication_source_sidecar_path = Some(path.as_ref().to_path_buf());
+    self
+  }
+
+  /// Set replication segment rotation threshold in bytes (primary role only)
+  pub fn replication_segment_max_bytes(mut self, value: u64) -> Self {
+    self.replication_segment_max_bytes = Some(value);
+    self
+  }
+
+  /// Set retention minimum entries to keep when pruning (primary role only)
+  pub fn replication_retention_min_entries(mut self, value: u64) -> Self {
+    self.replication_retention_min_entries = Some(value);
+    self
+  }
+
+  /// Set retention minimum segment age in milliseconds (primary role only)
+  pub fn replication_retention_min_ms(mut self, value: u64) -> Self {
+    self.replication_retention_min_ms = Some(value);
+    self
+  }
 }
 
 impl Default for KiteOptions {
@@ -728,7 +792,8 @@ impl Kite {
       .sync_mode(options.sync_mode)
       .group_commit_enabled(options.group_commit_enabled)
       .group_commit_window_ms(options.group_commit_window_ms)
-      .mvcc(options.mvcc);
+      .mvcc(options.mvcc)
+      .replication_role(options.replication_role);
     if let Some(v) = options.mvcc_gc_interval_ms {
       db_options = db_options.mvcc_gc_interval_ms(v);
     }
@@ -743,6 +808,24 @@ impl Kite {
     }
     if let Some(v) = options.checkpoint_threshold {
       db_options = db_options.checkpoint_threshold(v);
+    }
+    if let Some(path) = options.replication_sidecar_path.as_ref() {
+      db_options = db_options.replication_sidecar_path(path);
+    }
+    if let Some(path) = options.replication_source_db_path.as_ref() {
+      db_options = db_options.replication_source_db_path(path);
+    }
+    if let Some(path) = options.replication_source_sidecar_path.as_ref() {
+      db_options = db_options.replication_source_sidecar_path(path);
+    }
+    if let Some(v) = options.replication_segment_max_bytes {
+      db_options = db_options.replication_segment_max_bytes(v);
+    }
+    if let Some(v) = options.replication_retention_min_entries {
+      db_options = db_options.replication_retention_min_entries(v);
+    }
+    if let Some(v) = options.replication_retention_min_ms {
+      db_options = db_options.replication_retention_min_ms(v);
     }
     let db = open_single_file(&db_path, db_options)?;
 
@@ -3737,6 +3820,27 @@ mod tests {
     assert!(ray.edge_def("FOLLOWS").is_some());
 
     ray.close().expect("expected value");
+  }
+
+  #[test]
+  fn test_open_database_primary_replication_options() {
+    let temp_dir = tempdir().expect("expected value");
+    let sidecar_path = temp_dir.path().join("replication-sidecar-custom");
+    let options = create_test_schema()
+      .replication_role(ReplicationRole::Primary)
+      .replication_sidecar_path(&sidecar_path)
+      .replication_segment_max_bytes(1024)
+      .replication_retention_min_entries(2);
+
+    let ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
+    let primary = ray.raw().primary_replication_status();
+    let replica = ray.raw().replica_replication_status();
+
+    assert!(primary.is_some());
+    assert!(replica.is_none());
+    let status = primary.expect("expected primary status");
+    assert_eq!(status.role, ReplicationRole::Primary);
+    assert_eq!(status.sidecar_path, sidecar_path);
   }
 
   #[test]

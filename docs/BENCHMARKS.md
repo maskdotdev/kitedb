@@ -3,7 +3,7 @@
 This document summarizes **measured** benchmark results. Raw outputs live in
 `docs/benchmarks/results/` so we can trace every number back to an actual run.
 
-> Latest numbers below were captured on **February 4, 2026**. Prior results
+> Latest numbers below were captured on **February 4-5, 2026**. Prior results
 > from **February 3, 2026** are retained for comparison. If you need fresh
 > numbers, rerun the commands in the next section and update this doc with the
 > new output files.
@@ -33,6 +33,19 @@ Optional knobs (Rust):
 - `--sync-mode full|normal|off` (default: normal)
 - `--group-commit-enabled`
 - `--group-commit-window-ms N` (default: 2)
+
+### Rust (replication catch-up throughput)
+
+```bash
+cd ray-rs
+cargo run --release --example replication_catchup_bench --no-default-features -- \
+  --seed-commits 1000 --backlog-commits 5000 --max-frames 256 --sync-mode normal
+```
+
+Key outputs:
+- `primary_frames_per_sec`
+- `catchup_frames_per_sec`
+- `throughput_ratio` (`catchup/primary`)
 
 ### Python bindings (single-file raw)
 
@@ -64,6 +77,24 @@ cargo run --release --example vector_bench --no-default-features -- \
   --vectors 10000 --dimensions 768 --iterations 1000 --k 10 --n-probe 10
 ```
 
+### Index pipeline hypothesis (network-dominant)
+
+```bash
+cd ray-rs
+cargo run --release --example index_pipeline_hypothesis_bench --no-default-features -- \
+  --mode both --changes 200 --working-set 200 --vector-dims 128 \
+  --tree-sitter-latency-ms 2 --scip-latency-ms 6 --embed-latency-ms 200 \
+  --embed-batch-size 32 --embed-flush-ms 20 --embed-inflight 4 \
+  --vector-apply-batch-size 64 --sync-mode normal
+```
+
+Interpretation:
+- If `parallel` hot-path elapsed is much lower than `sequential`, async embed queueing is working.
+- If `parallel` hot-path p95 is lower than `sequential`, TS+SCIP parallel parse plus unified graph commit is working.
+- If `parallel` freshness p95 is too high, tune `--embed-batch-size`, `--embed-flush-ms`,
+  and `--embed-inflight` (or reduce overwrite churn with larger working set / dedupe rules).
+- Replacement ratio (`Queue ... replaced=...`) quantifies stale embed work eliminated by dedupe.
+
 ### SQLite baseline (single-file raw)
 
 ```bash
@@ -77,6 +108,83 @@ Notes (SQLite):
 - `temp_store=MEMORY`, `locking_mode=EXCLUSIVE`, `cache_size=256MB`
 - WAL autocheckpoint disabled; `journal_size_limit` set to match WAL size
 - Edge props stored in a separate table; edges use `INSERT OR IGNORE` and props use `INSERT OR REPLACE`
+
+### Replication performance gates (Phase D carry-over)
+
+Run both replication perf gates:
+
+```bash
+cd ray-rs
+./scripts/replication-perf-gate.sh
+```
+
+#### Gate A: primary commit overhead
+
+Compares write latency with replication disabled vs enabled (`role=primary`)
+using the same benchmark harness.
+
+```bash
+cd ray-rs
+./scripts/replication-bench-gate.sh
+```
+
+Defaults:
+- Dataset: `NODES=10000`, `EDGES=50000`, `EDGE_TYPES=3`, `EDGE_PROPS=10`
+- `ITERATIONS=20000`
+- `SYNC_MODE=normal`
+- `ATTEMPTS=7` (median ratio across attempts is used for pass/fail)
+- Pass threshold: `P95_MAX_RATIO=1.03` (replication-on p95 / baseline p95)
+- `ITERATIONS` must be `>= 100`
+
+Example override:
+
+```bash
+cd ray-rs
+ITERATIONS=2000 ATTEMPTS=5 P95_MAX_RATIO=1.05 ./scripts/replication-bench-gate.sh
+```
+
+Outputs:
+- `docs/benchmarks/results/YYYY-MM-DD-replication-gate-baseline.txt` (single-attempt mode)
+- `docs/benchmarks/results/YYYY-MM-DD-replication-gate-primary.txt` (single-attempt mode)
+- `docs/benchmarks/results/YYYY-MM-DD-replication-gate-{baseline,primary}.attemptN.txt` (multi-attempt mode)
+
+#### Gate B: replica catch-up throughput
+
+Ensures replica catch-up throughput stays healthy relative to primary commit
+throughput on the same workload.
+
+```bash
+cd ray-rs
+./scripts/replication-catchup-gate.sh
+```
+
+Defaults:
+- `SEED_COMMITS=1000`
+- `BACKLOG_COMMITS=5000`
+- `MAX_FRAMES=256`
+- `SYNC_MODE=normal`
+- `ATTEMPTS=3` (retry count for noisy host variance)
+- Pass threshold: `MIN_CATCHUP_FPS=3000`
+- Pass threshold: `MIN_THROUGHPUT_RATIO=0.13` (catch-up fps / primary fps)
+- `BACKLOG_COMMITS` must be `>= 100`
+
+Example override:
+
+```bash
+cd ray-rs
+BACKLOG_COMMITS=10000 ATTEMPTS=5 MIN_THROUGHPUT_RATIO=1.10 ./scripts/replication-catchup-gate.sh
+```
+
+Output:
+- `docs/benchmarks/results/YYYY-MM-DD-replication-catchup-gate.txt` (single-attempt mode)
+- `docs/benchmarks/results/YYYY-MM-DD-replication-catchup-gate.attemptN.txt` (multi-attempt mode)
+
+Notes:
+- Gate A = commit-path overhead.
+- Gate B = replica apply throughput.
+- Keep replication correctness suite green alongside perf gates:
+  - `cargo test --no-default-features --test replication_phase_a --test replication_phase_b --test replication_phase_c --test replication_phase_d --test replication_faults_phase_d`
+  - `cargo test --no-default-features replication::`
 
 ## Latest Results (2026-02-04)
 
@@ -335,6 +443,35 @@ Sync=Off, GC off:
 | 8 | 349.01K/s |
 | 10 | 313.67K/s |
 | 16 | 296.99K/s |
+
+#### Index pipeline hypothesis notes (2026-02-05)
+
+Goal: validate whether remote embedding latency dominates enough that we should
+decouple graph hot path from vector persistence using async batching + dedupe.
+
+Harness:
+- `ray-rs/examples/index_pipeline_hypothesis_bench.rs`
+- Simulated tree-sitter + SCIP parse, graph writes, synthetic embed latency, batched vector apply.
+- `sequential`: TS parse -> TS graph commit -> SCIP parse -> SCIP graph commit -> embed -> vector apply.
+- `parallel`: TS+SCIP parse overlap -> unified graph commit -> async embed queue -> batched vector apply.
+
+Sample runs (200 events, working set=200, batch=32, flush=20ms, inflight=4, vector-apply-batch=64):
+
+| TS/SCIP parse | Embed latency | Mode | Hot path elapsed | Total elapsed | Hot p95 | Freshness p95 | Replaced jobs |
+|---------------|---------------|------|------------------|---------------|---------|----------------|---------------|
+| 1ms / 1ms | 50ms/batch | Sequential | 11.260s | 11.314s | 2.64ms | 55.09ms | n/a |
+| 1ms / 1ms | 50ms/batch | Parallel | 0.255s | 0.329s | 1.30ms | 168.43ms | 6.00% |
+| 2ms / 6ms | 200ms/batch | Sequential | 42.477s | 42.679s | 10.22ms | 205.11ms | n/a |
+| 2ms / 6ms | 200ms/batch | Parallel | 1.448s | 1.687s | 7.60ms | 775.61ms | 5.50% |
+
+Takeaway:
+- Hot path throughput improves dramatically with async pipeline.
+- Vector freshness depends on batching/queue pressure and overwrite churn; tune freshness separately
+  from hot-path latency target.
+
+Raw logs:
+- `docs/benchmarks/results/2026-02-05-index-pipeline-hypothesis-embed50.txt`
+- `docs/benchmarks/results/2026-02-05-index-pipeline-hypothesis-embed200.txt`
 
 ## Prior Results (2026-02-03)
 

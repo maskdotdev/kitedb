@@ -17,6 +17,7 @@
 //!   --no-auto-checkpoint      Disable auto-checkpoint
 //!   --vector-dims N            Vector dimensions (default: 128)
 //!   --vector-count N           Number of vectors to set (default: 1000)
+//!   --replication-primary      Enable primary replication sidecar on open options
 //!   --keep-db                 Keep the database file after benchmark
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -27,6 +28,7 @@ use tempfile::tempdir;
 use kitedb::core::single_file::{
   close_single_file, open_single_file, SingleFileOpenOptions, SyncMode,
 };
+use kitedb::replication::types::ReplicationRole;
 use kitedb::types::PropValue;
 
 #[derive(Debug, Clone)]
@@ -44,6 +46,7 @@ struct BenchConfig {
   auto_checkpoint: bool,
   vector_dims: usize,
   vector_count: usize,
+  replication_primary: bool,
   keep_db: bool,
   skip_checkpoint: bool,
   reopen_readonly: bool,
@@ -65,6 +68,7 @@ impl Default for BenchConfig {
       auto_checkpoint: true,
       vector_dims: 128,
       vector_count: 1000,
+      replication_primary: false,
       keep_db: false,
       skip_checkpoint: false,
       reopen_readonly: false,
@@ -154,6 +158,9 @@ fn parse_args() -> BenchConfig {
           config.vector_count = value.parse().unwrap_or(config.vector_count);
           i += 1;
         }
+      }
+      "--replication-primary" => {
+        config.replication_primary = true;
       }
       "--skip-checkpoint" => {
         config.skip_checkpoint = true;
@@ -648,6 +655,7 @@ fn main() {
   println!("Checkpoint threshold: {}", config.checkpoint_threshold);
   println!("Vector dims: {}", format_number(config.vector_dims));
   println!("Vector count: {}", format_number(config.vector_count));
+  println!("Replication primary: {}", config.replication_primary);
   println!("Skip checkpoint: {}", config.skip_checkpoint);
   println!("Reopen read-only: {}", config.reopen_readonly);
   println!("{}", "=".repeat(120));
@@ -665,6 +673,9 @@ fn main() {
     options = options
       .group_commit_enabled(true)
       .group_commit_window_ms(config.group_commit_window_ms);
+  }
+  if config.replication_primary {
+    options = options.replication_role(ReplicationRole::Primary);
   }
 
   let mut db = open_single_file(&db_path, options).expect("failed to open single-file db");

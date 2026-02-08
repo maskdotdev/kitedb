@@ -35,7 +35,9 @@ use std::sync::Arc;
 use crate::api::kite::{BatchOp, EdgeDef, Kite as RustKite, KiteOptions, NodeDef};
 use crate::types::NodeId;
 
-use super::database::{CheckResult, DbStats, MvccStats};
+use super::database::{
+  CheckResult, DbStats, JsPrimaryReplicationStatus, JsReplicaReplicationStatus, MvccStats,
+};
 use super::database::{JsFullEdge, JsPropValue};
 
 use conversion::{js_value_to_prop_value, key_suffix_from_js};
@@ -124,6 +126,14 @@ impl Kite {
     if let Some(mode) = options.sync_mode {
       kite_opts.sync_mode = mode.into();
     }
+    if let Some(enabled) = options.group_commit_enabled {
+      kite_opts.group_commit_enabled = enabled;
+    }
+    if let Some(window_ms) = options.group_commit_window_ms {
+      if window_ms >= 0 {
+        kite_opts.group_commit_window_ms = window_ms as u64;
+      }
+    }
     if let Some(wal_size_mb) = options.wal_size_mb {
       if wal_size_mb > 0 {
         kite_opts.wal_size = Some((wal_size_mb as usize).saturating_mul(1024 * 1024));
@@ -131,6 +141,33 @@ impl Kite {
     }
     if let Some(threshold) = options.checkpoint_threshold {
       kite_opts.checkpoint_threshold = Some(threshold.clamp(0.0, 1.0));
+    }
+    if let Some(role) = options.replication_role {
+      kite_opts.replication_role = role.into();
+    }
+    if let Some(path) = options.replication_sidecar_path {
+      kite_opts.replication_sidecar_path = Some(path.into());
+    }
+    if let Some(path) = options.replication_source_db_path {
+      kite_opts.replication_source_db_path = Some(path.into());
+    }
+    if let Some(path) = options.replication_source_sidecar_path {
+      kite_opts.replication_source_sidecar_path = Some(path.into());
+    }
+    if let Some(value) = options.replication_segment_max_bytes {
+      if value >= 0 {
+        kite_opts.replication_segment_max_bytes = Some(value as u64);
+      }
+    }
+    if let Some(value) = options.replication_retention_min_entries {
+      if value >= 0 {
+        kite_opts.replication_retention_min_entries = Some(value as u64);
+      }
+    }
+    if let Some(value) = options.replication_retention_min_ms {
+      if value >= 0 {
+        kite_opts.replication_retention_min_ms = Some(value as u64);
+      }
     }
 
     for node in options.nodes {
@@ -856,6 +893,56 @@ impl Kite {
     self.with_kite(|ray| Ok(ray.raw().has_transaction()))
   }
 
+  /// Primary replication status when role=primary, else null.
+  #[napi]
+  pub fn primary_replication_status(&self) -> Result<Option<JsPrimaryReplicationStatus>> {
+    self.with_kite(|ray| Ok(ray.raw().primary_replication_status().map(Into::into)))
+  }
+
+  /// Replica replication status when role=replica, else null.
+  #[napi]
+  pub fn replica_replication_status(&self) -> Result<Option<JsReplicaReplicationStatus>> {
+    self.with_kite(|ray| Ok(ray.raw().replica_replication_status().map(Into::into)))
+  }
+
+  /// Pull and apply up to maxFrames replication frames on replica.
+  #[napi]
+  pub fn replica_catch_up_once(&self, max_frames: i64) -> Result<i64> {
+    if max_frames < 0 {
+      return Err(Error::from_reason("maxFrames must be non-negative"));
+    }
+    self.with_kite_mut(|ray| {
+      ray
+        .raw()
+        .replica_catch_up_once(max_frames as usize)
+        .map(|count| count as i64)
+        .map_err(|e| Error::from_reason(format!("Failed replica catch-up: {e}")))
+    })
+  }
+
+  /// Force a replica reseed from current primary snapshot.
+  #[napi]
+  pub fn replica_reseed_from_snapshot(&self) -> Result<()> {
+    self.with_kite_mut(|ray| {
+      ray
+        .raw()
+        .replica_reseed_from_snapshot()
+        .map_err(|e| Error::from_reason(format!("Failed to reseed replica: {e}")))
+    })
+  }
+
+  /// Promote this primary to the next replication epoch.
+  #[napi]
+  pub fn primary_promote_to_next_epoch(&self) -> Result<i64> {
+    self.with_kite_mut(|ray| {
+      ray
+        .raw()
+        .primary_promote_to_next_epoch()
+        .map(|epoch| epoch as i64)
+        .map_err(|e| Error::from_reason(format!("Failed to promote primary: {e}")))
+    })
+  }
+
   /// Perform a checkpoint (compact WAL into snapshot)
   #[napi]
   pub fn checkpoint(&self) -> Result<()> {
@@ -1094,6 +1181,33 @@ impl napi::Task for OpenKiteTask {
     }
     if let Some(threshold) = self.options.checkpoint_threshold {
       kite_opts.checkpoint_threshold = Some(threshold.clamp(0.0, 1.0));
+    }
+    if let Some(role) = self.options.replication_role.take() {
+      kite_opts.replication_role = role.into();
+    }
+    if let Some(path) = self.options.replication_sidecar_path.take() {
+      kite_opts.replication_sidecar_path = Some(path.into());
+    }
+    if let Some(path) = self.options.replication_source_db_path.take() {
+      kite_opts.replication_source_db_path = Some(path.into());
+    }
+    if let Some(path) = self.options.replication_source_sidecar_path.take() {
+      kite_opts.replication_source_sidecar_path = Some(path.into());
+    }
+    if let Some(value) = self.options.replication_segment_max_bytes {
+      if value >= 0 {
+        kite_opts.replication_segment_max_bytes = Some(value as u64);
+      }
+    }
+    if let Some(value) = self.options.replication_retention_min_entries {
+      if value >= 0 {
+        kite_opts.replication_retention_min_entries = Some(value as u64);
+      }
+    }
+    if let Some(value) = self.options.replication_retention_min_ms {
+      if value >= 0 {
+        kite_opts.replication_retention_min_ms = Some(value as u64);
+      }
     }
 
     for node in &self.options.nodes {

@@ -5,8 +5,11 @@ use crate::core::single_file::{
   SingleFileOpenOptions as RustOpenOptions, SnapshotParseMode as RustSnapshotParseMode,
   SyncMode as RustSyncMode,
 };
+use crate::replication::types::ReplicationRole;
 use crate::types::{CacheOptions, PropertyCacheConfig, QueryCacheConfig, TraversalCacheConfig};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use std::str::FromStr;
 
 /// Synchronization mode for WAL writes
 ///
@@ -164,6 +167,27 @@ pub struct OpenOptions {
   /// Snapshot parse mode: "strict" or "salvage" (single-file only)
   #[pyo3(get, set)]
   pub snapshot_parse_mode: Option<SnapshotParseMode>,
+  /// Replication role: "disabled", "primary", or "replica"
+  #[pyo3(get, set)]
+  pub replication_role: Option<String>,
+  /// Replication sidecar path override
+  #[pyo3(get, set)]
+  pub replication_sidecar_path: Option<String>,
+  /// Source primary db path (replica role only)
+  #[pyo3(get, set)]
+  pub replication_source_db_path: Option<String>,
+  /// Source primary sidecar path (replica role only)
+  #[pyo3(get, set)]
+  pub replication_source_sidecar_path: Option<String>,
+  /// Segment rotation threshold in bytes (primary role only)
+  #[pyo3(get, set)]
+  pub replication_segment_max_bytes: Option<i64>,
+  /// Minimum retained entries window (primary role only)
+  #[pyo3(get, set)]
+  pub replication_retention_min_entries: Option<i64>,
+  /// Minimum retained segment age in milliseconds (primary role only)
+  #[pyo3(get, set)]
+  pub replication_retention_min_ms: Option<i64>,
 }
 
 #[pymethods]
@@ -192,7 +216,14 @@ impl OpenOptions {
         sync_mode=None,
         group_commit_enabled=None,
         group_commit_window_ms=None,
-        snapshot_parse_mode=None
+        snapshot_parse_mode=None,
+        replication_role=None,
+        replication_sidecar_path=None,
+        replication_source_db_path=None,
+        replication_source_sidecar_path=None,
+        replication_segment_max_bytes=None,
+        replication_retention_min_entries=None,
+        replication_retention_min_ms=None
     ))]
   #[allow(clippy::too_many_arguments)]
   fn new(
@@ -219,6 +250,13 @@ impl OpenOptions {
     group_commit_enabled: Option<bool>,
     group_commit_window_ms: Option<i64>,
     snapshot_parse_mode: Option<SnapshotParseMode>,
+    replication_role: Option<String>,
+    replication_sidecar_path: Option<String>,
+    replication_source_db_path: Option<String>,
+    replication_source_sidecar_path: Option<String>,
+    replication_segment_max_bytes: Option<i64>,
+    replication_retention_min_entries: Option<i64>,
+    replication_retention_min_ms: Option<i64>,
   ) -> Self {
     Self {
       read_only,
@@ -244,6 +282,13 @@ impl OpenOptions {
       group_commit_enabled,
       group_commit_window_ms,
       snapshot_parse_mode,
+      replication_role,
+      replication_sidecar_path,
+      replication_source_db_path,
+      replication_source_sidecar_path,
+      replication_segment_max_bytes,
+      replication_retention_min_entries,
+      replication_retention_min_ms,
     }
   }
 
@@ -343,6 +388,45 @@ impl OpenOptions {
     }
     if let Some(mode) = self.snapshot_parse_mode {
       rust_opts = rust_opts.snapshot_parse_mode(mode.mode);
+    }
+    if let Some(ref role) = self.replication_role {
+      let role = ReplicationRole::from_str(role).map_err(|error| {
+        PyValueError::new_err(format!("Invalid replication_role '{role}': {error}"))
+      })?;
+      rust_opts = rust_opts.replication_role(role);
+    }
+    if let Some(ref path) = self.replication_sidecar_path {
+      rust_opts = rust_opts.replication_sidecar_path(path);
+    }
+    if let Some(ref path) = self.replication_source_db_path {
+      rust_opts = rust_opts.replication_source_db_path(path);
+    }
+    if let Some(ref path) = self.replication_source_sidecar_path {
+      rust_opts = rust_opts.replication_source_sidecar_path(path);
+    }
+    if let Some(value) = self.replication_segment_max_bytes {
+      if value < 0 {
+        return Err(PyValueError::new_err(
+          "replication_segment_max_bytes must be non-negative",
+        ));
+      }
+      rust_opts = rust_opts.replication_segment_max_bytes(value as u64);
+    }
+    if let Some(value) = self.replication_retention_min_entries {
+      if value < 0 {
+        return Err(PyValueError::new_err(
+          "replication_retention_min_entries must be non-negative",
+        ));
+      }
+      rust_opts = rust_opts.replication_retention_min_entries(value as u64);
+    }
+    if let Some(value) = self.replication_retention_min_ms {
+      if value < 0 {
+        return Err(PyValueError::new_err(
+          "replication_retention_min_ms must be non-negative",
+        ));
+      }
+      rust_opts = rust_opts.replication_retention_min_ms(value as u64);
     }
 
     Ok(rust_opts)

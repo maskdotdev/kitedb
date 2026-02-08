@@ -184,6 +184,135 @@ impl From<core_metrics::MvccMetrics> for MvccMetrics {
   }
 }
 
+/// Primary replication metrics
+#[pyclass(name = "PrimaryReplicationMetrics")]
+#[derive(Debug, Clone)]
+pub struct PrimaryReplicationMetrics {
+  #[pyo3(get)]
+  pub epoch: i64,
+  #[pyo3(get)]
+  pub head_log_index: i64,
+  #[pyo3(get)]
+  pub retained_floor: i64,
+  #[pyo3(get)]
+  pub replica_count: i64,
+  #[pyo3(get)]
+  pub stale_epoch_replica_count: i64,
+  #[pyo3(get)]
+  pub max_replica_lag: i64,
+  #[pyo3(get)]
+  pub min_replica_applied_log_index: Option<i64>,
+  #[pyo3(get)]
+  pub sidecar_path: String,
+  #[pyo3(get)]
+  pub last_token: Option<String>,
+  #[pyo3(get)]
+  pub append_attempts: i64,
+  #[pyo3(get)]
+  pub append_failures: i64,
+  #[pyo3(get)]
+  pub append_successes: i64,
+}
+
+#[pymethods]
+impl PrimaryReplicationMetrics {
+  fn __repr__(&self) -> String {
+    format!(
+      "PrimaryReplicationMetrics(epoch={}, head={}, retained_floor={}, replicas={})",
+      self.epoch, self.head_log_index, self.retained_floor, self.replica_count
+    )
+  }
+}
+
+impl From<core_metrics::PrimaryReplicationMetrics> for PrimaryReplicationMetrics {
+  fn from(metrics: core_metrics::PrimaryReplicationMetrics) -> Self {
+    PrimaryReplicationMetrics {
+      epoch: metrics.epoch,
+      head_log_index: metrics.head_log_index,
+      retained_floor: metrics.retained_floor,
+      replica_count: metrics.replica_count,
+      stale_epoch_replica_count: metrics.stale_epoch_replica_count,
+      max_replica_lag: metrics.max_replica_lag,
+      min_replica_applied_log_index: metrics.min_replica_applied_log_index,
+      sidecar_path: metrics.sidecar_path,
+      last_token: metrics.last_token,
+      append_attempts: metrics.append_attempts,
+      append_failures: metrics.append_failures,
+      append_successes: metrics.append_successes,
+    }
+  }
+}
+
+/// Replica replication metrics
+#[pyclass(name = "ReplicaReplicationMetrics")]
+#[derive(Debug, Clone)]
+pub struct ReplicaReplicationMetrics {
+  #[pyo3(get)]
+  pub applied_epoch: i64,
+  #[pyo3(get)]
+  pub applied_log_index: i64,
+  #[pyo3(get)]
+  pub needs_reseed: bool,
+  #[pyo3(get)]
+  pub last_error: Option<String>,
+}
+
+#[pymethods]
+impl ReplicaReplicationMetrics {
+  fn __repr__(&self) -> String {
+    format!(
+      "ReplicaReplicationMetrics(epoch={}, applied_log_index={}, needs_reseed={})",
+      self.applied_epoch, self.applied_log_index, self.needs_reseed
+    )
+  }
+}
+
+impl From<core_metrics::ReplicaReplicationMetrics> for ReplicaReplicationMetrics {
+  fn from(metrics: core_metrics::ReplicaReplicationMetrics) -> Self {
+    ReplicaReplicationMetrics {
+      applied_epoch: metrics.applied_epoch,
+      applied_log_index: metrics.applied_log_index,
+      needs_reseed: metrics.needs_reseed,
+      last_error: metrics.last_error,
+    }
+  }
+}
+
+/// Replication metrics
+#[pyclass(name = "ReplicationMetrics")]
+#[derive(Debug, Clone)]
+pub struct ReplicationMetrics {
+  #[pyo3(get)]
+  pub enabled: bool,
+  #[pyo3(get)]
+  pub role: String,
+  #[pyo3(get)]
+  pub primary: Option<PrimaryReplicationMetrics>,
+  #[pyo3(get)]
+  pub replica: Option<ReplicaReplicationMetrics>,
+}
+
+#[pymethods]
+impl ReplicationMetrics {
+  fn __repr__(&self) -> String {
+    format!(
+      "ReplicationMetrics(enabled={}, role='{}')",
+      self.enabled, self.role
+    )
+  }
+}
+
+impl From<core_metrics::ReplicationMetrics> for ReplicationMetrics {
+  fn from(metrics: core_metrics::ReplicationMetrics) -> Self {
+    ReplicationMetrics {
+      enabled: metrics.enabled,
+      role: metrics.role,
+      primary: metrics.primary.map(Into::into),
+      replica: metrics.replica.map(Into::into),
+    }
+  }
+}
+
 /// MVCC stats (from stats())
 #[pyclass(name = "MvccStats")]
 #[derive(Debug, Clone)]
@@ -286,6 +415,8 @@ pub struct DatabaseMetrics {
   #[pyo3(get)]
   pub mvcc: Option<MvccMetrics>,
   #[pyo3(get)]
+  pub replication: ReplicationMetrics,
+  #[pyo3(get)]
   pub memory: MemoryMetrics,
   #[pyo3(get)]
   pub collected_at: i64,
@@ -313,6 +444,7 @@ impl From<core_metrics::DatabaseMetrics> for DatabaseMetrics {
       data: metrics.data.into(),
       cache: metrics.cache.into(),
       mvcc: metrics.mvcc.map(Into::into),
+      replication: metrics.replication.into(),
       memory: metrics.memory.into(),
       collected_at: metrics.collected_at_ms,
     }

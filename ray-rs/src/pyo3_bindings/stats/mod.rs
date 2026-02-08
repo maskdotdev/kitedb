@@ -14,5 +14,6 @@ pub mod metrics;
 pub use database::{CacheStats, CheckResult, DbStats};
 pub use metrics::{
   CacheLayerMetrics, CacheMetrics, DataMetrics, DatabaseMetrics, HealthCheckEntry,
-  HealthCheckResult, MemoryMetrics, MvccMetrics, MvccStats,
+  HealthCheckResult, MemoryMetrics, MvccMetrics, MvccStats, PrimaryReplicationMetrics,
+  ReplicaReplicationMetrics, ReplicationMetrics,
 };

@@ -31,6 +31,7 @@ mod iter;
 mod open;
 mod read;
 mod recovery;
+mod replication;
 mod schema;
 mod transaction;
 mod vector;
@@ -163,6 +164,11 @@ pub struct SingleFileDB {
   pub(crate) group_commit_enabled: bool,
   /// Group commit window in milliseconds
   pub(crate) group_commit_window_ms: u64,
+
+  /// Primary replication runtime (enabled only when role=primary)
+  pub(crate) primary_replication: Option<crate::replication::primary::PrimaryReplication>,
+  /// Replica replication runtime (enabled only when role=replica)
+  pub(crate) replica_replication: Option<crate::replication::replica::ReplicaReplication>,
 
   #[cfg(feature = "bench-profile")]
   pub(crate) commit_lock_wait_ns: AtomicU64,
