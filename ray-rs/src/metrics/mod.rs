@@ -1041,10 +1041,23 @@ fn load_persisted_breaker_from_url_patch(
   };
   if options.circuit_breaker_state_cas {
     if let Some(etag) = response.header("etag") {
-      otlp_circuit_breaker_state_url_etags().lock().insert(
+      let mut etags = otlp_circuit_breaker_state_url_etags().lock();
+      etags.insert(
         circuit_breaker_state_url_etag_key(url, "patch", Some(key)),
         etag.to_string(),
       );
+      if options.circuit_breaker_state_patch_batch {
+        etags.insert(
+          circuit_breaker_state_url_etag_key(url, "batch", None),
+          etag.to_string(),
+        );
+      }
+      if options.circuit_breaker_state_patch_merge {
+        etags.insert(
+          circuit_breaker_state_url_etag_key(url, "merge", None),
+          etag.to_string(),
+        );
+      }
     }
   }
   let body = response.into_string().unwrap_or_default();

@@ -976,6 +976,122 @@ fn spawn_state_store_patch_merge_server(
   (endpoint, handle)
 }
 
+fn spawn_state_store_patch_merge_retry_server(
+  expected_key: String,
+) -> (String, thread::JoinHandle<()>) {
+  let listener = TcpListener::bind("127.0.0.1:0").expect("bind state store patch merge retry");
+  let address = listener
+    .local_addr()
+    .expect("state store patch merge retry local addr");
+  let endpoint = format!("http://{address}/breaker-state");
+  let handle = thread::spawn(move || {
+    let mut merge_attempts = 0usize;
+    for expected_method in ["GET", "GET", "PATCH", "PATCH"] {
+      let (mut stream, _) = listener
+        .accept()
+        .expect("accept state store patch merge retry");
+      stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .expect("set state store patch merge retry read timeout");
+
+      let mut buffer = Vec::new();
+      let mut chunk = [0u8; 1024];
+      let mut header_end: Option<usize> = None;
+      let mut content_length = 0usize;
+      loop {
+        match stream.read(&mut chunk) {
+          Ok(0) => break,
+          Ok(read) => {
+            buffer.extend_from_slice(&chunk[..read]);
+            if header_end.is_none() {
+              if let Some(position) = find_subsequence(&buffer, b"\r\n\r\n") {
+                let end = position + 4;
+                header_end = Some(end);
+                let headers_text = String::from_utf8_lossy(&buffer[..end]);
+                for line in headers_text.lines().skip(1) {
+                  let Some((name, value)) = line.split_once(':') else {
+                    continue;
+                  };
+                  if name.eq_ignore_ascii_case("content-length") {
+                    content_length = value.trim().parse::<usize>().unwrap_or(0);
+                  }
+                }
+              }
+            }
+            if let Some(end) = header_end {
+              if buffer.len() >= end + content_length {
+                break;
+              }
+            }
+          }
+          Err(error) => panic!("read state store patch merge retry request failed: {error}"),
+        }
+      }
+
+      let end = header_end.expect("state store patch merge retry header terminator");
+      let request_text = String::from_utf8_lossy(&buffer[..end]);
+      let request_line = request_text.lines().next().unwrap_or_default();
+      assert!(
+        request_line.starts_with(&format!("{expected_method} /breaker-state HTTP/1.1")),
+        "unexpected state store patch merge retry request line: {request_line}"
+      );
+
+      let mut headers = HashMap::new();
+      for line in request_text.lines().skip(1) {
+        let Some((name, value)) = line.split_once(':') else {
+          continue;
+        };
+        headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_string());
+      }
+      assert_eq!(
+        headers.get("x-kitedb-breaker-key").map(String::as_str),
+        Some(expected_key.as_str()),
+        "patch merge retry key header mismatch"
+      );
+      if expected_method == "PATCH" {
+        assert_eq!(
+          headers.get("x-kitedb-breaker-mode").map(String::as_str),
+          Some("patch-merge-v1"),
+          "patch merge retry mode header mismatch"
+        );
+        let if_match = headers
+          .get("if-match")
+          .map(String::as_str)
+          .unwrap_or_default();
+        merge_attempts = merge_attempts.saturating_add(1);
+        if merge_attempts == 1 {
+          assert_eq!(
+            if_match, "pmr1",
+            "first patch-merge if-match header should use GET ETag"
+          );
+          let response = "HTTP/1.1 412 Precondition Failed\r\nETag: pmr2\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+          stream
+            .write_all(response.as_bytes())
+            .expect("write patch merge retry precondition response");
+          continue;
+        }
+        if merge_attempts == 2 {
+          assert_eq!(if_match, "pmr2", "retry if-match header mismatch");
+        }
+      }
+
+      let (status_line, etag, body) = if expected_method == "GET" {
+        ("HTTP/1.1 200 OK", "pmr1", "{}")
+      } else {
+        ("HTTP/1.1 200 OK", "pmr3", "")
+      };
+      let response = format!(
+        "{status_line}\r\nContent-Type: application/json\r\nETag: {etag}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+      );
+      stream
+        .write_all(response.as_bytes())
+        .expect("write state store patch merge retry response");
+    }
+  });
+  (endpoint, handle)
+}
+
 fn spawn_grpc_capture_server(
   fail_first_attempts: usize,
 ) -> (
@@ -2007,6 +2123,40 @@ fn otlp_push_payload_shared_state_url_patch_merge_protocol_compacts_high_cardina
   );
 
   state_handle.join().expect("state store patch merge thread");
+}
+
+#[test]
+fn otlp_push_payload_shared_state_url_patch_merge_protocol_retries_on_precondition_failure() {
+  let scope_key = "shared-patch-merge-retry-breaker";
+  let (state_url, state_handle) = spawn_state_store_patch_merge_retry_server(scope_key.to_string());
+  let options = OtlpHttpPushOptions {
+    timeout_ms: 200,
+    retry_max_attempts: 1,
+    circuit_breaker_failure_threshold: 1,
+    circuit_breaker_open_ms: 2_000,
+    circuit_breaker_state_url: Some(state_url),
+    circuit_breaker_state_patch: true,
+    circuit_breaker_state_patch_merge: true,
+    circuit_breaker_state_patch_retry_max_attempts: 2,
+    circuit_breaker_state_cas: true,
+    circuit_breaker_scope_key: Some(scope_key.to_string()),
+    ..OtlpHttpPushOptions::default()
+  };
+
+  let first = push_replication_metrics_otel_json_payload_with_options(
+    "{}",
+    "http://127.0.0.1:9/v1/metrics",
+    &options,
+  )
+  .expect_err("first call should fail transport and persist merge patch with retry");
+  assert!(
+    first.to_string().contains("transport"),
+    "unexpected first error: {first}"
+  );
+
+  state_handle
+    .join()
+    .expect("state store patch merge retry thread");
 }
 
 #[test]
