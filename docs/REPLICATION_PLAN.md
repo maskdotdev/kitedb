@@ -401,8 +401,12 @@ Implemented:
   - TypeScript forwarded-header TLS matcher helper (`createForwardedTlsMtlsMatcher` / `isForwardedTlsClientAuthorized`) for proxy-terminated TLS/mTLS runtimes beyond Node-native sockets.
   - Python admin auth helper (`create_replication_admin_authorizer`) with token/mTLS modes and ASGI native TLS matcher hook (`create_asgi_tls_mtls_matcher` / `is_asgi_tls_client_authorized`).
 - Polyglot host-runtime HTTP adapter templates:
+  - Node Express template (`docs/examples/replication_adapter_node_express.ts`)
   - Python FastAPI template (`docs/examples/replication_adapter_python_fastapi.py`)
   - generic middleware template (`docs/examples/replication_adapter_generic_middleware.ts`).
+- Host-runtime transport/admin flow validation added for both bindings:
+  - Node AVA test (`ray-rs/__test__/replication_transport_flow.spec.ts`)
+  - Python pytest test (`ray-rs/python/tests/test_replication_transport_flow.py`).
 - Replica source transport hardening in host-runtime open path (required source DB path + source/local sidecar collision fencing).
 - Operator runbook for promotion/reseed/retention tuning (`docs/REPLICATION_RUNBOOK.md`).
 - Replication benchmark gate script (`ray-rs/scripts/replication-bench-gate.sh`) + benchmark doc wiring.
@@ -453,8 +457,8 @@ Carry-over to next phase:
    - Keep running `ray-rs/scripts/replication-soak-gate.sh` in tracking mode (manual/scheduled CI) and tune thresholds from trend data.
    - Expand scenario depth (longer cycles + higher commit load) on release-like hardware before V1 cut.
 3. Host runtime adoption pass:
-   - Add one production-style embedding example (non-playground) that wires transport/admin JSON exports end-to-end.
-   - Validate Node + Python bindings against that same flow.
+   - Keep adapter examples + Node/Python host-runtime flow tests green as API evolves.
+   - Add one additional proxy-terminated deployment sample with forwarded-header mTLS auth checks.
 4. Release packaging + docs closeout:
    - Finalize V1 operator checklist in `docs/REPLICATION_RUNBOOK.md`.
    - Cut release commit/tag using release-note/tag rules from `AGENTS.md`.
