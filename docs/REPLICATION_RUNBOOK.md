@@ -42,6 +42,7 @@ Metrics surface:
 - Host-runtime replication transport JSON export helpers are available via:
   - Node NAPI: `collectReplicationSnapshotTransportJson(db, includeData?)`,
     `collectReplicationLogTransportJson(db, cursor?, maxFrames?, maxBytes?, includePayload?)`
+  - TypeScript adapter helper: `createReplicationTransportAdapter(db)` in `ray-rs/ts/replication_transport.ts`
   - Python PyO3: `collect_replication_snapshot_transport_json(db, include_data=False)`,
     `collect_replication_log_transport_json(db, cursor=None, max_frames=128, max_bytes=1048576, include_payload=True)`
   - These are intended for embedding host-side HTTP endpoints beyond playground runtime.

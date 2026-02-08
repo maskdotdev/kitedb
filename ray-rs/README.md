@@ -192,6 +192,7 @@ import {
   collectReplicationMetricsOtelJson,
   collectReplicationMetricsPrometheus,
   collectReplicationSnapshotTransportJson,
+  createReplicationTransportAdapter,
   pushReplicationMetricsOtelJson,
   pushReplicationMetricsOtelJsonWithOptions,
 } from 'kitedb/native'
@@ -255,6 +256,11 @@ console.log(snapshotJson)
 
 const logPageJson = collectReplicationLogTransportJson(primary, null, 128, 1_048_576, false)
 console.log(logPageJson)
+
+const adapter = createReplicationTransportAdapter(primary)
+const snapshot = adapter.snapshot(false)
+const logPage = adapter.log({ maxFrames: 128, maxBytes: 1_048_576, includePayload: false })
+console.log(snapshot, logPage)
 
 replica.close()
 primary.close()

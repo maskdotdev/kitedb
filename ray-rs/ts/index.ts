@@ -1046,6 +1046,20 @@ export {
   version,
 } from '../index'
 
+export {
+  createReplicationTransportAdapter,
+  readReplicationLogTransport,
+  readReplicationSnapshotTransport,
+} from './replication_transport'
+
+export type {
+  ReplicationLogTransportFrame,
+  ReplicationLogTransportOptions,
+  ReplicationLogTransportPage,
+  ReplicationSnapshotTransport,
+  ReplicationTransportAdapter,
+} from './replication_transport'
+
 // Re-export common types with clean names
 export type {
   // Database

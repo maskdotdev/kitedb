@@ -368,6 +368,7 @@ Implemented:
 - Host-runtime replication transport JSON export surfaces for embedding HTTP endpoints beyond playground runtime:
   - snapshot export (`collectReplicationSnapshotTransportJson` / `collect_replication_snapshot_transport_json`)
   - log page export with cursor/limits (`collectReplicationLogTransportJson` / `collect_replication_log_transport_json`).
+  - TypeScript adapter helper (`createReplicationTransportAdapter`) for wiring custom HTTP handlers.
 - Replica source transport hardening in host-runtime open path (required source DB path + source/local sidecar collision fencing).
 - Operator runbook for promotion/reseed/retention tuning (`docs/REPLICATION_RUNBOOK.md`).
 - Replication benchmark gate script (`ray-rs/scripts/replication-bench-gate.sh`) + benchmark doc wiring.
