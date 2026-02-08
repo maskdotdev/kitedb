@@ -8,12 +8,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
 	type Kite,
+	type KiteOptions,
 	defineEdge,
 	defineNode,
 	kite,
 	optional,
 	prop,
-} from "../../../src/index.ts";
+} from "../../../ray-rs/ts/index.ts";
 import { createDemoGraph } from "./demo-data.ts";
 
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -75,16 +76,19 @@ interface DbState {
 
 let currentDb: DbState | null = null;
 
+export type PlaygroundOpenOptions = Omit<KiteOptions, "nodes" | "edges">;
+
 /**
  * Open a database from a file path
  */
 export async function openDatabase(
 	path: string,
+	options?: PlaygroundOpenOptions,
 ): Promise<{ success: boolean; error?: string }> {
 	try {
 		await closeDatabase();
 
-		const db = await kite(path, { nodes, edges });
+		const db = await kite(path, { nodes, edges, ...(options ?? {}) });
 		currentDb = { db, path, isDemo: false };
 
 		return { success: true };

@@ -166,7 +166,14 @@ playground/
 ```typescript
 // Database Management
 GET  /api/status              → { connected: boolean, path?: string, nodeCount?: number, edgeCount?: number }
-POST /api/db/open             ← { path: string } → { success: boolean, error?: string }
+GET  /api/replication/status  → { connected: boolean, role: "primary"|"replica"|"disabled", primary?: ..., replica?: ... }
+GET  /api/replication/metrics → text/plain (Prometheus exposition format)
+GET  /api/replication/snapshot/latest → { success: boolean, snapshot?: { byteLength, sha256, ... } }
+GET  /api/replication/log?cursor=...&maxBytes=...&maxFrames=... → { success: boolean, frames: [...], nextCursor, eof }
+POST /api/replication/pull    ← { maxFrames?: number } → { success: boolean, appliedFrames?: number, replica?: ... }
+POST /api/replication/reseed  → { success: boolean, replica?: ... }
+POST /api/replication/promote → { success: boolean, epoch?: number, primary?: ... }
+POST /api/db/open             ← { path: string, options?: { readOnly?, syncMode?, replicationRole?, ... } } → { success: boolean, error?: string }
 POST /api/db/upload           ← FormData (file) → { success: boolean, error?: string }
 POST /api/db/demo             → { success: boolean }
 POST /api/db/close            → { success: boolean }
@@ -192,6 +199,19 @@ GET  /api/graph/network       → { nodes: VisNode[], edges: VisEdge[], truncate
 POST /api/graph/path          ← { startKey: string, endKey: string } → { path: string[], edges: string[] } | { error: string }
 POST /api/graph/impact        ← { nodeKey: string } → { impacted: string[], edges: string[] }
 ```
+
+Replication admin auth:
+- Auth mode envs:
+  - `REPLICATION_ADMIN_AUTH_MODE` = `none|token|mtls|token_or_mtls|token_and_mtls`
+  - `REPLICATION_ADMIN_TOKEN` for token modes
+  - `REPLICATION_MTLS_HEADER` (default `x-forwarded-client-cert`) for mTLS modes
+  - `REPLICATION_MTLS_SUBJECT_REGEX` optional subject filter for mTLS modes
+  - `REPLICATION_MTLS_NATIVE_TLS=true` to treat native HTTPS + client-cert verification as mTLS auth
+  - `PLAYGROUND_TLS_CERT_FILE` + `PLAYGROUND_TLS_KEY_FILE` enable HTTPS listener
+  - `PLAYGROUND_TLS_CA_FILE` optional custom client-cert CA bundle
+  - `PLAYGROUND_TLS_REQUEST_CERT` + `PLAYGROUND_TLS_REJECT_UNAUTHORIZED` for TLS client-cert enforcement
+- Admin endpoints (`/snapshot/latest`, `/metrics`, `/log`, `/pull`, `/reseed`, `/promote`) enforce the selected mode.
+- `/api/replication/status` remains readable without auth.
 
 ---
 
