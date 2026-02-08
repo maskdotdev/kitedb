@@ -1,6 +1,6 @@
 # KiteDB Replication V1 Plan (Feature + Code)
 
-Status: draft (implementation-ready)
+Status: Phase D complete; V1 release hardening next
 
 ## 1) Goals
 
@@ -367,8 +367,11 @@ Phase exit criteria:
 
 ## 19) Open Questions
 
-- Commit overhead budget is fixed for V1 gate: `P95_MAX_RATIO=1.03` (replication-on p95 / baseline p95).
-- ANN default decision is now fixed to latency-first IVF-PQ (`residuals=false`, `pq_subspaces=48`, `pq_centroids=256`) based on 2026-02-08 matrix/sweep data (`ray-rs/scripts/vector-ann-matrix.sh`, `ray-rs/scripts/vector-ann-pq-tuning.sh`); authoritative replication scope remains logical vector property mutations (`SetNodeVector` / `DelNodeVector`).
+- None blocking V1 scope.
+- Locked for V1 gate:
+  - Commit overhead budget: `P95_MAX_RATIO=1.03` (replication-on p95 / baseline p95).
+  - ANN default: latency-first IVF-PQ (`residuals=false`, `pq_subspaces=48`, `pq_centroids=256`).
+  - Authoritative vector replication scope: logical vector property mutations (`SetNodeVector` / `DelNodeVector`).
 
 ## 20) Phase D Summary (February 8, 2026)
 
@@ -439,3 +442,18 @@ Known limits:
 Carry-over to next phase:
 
 - None for OTLP shared-state patch transport hardening in Phase D.
+
+## 21) Next Steps (Post-Phase-D)
+
+1. V1 release gate dry-run:
+   - Execute `ray-rs/scripts/replication-perf-gate.sh` and `ray-rs/scripts/vector-ann-gate.sh` on release-like hardware.
+   - Capture artifacts under `docs/benchmarks/results/` with a new date stamp.
+2. Long-run stability soak:
+   - Add a 1-primary/5-replica soak scenario with lag churn + periodic promotion/reseed cycles.
+   - Gate on zero divergence, deterministic fencing, bounded replica lag recovery.
+3. Host runtime adoption pass:
+   - Add one production-style embedding example (non-playground) that wires transport/admin JSON exports end-to-end.
+   - Validate Node + Python bindings against that same flow.
+4. Release packaging + docs closeout:
+   - Finalize V1 operator checklist in `docs/REPLICATION_RUNBOOK.md`.
+   - Cut release commit/tag using release-note/tag rules from `AGENTS.md`.
