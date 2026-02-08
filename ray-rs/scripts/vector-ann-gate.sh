@@ -26,7 +26,7 @@ if [[ "$ATTEMPTS" -lt 1 ]]; then
 fi
 
 mkdir -p "$OUT_DIR"
-STAMP="$(date +%F)"
+STAMP="${STAMP:-$(date +%F)}"
 LOG_BASE="$OUT_DIR/${STAMP}-vector-ann-gate"
 
 declare -a recalls=()

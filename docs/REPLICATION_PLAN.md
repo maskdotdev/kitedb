@@ -411,7 +411,7 @@ Implemented:
 - Vector compaction matrix script + baseline snapshot (`ray-rs/scripts/vector-compaction-matrix.sh`, `docs/benchmarks/results/2026-02-08-vector-compaction-*.{txt,csv}`) with recommendation to keep current compaction defaults.
 - ANN algorithm benchmark harness + matrix script (`ray-rs/examples/vector_ann_bench.rs`, `ray-rs/scripts/vector-ann-matrix.sh`) with baseline artifact snapshot (`docs/benchmarks/results/2026-02-08-vector-ann-matrix.{txt,csv}`).
 - ANN PQ tuning sweep + ANN recall/p95 gate scripts (`ray-rs/scripts/vector-ann-pq-tuning.sh`, `ray-rs/scripts/vector-ann-gate.sh`) with artifact snapshots (`docs/benchmarks/results/2026-02-08-vector-ann-pq-tuning.{txt,csv}`, `docs/benchmarks/results/2026-02-08-vector-ann-gate.attempt*.txt`).
-- Non-blocking ANN PQ trend tracking in CI (`ann-pq-tracking` job in `.github/workflows/ray-rs.yml`, weekly schedule + manual dispatch with `ann_pq_profile=fast|full`, artifact `ann-pq-tracking-logs`).
+- Non-blocking ANN PQ trend tracking in CI (`ann-pq-tracking` job in `.github/workflows/ray-rs.yml`, weekly schedule + manual dispatch with `ann_pq_profile=fast|full`, artifact `ann-pq-tracking-logs`, run-scoped `ci-<run_id>-<run_attempt>` stamp).
 - HTTP transport/admin rollout in playground runtime:
   - `GET /api/replication/status`
   - `GET /api/replication/metrics` (Prometheus text export)

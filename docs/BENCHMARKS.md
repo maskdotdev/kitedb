@@ -159,6 +159,7 @@ CI tracking:
 - Main workflow (`.github/workflows/ray-rs.yml`) includes non-blocking `ann-pq-tracking`
   (weekly schedule + manual dispatch) running `./scripts/vector-ann-pq-tuning.sh`.
 - Results are uploaded as artifact `ann-pq-tracking-logs`.
+- Tracking logs are run-scoped with stamp `ci-<run_id>-<run_attempt>`.
 - Manual dispatch input `ann_pq_profile`:
   - `fast` (default): lightweight trend sweep.
   - `full`: deeper sweep (`RESIDUALS_SET=false true`) for investigation.
@@ -180,6 +181,7 @@ Latest gate snapshot (2026-02-08): median recall@k `0.2835`, median p95 `1.1716m
 CI:
 - Main-branch workflow (`.github/workflows/ray-rs.yml`) runs `./scripts/vector-ann-gate.sh`
   and uploads logs as artifact `ann-quality-gate-logs`.
+- Gate logs are run-scoped with stamp `ci-<run_id>-<run_attempt>`.
 
 ### Index pipeline hypothesis (network-dominant)
 
