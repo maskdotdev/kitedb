@@ -85,6 +85,7 @@ jobs:
       - name: Run replication perf gate
         run: ./scripts/replication-perf-gate.sh
         env:
+          STAMP: ci-${{ github.run_id }}-${{ github.run_attempt }}
           # CI-tuned defaults to reduce runtime while keeping meaningful signal.
           ITERATIONS: "10000"
           SEED_COMMITS: "1000"
@@ -98,7 +99,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: replication-perf-gate-logs
-          path: docs/benchmarks/results/*replication-*gate*.txt
+          path: docs/benchmarks/results/ci-${{ github.run_id }}-${{ github.run_attempt }}-replication-*gate*.txt
           if-no-files-found: ignore
   ann-quality-gate:
     name: ANN Quality Gate

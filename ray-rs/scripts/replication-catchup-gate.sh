@@ -24,7 +24,7 @@ if [[ "$ATTEMPTS" -lt 1 ]]; then
 fi
 
 mkdir -p "$OUT_DIR"
-STAMP="$(date +%F)"
+STAMP="${STAMP:-$(date +%F)}"
 LOGFILE_BASE="$OUT_DIR/${STAMP}-replication-catchup-gate"
 
 best_catchup_fps=0

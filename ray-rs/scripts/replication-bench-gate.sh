@@ -23,7 +23,7 @@ if [[ "$ATTEMPTS" -lt 1 ]]; then
 fi
 
 mkdir -p "$OUT_DIR"
-STAMP="$(date +%F)"
+STAMP="${STAMP:-$(date +%F)}"
 BASELINE_LOG_BASE="$OUT_DIR/${STAMP}-replication-gate-baseline"
 PRIMARY_LOG_BASE="$OUT_DIR/${STAMP}-replication-gate-primary"
 

@@ -404,7 +404,7 @@ Implemented:
 - Operator runbook for promotion/reseed/retention tuning (`docs/REPLICATION_RUNBOOK.md`).
 - Replication benchmark gate script (`ray-rs/scripts/replication-bench-gate.sh`) + benchmark doc wiring.
 - Replica catch-up throughput gate (`ray-rs/scripts/replication-catchup-gate.sh`) and combined perf gate (`ray-rs/scripts/replication-perf-gate.sh`).
-- Main-branch CI perf-gate enforcement in `ray-rs` workflow (`.github/workflows/ray-rs.yml`) with benchmark log artifact upload.
+- Main-branch CI perf-gate enforcement in `ray-rs` workflow (`.github/workflows/ray-rs.yml`) with run-scoped replication benchmark log artifact upload (`ci-<run_id>-<run_attempt>` stamp).
 - Main-branch CI ANN quality-gate enforcement in `ray-rs` workflow (`.github/workflows/ray-rs.yml`) with ANN gate log artifact upload.
 - Vector replication authority decision: canonical vector property mutations replicate (`SetNodeVector`/`DelNodeVector`); derived vector maintenance WAL records are non-authoritative and skipped during replica apply.
 - Vector compaction strategy benchmark harness (`ray-rs/examples/vector_compaction_bench.rs`) for ANN/compaction tuning experiments.

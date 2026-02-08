@@ -253,6 +253,7 @@ Outputs:
 - `docs/benchmarks/results/YYYY-MM-DD-replication-gate-baseline.txt` (single-attempt mode)
 - `docs/benchmarks/results/YYYY-MM-DD-replication-gate-primary.txt` (single-attempt mode)
 - `docs/benchmarks/results/YYYY-MM-DD-replication-gate-{baseline,primary}.attemptN.txt` (multi-attempt mode)
+- `STAMP` can be overridden for run-scoped output naming (used by CI).
 
 #### Gate B: replica catch-up throughput
 
@@ -284,6 +285,7 @@ BACKLOG_COMMITS=10000 ATTEMPTS=5 MIN_THROUGHPUT_RATIO=1.10 ./scripts/replication
 Output:
 - `docs/benchmarks/results/YYYY-MM-DD-replication-catchup-gate.txt` (single-attempt mode)
 - `docs/benchmarks/results/YYYY-MM-DD-replication-catchup-gate.attemptN.txt` (multi-attempt mode)
+- `STAMP` can be overridden for run-scoped output naming (used by CI).
 
 Notes:
 - Gate A = commit-path overhead.
