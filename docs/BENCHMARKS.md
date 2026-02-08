@@ -169,6 +169,10 @@ Defaults:
 
 Latest gate snapshot (2026-02-08): median recall@k `0.2835`, median p95 `1.1716ms` (pass).
 
+CI:
+- Main-branch workflow (`.github/workflows/ray-rs.yml`) runs `./scripts/vector-ann-gate.sh`
+  and uploads logs as artifact `ann-quality-gate-logs`.
+
 ### Index pipeline hypothesis (network-dominant)
 
 ```bash

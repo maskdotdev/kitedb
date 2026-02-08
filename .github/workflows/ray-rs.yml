@@ -88,6 +88,38 @@ jobs:
           name: replication-perf-gate-logs
           path: docs/benchmarks/results/*replication-*gate*.txt
           if-no-files-found: ignore
+  ann-quality-gate:
+    name: ANN Quality Gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ray-rs/target/
+          key: ann-quality-gate-${{ hashFiles('ray-rs/Cargo.lock') }}
+      - name: Run ANN quality gate
+        run: ./scripts/vector-ann-gate.sh
+        env:
+          # CI defaults tuned from baseline matrix; quality-first IVF gate.
+          ATTEMPTS: "3"
+          ALGORITHM: "ivf"
+          N_PROBE: "16"
+          MIN_RECALL_AT_K: "0.25"
+          MAX_P95_MS: "6.0"
+      - name: Upload ANN gate logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ann-quality-gate-logs
+          path: docs/benchmarks/results/*vector-ann-gate*.txt
+          if-no-files-found: ignore
   # ===========================================
   # Node.js Builds (napi-rs)
   # ===========================================
