@@ -862,6 +862,8 @@ pub struct PushReplicationMetricsOtelOptions {
   pub circuit_breaker_half_open_probes: Option<i64>,
   pub circuit_breaker_state_path: Option<String>,
   pub circuit_breaker_state_url: Option<String>,
+  pub circuit_breaker_state_cas: Option<bool>,
+  pub circuit_breaker_state_lease_id: Option<String>,
   pub circuit_breaker_scope_key: Option<String>,
   pub compression_gzip: Option<bool>,
   pub https_only: Option<bool>,
@@ -3561,6 +3563,25 @@ fn build_core_otel_push_options(
       "circuitBreakerStatePath and circuitBreakerStateUrl are mutually exclusive",
     ));
   }
+  if options.circuit_breaker_state_cas.unwrap_or(false)
+    && options.circuit_breaker_state_url.is_none()
+  {
+    return Err(Error::from_reason(
+      "circuitBreakerStateCas requires circuitBreakerStateUrl",
+    ));
+  }
+  if let Some(lease_id) = options.circuit_breaker_state_lease_id.as_deref() {
+    if lease_id.trim().is_empty() {
+      return Err(Error::from_reason(
+        "circuitBreakerStateLeaseId must not be empty when provided",
+      ));
+    }
+    if options.circuit_breaker_state_url.is_none() {
+      return Err(Error::from_reason(
+        "circuitBreakerStateLeaseId requires circuitBreakerStateUrl",
+      ));
+    }
+  }
   if let Some(scope_key) = options.circuit_breaker_scope_key.as_deref() {
     if scope_key.trim().is_empty() {
       return Err(Error::from_reason(
@@ -3584,6 +3605,8 @@ fn build_core_otel_push_options(
     circuit_breaker_half_open_probes: circuit_breaker_half_open_probes as u32,
     circuit_breaker_state_path: options.circuit_breaker_state_path,
     circuit_breaker_state_url: options.circuit_breaker_state_url,
+    circuit_breaker_state_cas: options.circuit_breaker_state_cas.unwrap_or(false),
+    circuit_breaker_state_lease_id: options.circuit_breaker_state_lease_id,
     circuit_breaker_scope_key: options.circuit_breaker_scope_key,
     compression_gzip: options.compression_gzip.unwrap_or(false),
     tls: core_metrics::OtlpHttpTlsOptions {

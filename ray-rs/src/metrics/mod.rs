@@ -206,6 +206,8 @@ pub struct OtlpHttpPushOptions {
   pub circuit_breaker_half_open_probes: u32,
   pub circuit_breaker_state_path: Option<String>,
   pub circuit_breaker_state_url: Option<String>,
+  pub circuit_breaker_state_cas: bool,
+  pub circuit_breaker_state_lease_id: Option<String>,
   pub circuit_breaker_scope_key: Option<String>,
   pub compression_gzip: bool,
   pub tls: OtlpHttpTlsOptions,
@@ -228,6 +230,8 @@ impl Default for OtlpHttpPushOptions {
       circuit_breaker_half_open_probes: 1,
       circuit_breaker_state_path: None,
       circuit_breaker_state_url: None,
+      circuit_breaker_state_cas: false,
+      circuit_breaker_state_lease_id: None,
       circuit_breaker_scope_key: None,
       compression_gzip: false,
       tls: OtlpHttpTlsOptions::default(),
@@ -789,6 +793,23 @@ fn validate_otel_push_options(options: &OtlpHttpPushOptions) -> Result<()> {
       "circuit_breaker_state_path and circuit_breaker_state_url are mutually exclusive".into(),
     ));
   }
+  if options.circuit_breaker_state_cas && options.circuit_breaker_state_url.is_none() {
+    return Err(KiteError::InvalidQuery(
+      "circuit_breaker_state_cas requires circuit_breaker_state_url".into(),
+    ));
+  }
+  if let Some(lease_id) = options.circuit_breaker_state_lease_id.as_deref() {
+    if lease_id.trim().is_empty() {
+      return Err(KiteError::InvalidQuery(
+        "circuit_breaker_state_lease_id must not be empty when provided".into(),
+      ));
+    }
+    if options.circuit_breaker_state_url.is_none() {
+      return Err(KiteError::InvalidQuery(
+        "circuit_breaker_state_lease_id requires circuit_breaker_state_url".into(),
+      ));
+    }
+  }
   if let Some(scope_key) = options.circuit_breaker_scope_key.as_deref() {
     if scope_key.trim().is_empty() {
       return Err(KiteError::InvalidQuery(
@@ -865,9 +886,15 @@ struct OtlpCircuitBreakerState {
 
 static OTLP_CIRCUIT_BREAKERS: OnceLock<Mutex<HashMap<String, OtlpCircuitBreakerState>>> =
   OnceLock::new();
+static OTLP_CIRCUIT_BREAKER_STATE_URL_ETAGS: OnceLock<Mutex<HashMap<String, String>>> =
+  OnceLock::new();
 
 fn otlp_circuit_breakers() -> &'static Mutex<HashMap<String, OtlpCircuitBreakerState>> {
   OTLP_CIRCUIT_BREAKERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn otlp_circuit_breaker_state_url_etags() -> &'static Mutex<HashMap<String, String>> {
+  OTLP_CIRCUIT_BREAKER_STATE_URL_ETAGS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 fn circuit_breaker_now_ms() -> u64 {
@@ -920,10 +947,21 @@ fn load_persisted_breakers_from_url(
     Ok(agent) => agent,
     Err(_) => return HashMap::new(),
   };
-  let response = match agent.get(url).timeout(timeout).call() {
+  let mut request = agent.get(url).timeout(timeout);
+  if let Some(lease_id) = options.circuit_breaker_state_lease_id.as_deref() {
+    request = request.set("x-kitedb-breaker-lease", lease_id);
+  }
+  let response = match request.call() {
     Ok(response) => response,
     Err(_) => return HashMap::new(),
   };
+  if options.circuit_breaker_state_cas {
+    if let Some(etag) = response.header("etag") {
+      otlp_circuit_breaker_state_url_etags()
+        .lock()
+        .insert(url.to_string(), etag.to_string());
+    }
+  }
   let body = response.into_string().unwrap_or_default();
   serde_json::from_str::<HashMap<String, OtlpCircuitBreakerState>>(&body).unwrap_or_default()
 }
@@ -962,11 +1000,45 @@ fn persist_breakers_to_url(
   let Ok(agent) = build_otel_http_agent(url, options, timeout) else {
     return;
   };
-  let _ = agent
+  let mut request = agent
     .put(url)
     .set("content-type", "application/json")
-    .timeout(timeout)
-    .send_bytes(&serialized);
+    .timeout(timeout);
+  if options.circuit_breaker_state_cas {
+    if let Some(etag) = otlp_circuit_breaker_state_url_etags()
+      .lock()
+      .get(url)
+      .cloned()
+    {
+      request = request.set("if-match", &etag);
+    } else {
+      request = request.set("if-match", "*");
+    }
+  }
+  if let Some(lease_id) = options.circuit_breaker_state_lease_id.as_deref() {
+    request = request.set("x-kitedb-breaker-lease", lease_id);
+  }
+  match request.send_bytes(&serialized) {
+    Ok(response) => {
+      if options.circuit_breaker_state_cas {
+        if let Some(etag) = response.header("etag") {
+          otlp_circuit_breaker_state_url_etags()
+            .lock()
+            .insert(url.to_string(), etag.to_string());
+        }
+      }
+    }
+    Err(ureq::Error::Status(status, response)) => {
+      if options.circuit_breaker_state_cas && (status == 409 || status == 412) {
+        if let Some(etag) = response.header("etag") {
+          otlp_circuit_breaker_state_url_etags()
+            .lock()
+            .insert(url.to_string(), etag.to_string());
+        }
+      }
+    }
+    Err(_) => {}
+  }
 }
 
 fn persist_breakers(

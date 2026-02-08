@@ -1891,6 +1891,8 @@ fn build_otel_push_options_py(
   circuit_breaker_half_open_probes: i64,
   circuit_breaker_state_path: Option<String>,
   circuit_breaker_state_url: Option<String>,
+  circuit_breaker_state_cas: bool,
+  circuit_breaker_state_lease_id: Option<String>,
   circuit_breaker_scope_key: Option<String>,
   compression_gzip: bool,
   https_only: bool,
@@ -2002,6 +2004,23 @@ fn build_otel_push_options_py(
       "circuit_breaker_state_path and circuit_breaker_state_url are mutually exclusive",
     ));
   }
+  if circuit_breaker_state_cas && circuit_breaker_state_url.is_none() {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_state_cas requires circuit_breaker_state_url",
+    ));
+  }
+  if let Some(lease_id) = circuit_breaker_state_lease_id.as_deref() {
+    if lease_id.trim().is_empty() {
+      return Err(PyRuntimeError::new_err(
+        "circuit_breaker_state_lease_id must not be empty when provided",
+      ));
+    }
+    if circuit_breaker_state_url.is_none() {
+      return Err(PyRuntimeError::new_err(
+        "circuit_breaker_state_lease_id requires circuit_breaker_state_url",
+      ));
+    }
+  }
   if let Some(scope_key) = circuit_breaker_scope_key.as_deref() {
     if scope_key.trim().is_empty() {
       return Err(PyRuntimeError::new_err(
@@ -2025,6 +2044,8 @@ fn build_otel_push_options_py(
     circuit_breaker_half_open_probes: circuit_breaker_half_open_probes as u32,
     circuit_breaker_state_path,
     circuit_breaker_state_url,
+    circuit_breaker_state_cas,
+    circuit_breaker_state_lease_id,
     circuit_breaker_scope_key,
     compression_gzip,
     tls: core_metrics::OtlpHttpTlsOptions {
@@ -2054,6 +2075,8 @@ fn build_otel_push_options_py(
   circuit_breaker_half_open_probes=1,
   circuit_breaker_state_path=None,
   circuit_breaker_state_url=None,
+  circuit_breaker_state_cas=false,
+  circuit_breaker_state_lease_id=None,
   circuit_breaker_scope_key=None,
   compression_gzip=false,
   https_only=false,
@@ -2078,6 +2101,8 @@ pub fn push_replication_metrics_otel_json(
   circuit_breaker_half_open_probes: i64,
   circuit_breaker_state_path: Option<String>,
   circuit_breaker_state_url: Option<String>,
+  circuit_breaker_state_cas: bool,
+  circuit_breaker_state_lease_id: Option<String>,
   circuit_breaker_scope_key: Option<String>,
   compression_gzip: bool,
   https_only: bool,
@@ -2100,6 +2125,8 @@ pub fn push_replication_metrics_otel_json(
     circuit_breaker_half_open_probes,
     circuit_breaker_state_path,
     circuit_breaker_state_url,
+    circuit_breaker_state_cas,
+    circuit_breaker_state_lease_id,
     circuit_breaker_scope_key,
     compression_gzip,
     https_only,
@@ -2142,6 +2169,8 @@ pub fn push_replication_metrics_otel_json(
   circuit_breaker_half_open_probes=1,
   circuit_breaker_state_path=None,
   circuit_breaker_state_url=None,
+  circuit_breaker_state_cas=false,
+  circuit_breaker_state_lease_id=None,
   circuit_breaker_scope_key=None,
   compression_gzip=false,
   https_only=false,
@@ -2166,6 +2195,8 @@ pub fn push_replication_metrics_otel_protobuf(
   circuit_breaker_half_open_probes: i64,
   circuit_breaker_state_path: Option<String>,
   circuit_breaker_state_url: Option<String>,
+  circuit_breaker_state_cas: bool,
+  circuit_breaker_state_lease_id: Option<String>,
   circuit_breaker_scope_key: Option<String>,
   compression_gzip: bool,
   https_only: bool,
@@ -2188,6 +2219,8 @@ pub fn push_replication_metrics_otel_protobuf(
     circuit_breaker_half_open_probes,
     circuit_breaker_state_path,
     circuit_breaker_state_url,
+    circuit_breaker_state_cas,
+    circuit_breaker_state_lease_id,
     circuit_breaker_scope_key,
     compression_gzip,
     https_only,
@@ -2230,6 +2263,8 @@ pub fn push_replication_metrics_otel_protobuf(
   circuit_breaker_half_open_probes=1,
   circuit_breaker_state_path=None,
   circuit_breaker_state_url=None,
+  circuit_breaker_state_cas=false,
+  circuit_breaker_state_lease_id=None,
   circuit_breaker_scope_key=None,
   compression_gzip=false,
   https_only=false,
@@ -2254,6 +2289,8 @@ pub fn push_replication_metrics_otel_grpc(
   circuit_breaker_half_open_probes: i64,
   circuit_breaker_state_path: Option<String>,
   circuit_breaker_state_url: Option<String>,
+  circuit_breaker_state_cas: bool,
+  circuit_breaker_state_lease_id: Option<String>,
   circuit_breaker_scope_key: Option<String>,
   compression_gzip: bool,
   https_only: bool,
@@ -2276,6 +2313,8 @@ pub fn push_replication_metrics_otel_grpc(
     circuit_breaker_half_open_probes,
     circuit_breaker_state_path,
     circuit_breaker_state_url,
+    circuit_breaker_state_cas,
+    circuit_breaker_state_lease_id,
     circuit_breaker_scope_key,
     compression_gzip,
     https_only,
