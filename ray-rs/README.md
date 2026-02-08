@@ -188,8 +188,10 @@ Phase D replication controls are available on the low-level `Database` API.
 ```ts
 import { Database } from 'kitedb'
 import {
+  collectReplicationLogTransportJson,
   collectReplicationMetricsOtelJson,
   collectReplicationMetricsPrometheus,
+  collectReplicationSnapshotTransportJson,
   pushReplicationMetricsOtelJson,
   pushReplicationMetricsOtelJsonWithOptions,
 } from 'kitedb/native'
@@ -247,6 +249,12 @@ const secureExport = pushReplicationMetricsOtelJsonWithOptions(
   },
 )
 console.log(secureExport.statusCode, secureExport.responseBody)
+
+const snapshotJson = collectReplicationSnapshotTransportJson(primary, false)
+console.log(snapshotJson)
+
+const logPageJson = collectReplicationLogTransportJson(primary, null, 128, 1_048_576, false)
+console.log(logPageJson)
 
 replica.close()
 primary.close()

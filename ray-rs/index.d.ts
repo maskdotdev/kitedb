@@ -864,9 +864,13 @@ export interface CheckResult {
 
 export declare function collectMetrics(db: Database): DatabaseMetrics
 
+export declare function collectReplicationLogTransportJson(db: Database, cursor?: string | undefined | null, maxFrames?: number | undefined | null, maxBytes?: number | undefined | null, includePayload?: boolean | undefined | null): string
+
 export declare function collectReplicationMetricsOtelJson(db: Database): string
 
 export declare function collectReplicationMetricsPrometheus(db: Database): string
+
+export declare function collectReplicationSnapshotTransportJson(db: Database, includeData?: boolean | undefined | null): string
 
 export interface OtlpHttpExportResult {
   statusCode: number

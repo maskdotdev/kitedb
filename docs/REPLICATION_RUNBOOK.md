@@ -39,6 +39,12 @@ Metrics surface:
   - Python PyO3: `push_replication_metrics_otel_json(db, endpoint, timeout_ms=5000, bearer_token=None)`
     - advanced TLS/mTLS kwargs:
       `https_only`, `ca_cert_pem_path`, `client_cert_pem_path`, `client_key_pem_path`.
+- Host-runtime replication transport JSON export helpers are available via:
+  - Node NAPI: `collectReplicationSnapshotTransportJson(db, includeData?)`,
+    `collectReplicationLogTransportJson(db, cursor?, maxFrames?, maxBytes?, includePayload?)`
+  - Python PyO3: `collect_replication_snapshot_transport_json(db, include_data=False)`,
+    `collect_replication_log_transport_json(db, cursor=None, max_frames=128, max_bytes=1048576, include_payload=True)`
+  - These are intended for embedding host-side HTTP endpoints beyond playground runtime.
 
 Alert heuristics:
 - `append_failures > 0` growing: primary sidecar durability issue.
@@ -174,6 +180,6 @@ Playground curl examples:
 ## 9. Known V1 Limits
 
 - Retention policy supports entry-window + time-window floors, but not richer SLA-aware policies.
-- HTTP rollout currently targets the playground runtime API; host-runtime transport rollout remains planned.
+- Bundled HTTP admin endpoints still ship in playground runtime; host runtime now exposes transport JSON helpers for embedding custom HTTP surfaces.
 - Host-runtime OTLP export currently targets HTTP OTLP-JSON payloads only (no protobuf/gRPC exporter path).
 - `SyncMode::Normal` and `SyncMode::Off` optimize commit latency by batching sidecar frame writes in-memory and refreshing manifest fencing periodically (not every commit). For strict per-commit sidecar visibility/fencing, use `SyncMode::Full`.

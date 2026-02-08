@@ -3313,6 +3313,49 @@ pub fn collect_replication_metrics_otel_json(db: &Database) -> Result<String> {
 }
 
 #[napi]
+pub fn collect_replication_snapshot_transport_json(
+  db: &Database,
+  include_data: Option<bool>,
+) -> Result<String> {
+  match db.inner.as_ref() {
+    Some(DatabaseInner::SingleFile(db)) => db
+      .primary_export_snapshot_transport_json(include_data.unwrap_or(false))
+      .map_err(|e| Error::from_reason(format!("Failed to export replication snapshot: {e}"))),
+    None => Err(Error::from_reason("Database is closed")),
+  }
+}
+
+#[napi]
+pub fn collect_replication_log_transport_json(
+  db: &Database,
+  cursor: Option<String>,
+  max_frames: Option<i64>,
+  max_bytes: Option<i64>,
+  include_payload: Option<bool>,
+) -> Result<String> {
+  let max_frames = max_frames.unwrap_or(128);
+  let max_bytes = max_bytes.unwrap_or(1_048_576);
+  if max_frames <= 0 {
+    return Err(Error::from_reason("maxFrames must be positive"));
+  }
+  if max_bytes <= 0 {
+    return Err(Error::from_reason("maxBytes must be positive"));
+  }
+
+  match db.inner.as_ref() {
+    Some(DatabaseInner::SingleFile(db)) => db
+      .primary_export_log_transport_json(
+        cursor.as_deref(),
+        max_frames as usize,
+        max_bytes as usize,
+        include_payload.unwrap_or(true),
+      )
+      .map_err(|e| Error::from_reason(format!("Failed to export replication log: {e}"))),
+    None => Err(Error::from_reason("Database is closed")),
+  }
+}
+
+#[napi]
 pub fn push_replication_metrics_otel_json(
   db: &Database,
   endpoint: String,

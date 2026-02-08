@@ -365,6 +365,9 @@ Implemented:
 - Host-runtime OpenTelemetry OTLP-JSON replication exporter API in Rust core + Node NAPI + Python PyO3 (`collect_replication_metrics_otel_json*`).
 - Host-runtime OpenTelemetry collector push transport (HTTP OTLP-JSON) in Rust core + Node NAPI + Python PyO3 (`push_replication_metrics_otel_json_single_file`, `pushReplicationMetricsOtelJson`, `push_replication_metrics_otel_json`).
 - Host-runtime OTLP transport hardening for TLS/mTLS (HTTPS-only mode, custom CA trust, optional client cert/key auth).
+- Host-runtime replication transport JSON export surfaces for embedding HTTP endpoints beyond playground runtime:
+  - snapshot export (`collectReplicationSnapshotTransportJson` / `collect_replication_snapshot_transport_json`)
+  - log page export with cursor/limits (`collectReplicationLogTransportJson` / `collect_replication_log_transport_json`).
 - Replica source transport hardening in host-runtime open path (required source DB path + source/local sidecar collision fencing).
 - Operator runbook for promotion/reseed/retention tuning (`docs/REPLICATION_RUNBOOK.md`).
 - Replication benchmark gate script (`ray-rs/scripts/replication-bench-gate.sh`) + benchmark doc wiring.
@@ -385,8 +388,8 @@ Validated tests:
 - `ray-rs/tests/replication_faults_phase_d.rs` (corrupt/truncated segment fault paths + durable `last_error`).
 
 Known limits:
-- HTTP rollout currently targets playground runtime; broader host-runtime transport remains planned.
+- Bundled HTTP admin endpoints currently ship in playground runtime only; host runtime provides JSON export helpers for embedding custom endpoints.
 - Host-runtime OTLP export currently targets HTTP OTLP-JSON payloads only (no protobuf/gRPC exporter path).
 
 Carry-over to next phase:
-- Host-runtime replication admin/status HTTP rollout beyond playground runtime (playground remains the only bundled HTTP surface).
+- Standardized host-runtime HTTP adapter package/templates on top of transport JSON helpers.

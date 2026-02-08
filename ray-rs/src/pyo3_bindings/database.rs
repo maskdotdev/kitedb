@@ -1768,6 +1768,57 @@ pub fn collect_replication_metrics_otel_json(db: &PyDatabase) -> PyResult<String
 }
 
 #[pyfunction]
+#[pyo3(signature = (db, include_data=false))]
+pub fn collect_replication_snapshot_transport_json(
+  db: &PyDatabase,
+  include_data: bool,
+) -> PyResult<String> {
+  let guard = db
+    .inner
+    .read()
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+  match guard.as_ref() {
+    Some(DatabaseInner::SingleFile(d)) => d
+      .primary_export_snapshot_transport_json(include_data)
+      .map_err(|e| PyRuntimeError::new_err(format!("Failed to export replication snapshot: {e}"))),
+    None => Err(PyRuntimeError::new_err("Database is closed")),
+  }
+}
+
+#[pyfunction]
+#[pyo3(signature = (db, cursor=None, max_frames=128, max_bytes=1048576, include_payload=true))]
+pub fn collect_replication_log_transport_json(
+  db: &PyDatabase,
+  cursor: Option<String>,
+  max_frames: i64,
+  max_bytes: i64,
+  include_payload: bool,
+) -> PyResult<String> {
+  if max_frames <= 0 {
+    return Err(PyRuntimeError::new_err("max_frames must be positive"));
+  }
+  if max_bytes <= 0 {
+    return Err(PyRuntimeError::new_err("max_bytes must be positive"));
+  }
+
+  let guard = db
+    .inner
+    .read()
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+  match guard.as_ref() {
+    Some(DatabaseInner::SingleFile(d)) => d
+      .primary_export_log_transport_json(
+        cursor.as_deref(),
+        max_frames as usize,
+        max_bytes as usize,
+        include_payload,
+      )
+      .map_err(|e| PyRuntimeError::new_err(format!("Failed to export replication log: {e}"))),
+    None => Err(PyRuntimeError::new_err("Database is closed")),
+  }
+}
+
+#[pyfunction]
 #[pyo3(signature = (
   db,
   endpoint,

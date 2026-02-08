@@ -196,8 +196,10 @@ Phase D replication controls are available on `Database`:
 from kitedb import (
     Database,
     OpenOptions,
+    collect_replication_log_transport_json,
     collect_replication_metrics_otel_json,
     collect_replication_metrics_prometheus,
+    collect_replication_snapshot_transport_json,
     push_replication_metrics_otel_json,
 )
 
@@ -260,6 +262,18 @@ secure_status, secure_body = push_replication_metrics_otel_json(
     client_key_pem_path="./tls/client-key.pem",
 )
 print(secure_status, secure_body)
+
+snapshot_json = collect_replication_snapshot_transport_json(primary, include_data=False)
+print(snapshot_json)
+
+log_json = collect_replication_log_transport_json(
+    primary,
+    cursor=None,
+    max_frames=128,
+    max_bytes=1024 * 1024,
+    include_payload=False,
+)
+print(log_json)
 
 replica.close()
 primary.close()
