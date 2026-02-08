@@ -170,6 +170,17 @@ from kitedb.vector_index import (
     create_vector_index,
 )
 
+from kitedb.replication_auth import (
+    AsgiMtlsMatcherOptions,
+    ReplicationAdminAuthConfig,
+    ReplicationAdminAuthMode,
+    authorize_replication_admin_request,
+    create_asgi_tls_mtls_matcher,
+    create_replication_admin_authorizer,
+    is_asgi_tls_client_authorized,
+    is_replication_admin_authorized,
+)
+
 __version__ = version()
 
 __all__ = [
@@ -293,6 +304,16 @@ __all__ = [
     "create_offline_backup",
     "version",
     "brute_force_search",
+
+    # Replication transport auth helpers
+    "ReplicationAdminAuthMode",
+    "ReplicationAdminAuthConfig",
+    "AsgiMtlsMatcherOptions",
+    "is_replication_admin_authorized",
+    "authorize_replication_admin_request",
+    "create_replication_admin_authorizer",
+    "is_asgi_tls_client_authorized",
+    "create_asgi_tls_mtls_matcher",
     
     # Version
     "__version__",

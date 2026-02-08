@@ -94,6 +94,8 @@ Metrics surface:
     (`request.socket`, `request.client`, `request.raw.socket`, `request.req.socket`).
   - Python PyO3: `collect_replication_snapshot_transport_json(db, include_data=False)`,
     `collect_replication_log_transport_json(db, cursor=None, max_frames=128, max_bytes=1048576, include_payload=True)`
+  - Python host auth helper: `create_replication_admin_authorizer(...)` with `ReplicationAdminAuthConfig`
+    and ASGI native TLS matcher helpers `create_asgi_tls_mtls_matcher(...)` / `is_asgi_tls_client_authorized(...)`.
   - These are intended for embedding host-side HTTP endpoints beyond playground runtime.
   - Template files:
     - Python FastAPI adapter: `docs/examples/replication_adapter_python_fastapi.py`

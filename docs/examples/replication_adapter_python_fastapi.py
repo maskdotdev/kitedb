@@ -4,10 +4,12 @@ Host-runtime replication HTTP adapter template (Python + FastAPI).
 Purpose:
 - expose replication admin/transport endpoints outside playground runtime
 - reuse kitedb host-runtime APIs directly
+- include token/mTLS auth parity helper for host adapters
 
 Run:
   pip install fastapi uvicorn kitedb
   export REPLICATION_ADMIN_TOKEN=change-me
+  export REPLICATION_ADMIN_AUTH_MODE=token_or_mtls
   uvicorn replication_adapter_python_fastapi:app --host 0.0.0.0 --port 8080
 """
 
@@ -18,24 +20,37 @@ import os
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 
 from kitedb import (
+  AsgiMtlsMatcherOptions,
   Database,
   OpenOptions,
+  ReplicationAdminAuthConfig,
   collect_replication_log_transport_json,
   collect_replication_metrics_otel_json,
   collect_replication_metrics_prometheus,
   collect_replication_snapshot_transport_json,
+  create_asgi_tls_mtls_matcher,
+  create_replication_admin_authorizer,
 )
 
 
 @dataclass(frozen=True)
 class Settings:
   db_path: str = os.environ.get("KITEDB_PATH", "cluster-primary.kitedb")
+  replication_admin_auth_mode: str = os.environ.get(
+    "REPLICATION_ADMIN_AUTH_MODE", "token_or_mtls"
+  )
   replication_admin_token: str = os.environ.get("REPLICATION_ADMIN_TOKEN", "")
+  replication_mtls_header: str = os.environ.get(
+    "REPLICATION_MTLS_HEADER", "x-forwarded-client-cert"
+  )
+  replication_mtls_subject_regex: str = os.environ.get(
+    "REPLICATION_MTLS_SUBJECT_REGEX", ""
+  )
 
 
 SETTINGS = Settings()
@@ -53,13 +68,23 @@ DB = Database(
 app = FastAPI(title="kitedb-replication-adapter")
 
 
-def _require_admin(authorization: Optional[str] = Header(default=None)) -> None:
-  token = SETTINGS.replication_admin_token.strip()
-  if not token:
-    return
-  expected = f"Bearer {token}"
-  if authorization != expected:
-    raise HTTPException(status_code=401, detail="Unauthorized")
+_ADMIN_AUTH = ReplicationAdminAuthConfig(
+  mode=SETTINGS.replication_admin_auth_mode,  # type: ignore[arg-type]
+  token=SETTINGS.replication_admin_token,
+  mtls_header=SETTINGS.replication_mtls_header,
+  mtls_subject_regex=SETTINGS.replication_mtls_subject_regex or None,
+  mtls_matcher=create_asgi_tls_mtls_matcher(
+    AsgiMtlsMatcherOptions(require_peer_certificate=False)
+  ),
+)
+_REQUIRE_ADMIN = create_replication_admin_authorizer(_ADMIN_AUTH)
+
+
+def _require_admin(request: Request) -> None:
+  try:
+    _REQUIRE_ADMIN(request)
+  except PermissionError as error:
+    raise HTTPException(status_code=401, detail=str(error)) from error
 
 
 def _json_loads(raw: str, label: str) -> Any:
@@ -140,4 +165,3 @@ def replication_reseed(_: None = Depends(_require_admin)) -> dict[str, Any]:
 def replication_promote(_: None = Depends(_require_admin)) -> dict[str, Any]:
   epoch = DB.primary_promote_to_next_epoch()
   return {"epoch": epoch, "primary": DB.primary_replication_status()}
-

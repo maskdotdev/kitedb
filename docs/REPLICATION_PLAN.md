@@ -368,7 +368,7 @@ Phase exit criteria:
 ## 19) Open Questions
 
 - Commit overhead budget is fixed for V1 gate: `P95_MAX_RATIO=1.03` (replication-on p95 / baseline p95).
-- Host-runtime parity helpers for non-Node runtimes/frameworks (Node helper now available via `createNodeTlsMtlsMatcher`).
+- Host-runtime parity helpers for runtimes/frameworks beyond Node/Python (Node helper available via `createNodeTlsMtlsMatcher`; Python helper available via `create_asgi_tls_mtls_matcher`).
 - Whether any vector side data must be promoted to authoritative replicated state in a later phase.
 
 ## 20) Phase D Summary (February 8, 2026)
@@ -396,6 +396,7 @@ Implemented:
   - TypeScript adapter helper (`createReplicationTransportAdapter`) for wiring custom HTTP handlers.
   - TypeScript admin auth helper (`createReplicationAdminAuthorizer`) with token/mTLS modes and optional native TLS matcher hook.
   - TypeScript Node native TLS matcher helper (`createNodeTlsMtlsMatcher` / `isNodeTlsClientAuthorized`) for common request socket layouts.
+  - Python admin auth helper (`create_replication_admin_authorizer`) with token/mTLS modes and ASGI native TLS matcher hook (`create_asgi_tls_mtls_matcher` / `is_asgi_tls_client_authorized`).
 - Polyglot host-runtime HTTP adapter templates:
   - Python FastAPI template (`docs/examples/replication_adapter_python_fastapi.py`)
   - generic middleware template (`docs/examples/replication_adapter_generic_middleware.ts`).
