@@ -1,6 +1,6 @@
 # KiteDB Replication V1 Plan (Feature + Code)
 
-Status: Phase D complete; V1 release hardening next
+Status: Phase D complete; V1 release cut pending
 
 ## 1) Goals
 
@@ -402,6 +402,7 @@ Implemented:
   - Python admin auth helper (`create_replication_admin_authorizer`) with token/mTLS modes and ASGI native TLS matcher hook (`create_asgi_tls_mtls_matcher` / `is_asgi_tls_client_authorized`).
 - Polyglot host-runtime HTTP adapter templates:
   - Node Express template (`docs/examples/replication_adapter_node_express.ts`)
+  - Node proxy-forwarded template (`docs/examples/replication_adapter_node_proxy_forwarded.ts`)
   - Python FastAPI template (`docs/examples/replication_adapter_python_fastapi.py`)
   - generic middleware template (`docs/examples/replication_adapter_generic_middleware.ts`).
 - Host-runtime transport/admin flow validation added for both bindings:
@@ -460,7 +461,7 @@ Carry-over to next phase:
    - Expand scenario depth (longer cycles + higher commit load) on release-like hardware before V1 cut.
 3. Host runtime adoption pass:
    - Keep adapter examples + Node/Python host-runtime flow tests green as API evolves.
-   - Add one additional proxy-terminated deployment sample with forwarded-header mTLS auth checks.
+   - Completed: proxy-terminated deployment sample with forwarded-header mTLS auth checks (`docs/examples/replication_adapter_node_proxy_forwarded.ts`).
 4. Release packaging + docs closeout:
    - run release checklist (`docs/REPLICATION_RUNBOOK.md`, section `10. V1 Release Checklist`) on release-like hardware.
    - cut release commit/tag using release-note/tag rules from `AGENTS.md`.

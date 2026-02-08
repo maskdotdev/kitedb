@@ -101,6 +101,7 @@ Metrics surface:
   - These are intended for embedding host-side HTTP endpoints beyond playground runtime.
   - Template files:
     - Node Express adapter: `docs/examples/replication_adapter_node_express.ts`
+    - Node proxy-forwarded adapter: `docs/examples/replication_adapter_node_proxy_forwarded.ts`
     - Python FastAPI adapter: `docs/examples/replication_adapter_python_fastapi.py`
     - Generic middleware adapter: `docs/examples/replication_adapter_generic_middleware.ts`
 
