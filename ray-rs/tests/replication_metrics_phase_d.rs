@@ -1249,9 +1249,10 @@ fn collect_metrics_exposes_replica_reseed_error_state() {
     primary.commit_with_token().expect("commit").expect("token");
   }
 
-  primary
-    .primary_report_replica_progress("replica-r", 1, 1)
-    .expect("report lagging replica");
+  let progress_path = primary_sidecar.join("replica-progress.json");
+  if progress_path.exists() {
+    std::fs::remove_file(&progress_path).expect("remove persisted replica progress");
+  }
   let _ = primary.primary_run_retention().expect("run retention");
 
   let err = replica

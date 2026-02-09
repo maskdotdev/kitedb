@@ -5,10 +5,10 @@ backlog_commits: 5000
 max_frames: 256
 applied_frames: 5234
 catchup_loops: 21
-produce_elapsed_ms: 175.423
-catchup_elapsed_ms: 1392.363
-primary_frames_per_sec: 28502.51
-catchup_frames_per_sec: 3759.08
-throughput_ratio: 0.1319
+produce_elapsed_ms: 204.601
+catchup_elapsed_ms: 2976.828
+primary_frames_per_sec: 24437.78
+catchup_frames_per_sec: 1758.25
+throughput_ratio: 0.0719
 primary_head_log_index: 6000
 replica_applied: 1:6000

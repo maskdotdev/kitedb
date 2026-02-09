@@ -6,6 +6,7 @@
 pub mod log_store;
 pub mod manifest;
 pub mod primary;
+pub mod progress;
 pub mod replica;
 pub mod token;
 pub mod transport;

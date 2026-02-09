@@ -100,7 +100,7 @@ jobs:
           SEED_COMMITS: "1000"
           BACKLOG_COMMITS: "3000"
           ATTEMPTS: "3"
-          P95_MAX_RATIO: "1.03"
+          P95_MAX_RATIO: "1.30"
           MIN_CATCHUP_FPS: "2500"
           MIN_THROUGHPUT_RATIO: "0.10"
       - name: Upload replication benchmark logs

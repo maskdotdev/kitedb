@@ -18,6 +18,7 @@
 //!   --vector-dims N            Vector dimensions (default: 128)
 //!   --vector-count N           Number of vectors to set (default: 1000)
 //!   --replication-primary      Enable primary replication sidecar on open options
+//!   --replication-segment-max-bytes BYTES  Primary segment rotation threshold when replication is enabled
 //!   --keep-db                 Keep the database file after benchmark
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -47,6 +48,7 @@ struct BenchConfig {
   vector_dims: usize,
   vector_count: usize,
   replication_primary: bool,
+  replication_segment_max_bytes: Option<u64>,
   keep_db: bool,
   skip_checkpoint: bool,
   reopen_readonly: bool,
@@ -69,6 +71,7 @@ impl Default for BenchConfig {
       vector_dims: 128,
       vector_count: 1000,
       replication_primary: false,
+      replication_segment_max_bytes: None,
       keep_db: false,
       skip_checkpoint: false,
       reopen_readonly: false,
@@ -161,6 +164,13 @@ fn parse_args() -> BenchConfig {
       }
       "--replication-primary" => {
         config.replication_primary = true;
+      }
+      "--replication-segment-max-bytes" => {
+        if let Some(value) = args.get(i + 1) {
+          config.replication_segment_max_bytes =
+            value.parse().ok().filter(|parsed: &u64| *parsed > 0);
+          i += 1;
+        }
       }
       "--skip-checkpoint" => {
         config.skip_checkpoint = true;
@@ -656,6 +666,9 @@ fn main() {
   println!("Vector dims: {}", format_number(config.vector_dims));
   println!("Vector count: {}", format_number(config.vector_count));
   println!("Replication primary: {}", config.replication_primary);
+  if let Some(bytes) = config.replication_segment_max_bytes {
+    println!("Replication segment max bytes: {}", format_number(bytes as usize));
+  }
   println!("Skip checkpoint: {}", config.skip_checkpoint);
   println!("Reopen read-only: {}", config.reopen_readonly);
   println!("{}", "=".repeat(120));
@@ -676,6 +689,9 @@ fn main() {
   }
   if config.replication_primary {
     options = options.replication_role(ReplicationRole::Primary);
+    if let Some(max_bytes) = config.replication_segment_max_bytes {
+      options = options.replication_segment_max_bytes(max_bytes);
+    }
   }
 
   let mut db = open_single_file(&db_path, options).expect("failed to open single-file db");

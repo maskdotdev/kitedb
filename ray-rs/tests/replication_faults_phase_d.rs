@@ -15,6 +15,21 @@ fn open_primary(
   )
 }
 
+fn open_primary_with_segment_limit(
+  path: &std::path::Path,
+  sidecar: &std::path::Path,
+  segment_max_bytes: u64,
+) -> kitedb::Result<kitedb::core::single_file::SingleFileDB> {
+  open_single_file(
+    path,
+    SingleFileOpenOptions::new()
+      .replication_role(ReplicationRole::Primary)
+      .replication_sidecar_path(sidecar)
+      .replication_segment_max_bytes(segment_max_bytes)
+      .replication_retention_min_entries(128),
+  )
+}
+
 fn open_replica(
   replica_path: &std::path::Path,
   source_db_path: &std::path::Path,
@@ -141,4 +156,75 @@ fn truncated_segment_sets_replica_last_error() {
   assert!(!status.needs_reseed);
 
   close_single_file(replica).expect("close replica");
+}
+
+#[test]
+fn obsolete_corrupt_segment_does_not_break_incremental_catch_up() {
+  let dir = tempfile::tempdir().expect("tempdir");
+  let primary_path = dir.path().join("fault-obsolete-corrupt-primary.kitedb");
+  let primary_sidecar = dir.path().join("fault-obsolete-corrupt-primary.sidecar");
+  let replica_path = dir.path().join("fault-obsolete-corrupt-replica.kitedb");
+  let replica_sidecar = dir.path().join("fault-obsolete-corrupt-replica.sidecar");
+
+  let primary =
+    open_primary_with_segment_limit(&primary_path, &primary_sidecar, 1).expect("open primary");
+  primary.begin(false).expect("begin base");
+  primary.create_node(Some("base")).expect("create base");
+  primary
+    .commit_with_token()
+    .expect("commit base")
+    .expect("token base");
+
+  let replica = open_replica(
+    &replica_path,
+    &primary_path,
+    &replica_sidecar,
+    &primary_sidecar,
+  )
+  .expect("open replica");
+  replica
+    .replica_bootstrap_from_snapshot()
+    .expect("bootstrap snapshot");
+
+  for i in 0..5 {
+    primary.begin(false).expect("begin seed");
+    primary
+      .create_node(Some(&format!("seed-{i}")))
+      .expect("create seed");
+    primary
+      .commit_with_token()
+      .expect("commit seed")
+      .expect("token seed");
+  }
+
+  let initial = replica
+    .replica_catch_up_once(128)
+    .expect("initial catch-up");
+  assert!(initial > 0, "replica must establish applied cursor");
+
+  let oldest_segment = active_segment_path(&primary_sidecar);
+  let mut bytes = std::fs::read(&oldest_segment).expect("read oldest segment");
+  bytes[0] ^= 0xFF;
+  std::fs::write(&oldest_segment, &bytes).expect("corrupt obsolete segment");
+
+  primary.begin(false).expect("begin tail");
+  primary.create_node(Some("tail")).expect("create tail");
+  primary
+    .commit_with_token()
+    .expect("commit tail")
+    .expect("token tail");
+
+  let pulled = replica
+    .replica_catch_up_once(8)
+    .expect("catch-up should ignore obsolete corruption");
+  assert!(pulled > 0, "replica must still pull newest frames");
+  assert!(
+    !replica
+      .replica_replication_status()
+      .expect("replica status")
+      .needs_reseed
+  );
+
+  close_single_file(replica).expect("close replica");
+  close_single_file(primary).expect("close primary");
 }

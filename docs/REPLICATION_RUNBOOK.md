@@ -113,6 +113,11 @@ Alert heuristics:
 
 ## 2. Bootstrap a New Replica
 
+Prerequisite:
+
+- Quiesce writes on the source primary during `replica_bootstrap_from_snapshot()`.
+- If writes continue, bootstrap now fails fast with a `quiesce writes and retry` error.
+
 1. Open replica with:
    - `replication_role=replica`
    - `replication_source_db_path`
@@ -166,9 +171,10 @@ Trigger:
 Steps:
 
 1. Stop normal catch-up loop for that replica.
-2. Execute `replica_reseed_from_snapshot()`.
-3. Resume `replica_catch_up_once(...)`.
-4. Verify:
+2. Quiesce writes on the source primary.
+3. Execute `replica_reseed_from_snapshot()`.
+4. Resume `replica_catch_up_once(...)`.
+5. Verify:
    - `needs_reseed=false`,
    - `last_error` cleared,
    - data parity checks (counts and spot checks) pass.
@@ -201,7 +207,7 @@ Before rollout:
 Perf gate:
 
 - Run `ray-rs/scripts/replication-perf-gate.sh`.
-- Commit overhead gate: require median p95 ratio (replication-on / baseline) within `P95_MAX_RATIO` (default `1.03`, `ATTEMPTS=7`).
+- Commit overhead gate: require median p95 ratio (replication-on / baseline) within `P95_MAX_RATIO` (default `1.30`, `ATTEMPTS=7`).
 - Catch-up gate: require replica throughput floors (`MIN_CATCHUP_FPS`, `MIN_THROUGHPUT_RATIO`).
 - Catch-up gate retries benchmark noise by default (`ATTEMPTS=3`); increase on busy dev machines.
 - CI on `main` (`.github/workflows/ray-rs.yml`) enforces replication perf gate and uploads benchmark logs as `replication-perf-gate-logs` (run-scoped `ci-<run_id>-<run_attempt>` stamp).

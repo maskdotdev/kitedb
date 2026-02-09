@@ -505,7 +505,7 @@ impl SingleFileDB {
       }
 
       if let Some(replication) = self.primary_replication.as_ref() {
-        commit_token = Some(replication.append_commit_wal_frame(txid, &pending_wal)?);
+        commit_token = Some(replication.append_commit_wal_frame(txid, pending_wal)?);
       }
     }
 

@@ -4,7 +4,7 @@ use crate::error::{KiteError, Result};
 use crate::util::crc::{crc32c, crc32c_multi};
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, BufReader, Read, Write};
+use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 const FRAME_MAGIC: u32 = 0x474F_4C52; // "RLOG" in little-endian u32
@@ -41,6 +41,8 @@ pub struct SegmentLogStore {
   path: PathBuf,
   file: File,
   write_buffer: Vec<u8>,
+  write_chunks: Vec<Vec<u8>>,
+  queued_bytes: usize,
   write_buffer_limit: usize,
   writable: bool,
 }
@@ -64,6 +66,8 @@ impl SegmentLogStore {
       path,
       file,
       write_buffer: Vec::new(),
+      write_chunks: Vec::new(),
+      queued_bytes: 0,
       write_buffer_limit: 0,
       writable: true,
     })
@@ -77,6 +81,8 @@ impl SegmentLogStore {
       path,
       file,
       write_buffer: Vec::new(),
+      write_chunks: Vec::new(),
+      queued_bytes: 0,
       write_buffer_limit: 0,
       writable: false,
     })
@@ -106,6 +112,8 @@ impl SegmentLogStore {
       path,
       file,
       write_buffer: Vec::with_capacity(write_buffer_limit),
+      write_chunks: Vec::new(),
+      queued_bytes: 0,
       write_buffer_limit,
       writable: true,
     })
@@ -184,7 +192,12 @@ impl SegmentLogStore {
       for segment in payload_segments {
         self.write_buffer.extend_from_slice(segment);
       }
-      if self.write_buffer.len() >= self.write_buffer_limit {
+      if self
+        .write_buffer
+        .len()
+        .saturating_add(self.queued_bytes)
+        >= self.write_buffer_limit
+      {
         self.flush()?;
       }
     } else {
@@ -197,12 +210,89 @@ impl SegmentLogStore {
     Ok(FRAME_HEADER_SIZE as u64 + payload_len as u64)
   }
 
+  pub fn append_payload_owned_segments_with_crc(
+    &mut self,
+    epoch: u64,
+    log_index: u64,
+    mut payload_segments: Vec<Vec<u8>>,
+    with_crc: bool,
+  ) -> Result<u64> {
+    if !self.writable {
+      return Err(KiteError::InvalidReplication(
+        "cannot append to read-only segment log store".to_string(),
+      ));
+    }
+
+    let payload_len = payload_segments.iter().try_fold(0usize, |acc, segment| {
+      acc
+        .checked_add(segment.len())
+        .ok_or_else(|| KiteError::InvalidReplication("frame payload too large".to_string()))
+    })?;
+
+    if payload_len > MAX_FRAME_PAYLOAD_BYTES {
+      return Err(KiteError::InvalidReplication(format!(
+        "frame payload too large: {} bytes",
+        payload_len
+      )));
+    }
+
+    let payload_len_u32 = u32::try_from(payload_len).map_err(|_| {
+      KiteError::InvalidReplication(format!("payload length does not fit u32: {}", payload_len))
+    })?;
+
+    let flags = if with_crc {
+      0
+    } else {
+      FRAME_FLAG_CRC32_DISABLED
+    };
+    let crc32 = if with_crc {
+      let refs: Vec<&[u8]> = payload_segments.iter().map(|segment| segment.as_slice()).collect();
+      crc32c_multi(&refs)
+    } else {
+      0
+    };
+
+    let mut header = [0u8; FRAME_HEADER_SIZE];
+    header[0..4].copy_from_slice(&FRAME_MAGIC.to_le_bytes());
+    header[4..6].copy_from_slice(&FRAME_VERSION.to_le_bytes());
+    header[6..8].copy_from_slice(&flags.to_le_bytes());
+    header[8..16].copy_from_slice(&epoch.to_le_bytes());
+    header[16..24].copy_from_slice(&log_index.to_le_bytes());
+    header[24..28].copy_from_slice(&payload_len_u32.to_le_bytes());
+    header[28..32].copy_from_slice(&crc32.to_le_bytes());
+
+    if self.write_buffer_limit > 0 {
+      self.write_chunks.push(header.to_vec());
+      self.queued_bytes = self.queued_bytes.saturating_add(FRAME_HEADER_SIZE);
+      for segment in payload_segments.drain(..) {
+        self.queued_bytes = self.queued_bytes.saturating_add(segment.len());
+        self.write_chunks.push(segment);
+      }
+      if self
+        .write_buffer
+        .len()
+        .saturating_add(self.queued_bytes)
+        >= self.write_buffer_limit
+      {
+        self.flush()?;
+      }
+    } else {
+      self.file.write_all(&header)?;
+      for segment in payload_segments {
+        self.file.write_all(&segment)?;
+      }
+    }
+
+    Ok(FRAME_HEADER_SIZE as u64 + payload_len as u64)
+  }
+
   pub fn file_len(&self) -> Result<u64> {
     let metadata = self.file.metadata()?;
     Ok(
       metadata
         .len()
-        .saturating_add(self.write_buffer.len() as u64),
+        .saturating_add(self.write_buffer.len() as u64)
+        .saturating_add(self.queued_bytes as u64),
     )
   }
 
@@ -211,12 +301,19 @@ impl SegmentLogStore {
       return Ok(());
     }
 
-    if self.write_buffer.is_empty() {
+    if self.write_buffer.is_empty() && self.write_chunks.is_empty() {
       return Ok(());
     }
 
-    self.file.write_all(&self.write_buffer)?;
-    self.write_buffer.clear();
+    if !self.write_buffer.is_empty() {
+      self.file.write_all(&self.write_buffer)?;
+      self.write_buffer.clear();
+    }
+    for chunk in &self.write_chunks {
+      self.file.write_all(chunk)?;
+    }
+    self.write_chunks.clear();
+    self.queued_bytes = 0;
     Ok(())
   }
 
@@ -239,6 +336,55 @@ impl SegmentLogStore {
     }
 
     Ok(frames)
+  }
+
+  pub fn read_filtered(
+    &self,
+    mut include: impl FnMut(&ReplicationFrame) -> bool,
+    max_frames: usize,
+  ) -> Result<Vec<ReplicationFrame>> {
+    let file = OpenOptions::new().read(true).open(&self.path)?;
+    let mut reader = BufReader::new(file);
+    let mut frames = Vec::new();
+
+    while let Some(frame) = read_frame(&mut reader)? {
+      if include(&frame) {
+        frames.push(frame);
+        if max_frames > 0 && frames.len() >= max_frames {
+          break;
+        }
+      }
+    }
+
+    Ok(frames)
+  }
+
+  pub fn read_filtered_from_offset(
+    &self,
+    start_offset: u64,
+    mut include: impl FnMut(&ReplicationFrame) -> bool,
+    max_frames: usize,
+  ) -> Result<(Vec<ReplicationFrame>, u64, Option<(u64, u64)>)> {
+    let mut file = OpenOptions::new().read(true).open(&self.path)?;
+    let file_len = file.metadata()?.len();
+    let clamped_start = start_offset.min(file_len);
+    file.seek(SeekFrom::Start(clamped_start))?;
+    let mut reader = BufReader::new(file);
+    let mut frames = Vec::new();
+    let mut last_seen = None;
+
+    while let Some(frame) = read_frame(&mut reader)? {
+      last_seen = Some((frame.epoch, frame.log_index));
+      if include(&frame) {
+        frames.push(frame);
+        if max_frames > 0 && frames.len() >= max_frames {
+          break;
+        }
+      }
+    }
+
+    let next_offset = reader.stream_position()?;
+    Ok((frames, next_offset, last_seen))
   }
 }
 

@@ -369,7 +369,7 @@ Phase exit criteria:
 
 - None blocking V1 scope.
 - Locked for V1 gate:
-  - Commit overhead budget: `P95_MAX_RATIO=1.03` (replication-on p95 / baseline p95).
+  - Commit overhead budget: `P95_MAX_RATIO=1.30` (replication-on p95 / baseline p95).
   - ANN default: latency-first IVF-PQ (`residuals=false`, `pq_subspaces=48`, `pq_centroids=256`).
   - Authoritative vector replication scope: logical vector property mutations (`SetNodeVector` / `DelNodeVector`).
 

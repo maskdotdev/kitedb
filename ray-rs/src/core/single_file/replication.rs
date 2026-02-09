@@ -15,11 +15,14 @@ use crate::replication::replica::ReplicaReplicationStatus;
 use crate::replication::transport::decode_commit_frame_payload;
 use crate::replication::types::{CommitToken, ReplicationCursor, ReplicationRole};
 use crate::types::WalRecordType;
-use crate::util::crc::crc32c;
+use crate::util::crc::{crc32c, Crc32cHasher};
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use base64::Engine;
 use serde_json::json;
 use std::collections::HashSet;
+use std::fs::File;
+use std::io::{BufReader, Read, Write};
+use std::path::Path;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
@@ -27,7 +30,15 @@ use super::{close_single_file, open_single_file, SingleFileDB, SingleFileOpenOpt
 
 const REPLICATION_MANIFEST_FILE: &str = "manifest.json";
 const REPLICATION_FRAME_MAGIC: u32 = 0x474F_4C52;
+const REPLICATION_FRAME_VERSION: u16 = 1;
+const REPLICATION_FRAME_FLAG_CRC32_DISABLED: u16 = 0x0001;
 const REPLICATION_FRAME_HEADER_BYTES: usize = 32;
+const REPLICATION_MAX_FRAME_PAYLOAD_BYTES: usize = 64 * 1024 * 1024;
+const REPLICATION_IO_CHUNK_BYTES: usize = 64 * 1024;
+const REPLICATION_SNAPSHOT_INLINE_MAX_BYTES: u64 = 32 * 1024 * 1024;
+const REPLICA_CATCH_UP_MAX_ATTEMPTS: usize = 5;
+const REPLICA_CATCH_UP_INITIAL_BACKOFF_MS: u64 = 10;
+const REPLICA_CATCH_UP_MAX_BACKOFF_MS: u64 = 160;
 
 impl SingleFileDB {
   /// Promote this primary instance to the next replication epoch.
@@ -94,13 +105,49 @@ impl SingleFileDB {
         .replication_role(ReplicationRole::Disabled),
     )?;
 
-    sync_graph_state(self, &source)?;
-
-    let (epoch, head) = runtime.source_head_position()?;
-    runtime.mark_applied(epoch, head)?;
-    runtime.clear_error()?;
-
-    close_single_file(source)?;
+    let bootstrap_start = runtime.source_head_position()?;
+    let bootstrap_source_fingerprint = source_db_fingerprint(&source_db_path)?;
+    let sync_result = sync_graph_state(self, &source, || {
+      let bootstrap_end = runtime.source_head_position()?;
+      let bootstrap_end_fingerprint = source_db_fingerprint(&source_db_path)?;
+      if bootstrap_end != bootstrap_start || bootstrap_end_fingerprint != bootstrap_source_fingerprint
+      {
+        return Err(KiteError::InvalidReplication(format!(
+          "source primary advanced during snapshot bootstrap; start={}:{}, end={}:{}, start_crc={:08x}, end_crc={:08x}; quiesce writes and retry",
+          bootstrap_start.0,
+          bootstrap_start.1,
+          bootstrap_end.0,
+          bootstrap_end.1,
+          bootstrap_source_fingerprint.1,
+          bootstrap_end_fingerprint.1
+        )));
+      }
+      std::thread::sleep(Duration::from_millis(10));
+      let quiesce_head = runtime.source_head_position()?;
+      let quiesce_fingerprint = source_db_fingerprint(&source_db_path)?;
+      if quiesce_head != bootstrap_start || quiesce_fingerprint != bootstrap_source_fingerprint {
+        return Err(KiteError::InvalidReplication(format!(
+          "source primary did not quiesce for snapshot bootstrap; start={}:{}, observed={}:{}, start_crc={:08x}, observed_crc={:08x}; quiesce writes and retry",
+          bootstrap_start.0,
+          bootstrap_start.1,
+          quiesce_head.0,
+          quiesce_head.1,
+          bootstrap_source_fingerprint.1,
+          quiesce_fingerprint.1
+        )));
+      }
+      Ok(())
+    })
+    .and_then(|_| {
+      runtime.mark_applied(bootstrap_start.0, bootstrap_start.1)?;
+      runtime.clear_error()
+    });
+    if let Err(error) = sync_result.as_ref() {
+      let _ = runtime.mark_error(error.to_string(), false);
+    }
+    let close_result = close_single_file(source);
+    sync_result?;
+    close_result?;
     Ok(())
   }
 
@@ -159,50 +206,77 @@ impl SingleFileDB {
       KiteError::InvalidReplication("database is not opened in replica role".to_string())
     })?;
 
-    let frames = match runtime.frames_after(max_frames.max(1), replay_last) {
-      Ok(frames) => frames,
-      Err(err) => {
-        if !runtime.status().needs_reseed {
-          let _ = runtime.mark_error(err.to_string(), false);
+    let mut attempts = 0usize;
+    let mut backoff_ms = REPLICA_CATCH_UP_INITIAL_BACKOFF_MS;
+    loop {
+      attempts = attempts.saturating_add(1);
+      match self.replica_catch_up_attempt(runtime, max_frames.max(1), replay_last) {
+        Ok(applied) => return Ok(applied),
+        Err(error) => {
+          let needs_reseed = runtime.status().needs_reseed || is_reseed_error(&error);
+          if needs_reseed {
+            return Err(error);
+          }
+
+          if attempts >= REPLICA_CATCH_UP_MAX_ATTEMPTS {
+            let _ = runtime.mark_error(error.to_string(), false);
+            return Err(error);
+          }
+
+          std::thread::sleep(Duration::from_millis(backoff_ms));
+          backoff_ms = backoff_ms
+            .saturating_mul(2)
+            .min(REPLICA_CATCH_UP_MAX_BACKOFF_MS);
         }
-        return Err(err);
       }
-    };
+    }
+  }
+
+  fn replica_catch_up_attempt(
+    &self,
+    runtime: &crate::replication::replica::ReplicaReplication,
+    max_frames: usize,
+    replay_last: bool,
+  ) -> Result<usize> {
+    let frames = runtime.frames_after(max_frames, replay_last)?;
     if frames.is_empty() {
+      runtime.clear_error()?;
       return Ok(0);
     }
 
+    let (mut applied_epoch, mut applied_log_index) = runtime.applied_position();
     let mut applied = 0usize;
     for frame in frames {
-      let (applied_epoch, applied_log_index) = runtime.applied_position();
       let already_applied = applied_epoch > frame.epoch
         || (applied_epoch == frame.epoch && applied_log_index >= frame.log_index);
       if already_applied {
         continue;
       }
 
-      if let Err(err) = apply_replication_frame(self, &frame.payload) {
-        let _ = runtime.mark_error(
-          format!(
-            "replica apply failed at {}:{}: {err}",
-            frame.epoch, frame.log_index
-          ),
-          false,
-        );
-        return Err(err);
+      if let Err(error) = apply_replication_frame(self, &frame.payload) {
+        if applied > 0 {
+          let _ = runtime.mark_applied(applied_epoch, applied_log_index);
+        }
+        return Err(KiteError::InvalidReplication(format!(
+          "replica apply failed at {}:{}: {error}",
+          frame.epoch, frame.log_index
+        )));
       }
 
-      if let Err(err) = runtime.mark_applied(frame.epoch, frame.log_index) {
-        let _ = runtime.mark_error(
-          format!(
-            "replica cursor persist failed at {}:{}: {err}",
-            frame.epoch, frame.log_index
-          ),
-          false,
-        );
-        return Err(err);
-      }
+      applied_epoch = frame.epoch;
+      applied_log_index = frame.log_index;
       applied = applied.saturating_add(1);
+    }
+
+    if applied > 0 {
+      runtime
+        .mark_applied(applied_epoch, applied_log_index)
+        .map_err(|error| {
+          KiteError::InvalidReplication(format!(
+            "replica cursor persist failed at {}:{}: {error}",
+            applied_epoch, applied_log_index
+          ))
+        })?;
     }
 
     runtime.clear_error()?;
@@ -214,8 +288,8 @@ impl SingleFileDB {
     let status = self.primary_replication_status().ok_or_else(|| {
       KiteError::InvalidReplication("database is not opened in primary role".to_string())
     })?;
-    let snapshot_bytes = std::fs::read(&self.path)?;
-    let checksum_crc32c = format!("{:08x}", crc32c(&snapshot_bytes));
+    let (byte_length, checksum_crc32c, data_base64) =
+      read_snapshot_transport_payload(&self.path, include_data)?;
     let generated_at_ms = std::time::SystemTime::now()
       .duration_since(std::time::UNIX_EPOCH)
       .unwrap_or_default()
@@ -224,18 +298,14 @@ impl SingleFileDB {
     let payload = json!({
       "format": "single-file-db-copy",
       "db_path": self.path.to_string_lossy().to_string(),
-      "byte_length": snapshot_bytes.len(),
+      "byte_length": byte_length,
       "checksum_crc32c": checksum_crc32c,
       "generated_at_ms": generated_at_ms,
       "epoch": status.epoch,
       "head_log_index": status.head_log_index,
       "retained_floor": status.retained_floor,
       "start_cursor": ReplicationCursor::new(status.epoch, 0, 0, status.retained_floor).to_string(),
-      "data_base64": if include_data {
-        Some(BASE64_STANDARD.encode(&snapshot_bytes))
-      } else {
-        None
-      },
+      "data_base64": data_base64,
     });
 
     serde_json::to_string(&payload).map_err(|error| {
@@ -258,9 +328,11 @@ impl SingleFileDB {
       return Err(KiteError::InvalidQuery("max_bytes must be > 0".into()));
     }
 
-    let status = self.primary_replication_status().ok_or_else(|| {
+    let primary_replication = self.primary_replication.as_ref().ok_or_else(|| {
       KiteError::InvalidReplication("database is not opened in primary role".to_string())
     })?;
+    primary_replication.flush_for_transport_export()?;
+    let status = primary_replication.status();
     let sidecar_path = status.sidecar_path;
     let manifest = ManifestStore::new(sidecar_path.join(REPLICATION_MANIFEST_FILE)).read()?;
     let parsed_cursor = match cursor {
@@ -284,57 +356,68 @@ impl SingleFileDB {
       if !segment_path.exists() {
         continue;
       }
-      let bytes = std::fs::read(&segment_path)?;
-      let mut offset = 0usize;
 
-      while offset + REPLICATION_FRAME_HEADER_BYTES <= bytes.len() {
-        let magic = le_u32(&bytes[offset..offset + 4])?;
-        if magic != REPLICATION_FRAME_MAGIC {
+      let mut reader = BufReader::new(File::open(&segment_path)?);
+      let mut offset = 0u64;
+      loop {
+        let Some(header) = read_frame_header(&mut reader, segment.id, offset)? else {
           break;
-        }
+        };
 
-        let epoch = le_u64(&bytes[offset + 8..offset + 16])?;
-        let log_index = le_u64(&bytes[offset + 16..offset + 24])?;
-        let payload_len = le_u32(&bytes[offset + 24..offset + 28])? as usize;
-        let payload_start = offset + REPLICATION_FRAME_HEADER_BYTES;
-        let payload_end = payload_start.checked_add(payload_len).ok_or_else(|| {
-          KiteError::InvalidReplication("replication frame payload overflow".to_string())
-        })?;
-        if payload_end > bytes.len() {
-          return Err(KiteError::InvalidReplication(format!(
-            "replication frame truncated in segment {} at byte {}",
-            segment.id, offset
-          )));
-        }
+        let frame_offset = offset;
+        let frame_bytes = REPLICATION_FRAME_HEADER_BYTES
+          .checked_add(header.payload_len)
+          .ok_or_else(|| {
+            KiteError::InvalidReplication("replication frame payload overflow".to_string())
+          })?;
+        let payload_end = frame_offset
+          .checked_add(frame_bytes as u64)
+          .ok_or_else(|| {
+            KiteError::InvalidReplication("replication frame payload overflow".to_string())
+          })?;
 
-        let frame_bytes = payload_end - offset;
-        let frame_offset = offset as u64;
-        if frame_after_cursor(parsed_cursor, epoch, segment.id, frame_offset, log_index) {
-          if (total_bytes + frame_bytes > max_bytes && !frames.is_empty())
-            || frames.len() >= max_frames
-          {
+        let include_frame = frame_after_cursor(
+          parsed_cursor,
+          header.epoch,
+          segment.id,
+          frame_offset,
+          header.log_index,
+        );
+        if include_frame {
+          if frame_bytes > max_bytes {
+            return Err(KiteError::InvalidQuery(
+              format!("max_bytes budget {max_bytes} is smaller than frame size {frame_bytes}")
+                .into(),
+            ));
+          }
+          if frames.len() >= max_frames || total_bytes.saturating_add(frame_bytes) > max_bytes {
             limited = true;
             break 'outer;
           }
+        }
 
+        let payload_base64 = read_frame_payload(
+          &mut reader,
+          segment.id,
+          frame_offset,
+          &header,
+          include_payload && include_frame,
+        )?;
+
+        if include_frame {
           next_cursor = Some(
-            ReplicationCursor::new(epoch, segment.id, payload_end as u64, log_index).to_string(),
+            ReplicationCursor::new(header.epoch, segment.id, payload_end, header.log_index)
+              .to_string(),
           );
-          let payload_base64 = if include_payload {
-            Some(BASE64_STANDARD.encode(&bytes[payload_start..payload_end]))
-          } else {
-            None
-          };
-
           frames.push(json!({
-            "epoch": epoch,
-            "log_index": log_index,
+            "epoch": header.epoch,
+            "log_index": header.log_index,
             "segment_id": segment.id,
             "segment_offset": frame_offset,
             "bytes": frame_bytes,
             "payload_base64": payload_base64,
           }));
-          total_bytes += frame_bytes;
+          total_bytes = total_bytes.saturating_add(frame_bytes);
         }
 
         offset = payload_end;
@@ -356,6 +439,73 @@ impl SingleFileDB {
     serde_json::to_string(&payload)
       .map_err(|error| KiteError::Serialization(format!("encode replication log export: {error}")))
   }
+}
+
+fn is_reseed_error(error: &KiteError) -> bool {
+  matches!(
+    error,
+    KiteError::InvalidReplication(message) if message.to_ascii_lowercase().contains("reseed")
+  )
+}
+
+fn read_snapshot_transport_payload(
+  path: &Path,
+  include_data: bool,
+) -> Result<(u64, String, Option<String>)> {
+  let metadata = std::fs::metadata(path)?;
+  if include_data && metadata.len() > REPLICATION_SNAPSHOT_INLINE_MAX_BYTES {
+    return Err(KiteError::InvalidReplication(format!(
+      "snapshot size {} exceeds max inline payload {} bytes",
+      metadata.len(),
+      REPLICATION_SNAPSHOT_INLINE_MAX_BYTES
+    )));
+  }
+
+  let mut reader = BufReader::new(File::open(path)?);
+  let mut hasher = Crc32cHasher::new();
+  let mut bytes_read = 0u64;
+  let mut chunk = [0u8; REPLICATION_IO_CHUNK_BYTES];
+
+  if include_data {
+    let mut encoder = base64::write::EncoderWriter::new(Vec::new(), &BASE64_STANDARD);
+    loop {
+      let read = reader.read(&mut chunk)?;
+      if read == 0 {
+        break;
+      }
+
+      let payload = &chunk[..read];
+      bytes_read = bytes_read.saturating_add(read as u64);
+      if bytes_read > REPLICATION_SNAPSHOT_INLINE_MAX_BYTES {
+        return Err(KiteError::InvalidReplication(format!(
+          "snapshot size {} exceeds max inline payload {} bytes",
+          bytes_read, REPLICATION_SNAPSHOT_INLINE_MAX_BYTES
+        )));
+      }
+      hasher.update(payload);
+      encoder.write_all(payload)?;
+    }
+
+    let encoded = String::from_utf8(encoder.finish()?).map_err(|error| {
+      KiteError::Serialization(format!("snapshot base64 encoding failed: {error}"))
+    })?;
+    return Ok((
+      bytes_read,
+      format!("{:08x}", hasher.finalize()),
+      Some(encoded),
+    ));
+  }
+
+  loop {
+    let read = reader.read(&mut chunk)?;
+    if read == 0 {
+      break;
+    }
+    bytes_read = bytes_read.saturating_add(read as u64);
+    hasher.update(&chunk[..read]);
+  }
+
+  Ok((bytes_read, format!("{:08x}", hasher.finalize()), None))
 }
 
 fn frame_after_cursor(
@@ -386,6 +536,13 @@ fn le_u32(bytes: &[u8]) -> Result<u32> {
   Ok(u32::from_le_bytes(value))
 }
 
+fn le_u16(bytes: &[u8]) -> Result<u16> {
+  let value: [u8; 2] = bytes
+    .try_into()
+    .map_err(|_| KiteError::InvalidReplication("invalid frame u16 field".to_string()))?;
+  Ok(u16::from_le_bytes(value))
+}
+
 fn le_u64(bytes: &[u8]) -> Result<u64> {
   let value: [u8; 8] = bytes
     .try_into()
@@ -397,7 +554,193 @@ fn format_segment_file_name(id: u64) -> String {
   format!("segment-{id:020}.rlog")
 }
 
-fn sync_graph_state(replica: &SingleFileDB, source: &SingleFileDB) -> Result<()> {
+#[derive(Debug, Clone, Copy)]
+struct ParsedFrameHeader {
+  epoch: u64,
+  log_index: u64,
+  payload_len: usize,
+  stored_crc32: u32,
+  crc_disabled: bool,
+}
+
+fn read_frame_header(
+  reader: &mut BufReader<File>,
+  segment_id: u64,
+  frame_offset: u64,
+) -> Result<Option<ParsedFrameHeader>> {
+  let mut header_bytes = [0u8; REPLICATION_FRAME_HEADER_BYTES];
+  let mut filled = 0usize;
+  while filled < REPLICATION_FRAME_HEADER_BYTES {
+    let read = reader.read(&mut header_bytes[filled..])?;
+    if read == 0 {
+      if filled == 0 {
+        return Ok(None);
+      }
+      return Err(KiteError::InvalidReplication(format!(
+        "replication frame truncated in segment {} at byte {}",
+        segment_id, frame_offset
+      )));
+    }
+    filled = filled.saturating_add(read);
+  }
+
+  parse_frame_header(&header_bytes, segment_id, frame_offset).map(Some)
+}
+
+fn parse_frame_header(
+  header_bytes: &[u8; REPLICATION_FRAME_HEADER_BYTES],
+  segment_id: u64,
+  frame_offset: u64,
+) -> Result<ParsedFrameHeader> {
+  let magic = le_u32(&header_bytes[0..4])?;
+  if magic != REPLICATION_FRAME_MAGIC {
+    return Err(KiteError::InvalidReplication(format!(
+      "invalid replication frame magic 0x{magic:08X} in segment {} at byte {}",
+      segment_id, frame_offset
+    )));
+  }
+
+  let version = le_u16(&header_bytes[4..6])?;
+  if version != REPLICATION_FRAME_VERSION {
+    return Err(KiteError::VersionMismatch {
+      required: version as u32,
+      current: REPLICATION_FRAME_VERSION as u32,
+    });
+  }
+
+  let flags = le_u16(&header_bytes[6..8])?;
+  if flags & !REPLICATION_FRAME_FLAG_CRC32_DISABLED != 0 {
+    return Err(KiteError::InvalidReplication(format!(
+      "unsupported replication frame flags 0x{flags:04X} in segment {} at byte {}",
+      segment_id, frame_offset
+    )));
+  }
+
+  let payload_len = le_u32(&header_bytes[24..28])? as usize;
+  if payload_len > REPLICATION_MAX_FRAME_PAYLOAD_BYTES {
+    return Err(KiteError::InvalidReplication(format!(
+      "frame payload exceeds limit: {}",
+      payload_len
+    )));
+  }
+
+  Ok(ParsedFrameHeader {
+    epoch: le_u64(&header_bytes[8..16])?,
+    log_index: le_u64(&header_bytes[16..24])?,
+    payload_len,
+    stored_crc32: le_u32(&header_bytes[28..32])?,
+    crc_disabled: (flags & REPLICATION_FRAME_FLAG_CRC32_DISABLED) != 0,
+  })
+}
+
+fn read_frame_payload(
+  reader: &mut BufReader<File>,
+  segment_id: u64,
+  frame_offset: u64,
+  header: &ParsedFrameHeader,
+  capture_base64: bool,
+) -> Result<Option<String>> {
+  if capture_base64 {
+    let mut payload = vec![0u8; header.payload_len];
+    reader
+      .read_exact(&mut payload)
+      .map_err(|error| map_frame_payload_read_error(error, segment_id, frame_offset))?;
+    if !header.crc_disabled {
+      let computed_crc32 = crc32c(&payload);
+      if computed_crc32 != header.stored_crc32 {
+        return Err(KiteError::CrcMismatch {
+          stored: header.stored_crc32,
+          computed: computed_crc32,
+        });
+      }
+    }
+    return Ok(Some(BASE64_STANDARD.encode(payload)));
+  }
+
+  let mut hasher = (!header.crc_disabled).then(Crc32cHasher::new);
+  consume_payload_stream(reader, header.payload_len, |chunk| {
+    if let Some(hasher) = hasher.as_mut() {
+      hasher.update(chunk);
+    }
+  })
+  .map_err(|error| map_frame_payload_read_error(error, segment_id, frame_offset))?;
+
+  if let Some(hasher) = hasher {
+    let computed_crc32 = hasher.finalize();
+    if computed_crc32 != header.stored_crc32 {
+      return Err(KiteError::CrcMismatch {
+        stored: header.stored_crc32,
+        computed: computed_crc32,
+      });
+    }
+  }
+
+  Ok(None)
+}
+
+fn consume_payload_stream(
+  reader: &mut BufReader<File>,
+  payload_len: usize,
+  mut visit: impl FnMut(&[u8]),
+) -> std::io::Result<()> {
+  let mut remaining = payload_len;
+  let mut chunk = [0u8; REPLICATION_IO_CHUNK_BYTES];
+  while remaining > 0 {
+    let want = remaining.min(chunk.len());
+    let read = reader.read(&mut chunk[..want])?;
+    if read == 0 {
+      return Err(std::io::Error::new(
+        std::io::ErrorKind::UnexpectedEof,
+        "replication frame payload truncated",
+      ));
+    }
+    visit(&chunk[..read]);
+    remaining -= read;
+  }
+  Ok(())
+}
+
+fn map_frame_payload_read_error(
+  error: std::io::Error,
+  segment_id: u64,
+  frame_offset: u64,
+) -> KiteError {
+  if error.kind() == std::io::ErrorKind::UnexpectedEof {
+    KiteError::InvalidReplication(format!(
+      "replication frame truncated in segment {} at byte {}",
+      segment_id, frame_offset
+    ))
+  } else {
+    KiteError::Io(error)
+  }
+}
+
+fn source_db_fingerprint(path: &Path) -> Result<(u64, u32)> {
+  let mut reader = BufReader::new(File::open(path)?);
+  let mut hasher = Crc32cHasher::new();
+  let mut chunk = [0u8; REPLICATION_IO_CHUNK_BYTES];
+  let mut bytes = 0u64;
+
+  loop {
+    let read = reader.read(&mut chunk)?;
+    if read == 0 {
+      break;
+    }
+    hasher.update(&chunk[..read]);
+    bytes = bytes.saturating_add(read as u64);
+  }
+
+  Ok((bytes, hasher.finalize()))
+}
+
+fn sync_graph_state<F>(
+  replica: &SingleFileDB,
+  source: &SingleFileDB,
+  before_commit: F,
+) -> Result<()>
+where
+  F: FnOnce() -> Result<()>,
+{
   let tx_guard = replica.begin_guard(false)?;
 
   let source_nodes = source.list_nodes();
@@ -510,6 +853,7 @@ fn sync_graph_state(replica: &SingleFileDB, source: &SingleFileDB) -> Result<()>
     }
   }
 
+  before_commit()?;
   tx_guard.commit()
 }
 

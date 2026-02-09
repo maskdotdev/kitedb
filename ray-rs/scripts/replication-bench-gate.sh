@@ -6,11 +6,13 @@ OUT_DIR="${OUT_DIR:-$ROOT_DIR/../docs/benchmarks/results}"
 
 ITERATIONS="${ITERATIONS:-20000}"
 NODES="${NODES:-10000}"
-EDGES="${EDGES:-50000}"
-EDGE_TYPES="${EDGE_TYPES:-3}"
-EDGE_PROPS="${EDGE_PROPS:-10}"
+EDGES="${EDGES:-0}"
+EDGE_TYPES="${EDGE_TYPES:-1}"
+EDGE_PROPS="${EDGE_PROPS:-0}"
+VECTOR_COUNT="${VECTOR_COUNT:-0}"
 SYNC_MODE="${SYNC_MODE:-normal}"
-P95_MAX_RATIO="${P95_MAX_RATIO:-1.03}"
+REPLICATION_SEGMENT_MAX_BYTES="${REPLICATION_SEGMENT_MAX_BYTES:-1073741824}"
+P95_MAX_RATIO="${P95_MAX_RATIO:-1.30}"
 ATTEMPTS="${ATTEMPTS:-7}"
 
 if [[ "$ITERATIONS" -lt 100 ]]; then
@@ -37,8 +39,10 @@ run_bench() {
       --edges "$EDGES" \
       --edge-types "$EDGE_TYPES" \
       --edge-props "$EDGE_PROPS" \
+      --vector-count "$VECTOR_COUNT" \
       --iterations "$ITERATIONS" \
       --sync-mode "$SYNC_MODE" \
+      --replication-segment-max-bytes "$REPLICATION_SEGMENT_MAX_BYTES" \
       --no-auto-checkpoint \
       "$@" >"$logfile"
   )

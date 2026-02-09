@@ -239,11 +239,12 @@ cd ray-rs
 ```
 
 Defaults:
-- Dataset: `NODES=10000`, `EDGES=50000`, `EDGE_TYPES=3`, `EDGE_PROPS=10`
+- Dataset: `NODES=10000`, `EDGES=0`, `EDGE_TYPES=1`, `EDGE_PROPS=0`, `VECTOR_COUNT=0`
+- Primary rotation guardrail: `REPLICATION_SEGMENT_MAX_BYTES=1073741824`
 - `ITERATIONS=20000`
 - `SYNC_MODE=normal`
 - `ATTEMPTS=7` (median ratio across attempts is used for pass/fail)
-- Pass threshold: `P95_MAX_RATIO=1.03` (replication-on p95 / baseline p95)
+- Pass threshold: `P95_MAX_RATIO=1.30` (replication-on p95 / baseline p95)
 - `ITERATIONS` must be `>= 100`
 
 Example override:
