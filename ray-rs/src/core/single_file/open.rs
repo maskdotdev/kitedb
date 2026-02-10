@@ -5,6 +5,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+#[cfg(feature = "bench-profile")]
+use std::time::Instant;
 
 use parking_lot::{Mutex, RwLock};
 
@@ -355,6 +357,23 @@ struct SnapshotLoadState<'a> {
   next_label_id: &'a mut LabelId,
   next_etype_id: &'a mut ETypeId,
   next_propkey_id: &'a mut PropKeyId,
+  #[cfg(feature = "bench-profile")]
+  profile: &'a mut OpenProfileCounters,
+}
+
+#[cfg(feature = "bench-profile")]
+#[derive(Debug, Default)]
+struct OpenProfileCounters {
+  snapshot_parse_ns: u64,
+  schema_hydrate_ns: u64,
+  wal_scan_ns: u64,
+  wal_replay_ns: u64,
+  vector_init_ns: u64,
+}
+
+#[cfg(feature = "bench-profile")]
+fn elapsed_ns(started: Instant) -> u64 {
+  started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64
 }
 
 fn load_snapshot_and_schema(state: &mut SnapshotLoadState<'_>) -> Result<Option<SnapshotData>> {
@@ -372,6 +391,8 @@ fn load_snapshot_and_schema(state: &mut SnapshotLoadState<'_>) -> Result<Option<
     parse_options.skip_crc_validation = true;
   }
 
+  #[cfg(feature = "bench-profile")]
+  let parse_started = Instant::now();
   let parse_result = SnapshotData::parse_at_offset(
     std::sync::Arc::new({
       // Safety handled inside map_file (native mmap) or in-memory read (wasm).
@@ -380,9 +401,18 @@ fn load_snapshot_and_schema(state: &mut SnapshotLoadState<'_>) -> Result<Option<
     snapshot_offset,
     &parse_options,
   );
+  #[cfg(feature = "bench-profile")]
+  {
+    state.profile.snapshot_parse_ns = state
+      .profile
+      .snapshot_parse_ns
+      .saturating_add(elapsed_ns(parse_started));
+  }
 
   match parse_result {
     Ok(snap) => {
+      #[cfg(feature = "bench-profile")]
+      let schema_started = Instant::now();
       // Load schema from snapshot
       for i in 1..=snap.header.num_labels as u32 {
         if let Some(name) = snap.label_name(i) {
@@ -408,6 +438,13 @@ fn load_snapshot_and_schema(state: &mut SnapshotLoadState<'_>) -> Result<Option<
       *state.next_label_id = snap.header.num_labels as u32 + 1;
       *state.next_etype_id = snap.header.num_etypes as u32 + 1;
       *state.next_propkey_id = snap.header.num_propkeys as u32 + 1;
+      #[cfg(feature = "bench-profile")]
+      {
+        state.profile.schema_hydrate_ns = state
+          .profile
+          .schema_hydrate_ns
+          .saturating_add(elapsed_ns(schema_started));
+      }
 
       Ok(Some(snap))
     }
@@ -655,6 +692,10 @@ pub fn open_single_file<P: AsRef<Path>>(
   options: SingleFileOpenOptions,
 ) -> Result<SingleFileDB> {
   let path = path.as_ref();
+  #[cfg(feature = "bench-profile")]
+  let open_started = Instant::now();
+  #[cfg(feature = "bench-profile")]
+  let mut open_profile = OpenProfileCounters::default();
 
   // Validate page size
   if !is_valid_page_size(options.page_size) {
@@ -780,17 +821,29 @@ pub fn open_single_file<P: AsRef<Path>>(
     next_label_id: &mut next_label_id,
     next_etype_id: &mut next_etype_id,
     next_propkey_id: &mut next_propkey_id,
+    #[cfg(feature = "bench-profile")]
+    profile: &mut open_profile,
   };
   let snapshot = load_snapshot_and_schema(&mut snapshot_state)?;
 
   // Replay WAL for recovery (if not a new database)
   let mut _wal_records_storage: Option<Vec<crate::core::wal::record::ParsedWalRecord>>;
   if !is_new && header.wal_head > 0 {
+    #[cfg(feature = "bench-profile")]
+    let wal_scan_started = Instant::now();
     _wal_records_storage = Some(scan_wal_records(&mut pager, &header)?);
+    #[cfg(feature = "bench-profile")]
+    {
+      open_profile.wal_scan_ns = open_profile
+        .wal_scan_ns
+        .saturating_add(elapsed_ns(wal_scan_started));
+    }
     if let Some(ref wal_records) = _wal_records_storage {
       committed_in_order = committed_transactions(wal_records);
 
       // Replay committed transactions
+      #[cfg(feature = "bench-profile")]
+      let wal_replay_started = Instant::now();
       for (_txid, records) in &committed_in_order {
         for record in records {
           replay_wal_record(
@@ -811,6 +864,12 @@ pub fn open_single_file<P: AsRef<Path>>(
         }
         next_commit_ts += 1;
       }
+      #[cfg(feature = "bench-profile")]
+      {
+        open_profile.wal_replay_ns = open_profile
+          .wal_replay_ns
+          .saturating_add(elapsed_ns(wal_replay_started));
+      }
     }
   } else {
     _wal_records_storage = None;
@@ -818,6 +877,8 @@ pub fn open_single_file<P: AsRef<Path>>(
 
   // Load vector-store state from snapshot (if present).
   // Newer snapshots keep stores lazy until first access.
+  #[cfg(feature = "bench-profile")]
+  let vector_init_started = Instant::now();
   let (mut vector_stores, mut vector_store_lazy_entries) = if let Some(ref snapshot) = snapshot {
     if snapshot
       .header
@@ -865,6 +926,12 @@ pub fn open_single_file<P: AsRef<Path>>(
       }
     }
   }
+  #[cfg(feature = "bench-profile")]
+  {
+    open_profile.vector_init_ns = open_profile
+      .vector_init_ns
+      .saturating_add(elapsed_ns(vector_init_started));
+  }
 
   // Initialize cache if enabled
   let cache = options.cache.clone().map(CacheManager::new);
@@ -902,6 +969,29 @@ pub fn open_single_file<P: AsRef<Path>>(
       )?),
     ),
   };
+
+  #[cfg(feature = "bench-profile")]
+  {
+    if std::env::var_os("KITEDB_BENCH_PROFILE_OPEN").is_some() {
+      let total_ns = elapsed_ns(open_started);
+      let wal_records = _wal_records_storage.as_ref().map(|r| r.len()).unwrap_or(0);
+      eprintln!(
+        "[bench-profile][open] path={} total_ns={} snapshot_parse_ns={} schema_hydrate_ns={} wal_scan_ns={} wal_replay_ns={} vector_init_ns={} snapshot_loaded={} wal_records={} wal_txs={} vector_stores={} vector_lazy_entries={}",
+        path.display(),
+        total_ns,
+        open_profile.snapshot_parse_ns,
+        open_profile.schema_hydrate_ns,
+        open_profile.wal_scan_ns,
+        open_profile.wal_replay_ns,
+        open_profile.vector_init_ns,
+        usize::from(snapshot.is_some()),
+        wal_records,
+        committed_in_order.len(),
+        vector_stores.len(),
+        vector_store_lazy_entries.len(),
+      );
+    }
+  }
 
   Ok(SingleFileDB {
     path: path.to_path_buf(),
