@@ -567,6 +567,8 @@ pub struct KiteOptions {
   pub wal_size: Option<usize>,
   /// WAL usage threshold (0.0-1.0) to trigger auto-checkpoint
   pub checkpoint_threshold: Option<f64>,
+  /// Close-time WAL usage threshold (0.0-1.0) to trigger blocking checkpoint
+  pub close_checkpoint_if_wal_usage_at_least: Option<f64>,
   /// Replication role (disabled | primary | replica)
   pub replication_role: ReplicationRole,
   /// Optional replication sidecar path override
@@ -599,6 +601,7 @@ impl KiteOptions {
       mvcc_max_chain_depth: None,
       wal_size: None,
       checkpoint_threshold: None,
+      close_checkpoint_if_wal_usage_at_least: Some(0.2),
       replication_role: ReplicationRole::Disabled,
       replication_sidecar_path: None,
       replication_source_db_path: None,
@@ -691,6 +694,20 @@ impl KiteOptions {
     self
   }
 
+  /// Set close-time checkpoint threshold (0.0-1.0).
+  ///
+  /// When set, `Kite::close()` checkpoints if WAL usage is at or above this threshold.
+  pub fn close_checkpoint_if_wal_usage_at_least(mut self, value: f64) -> Self {
+    self.close_checkpoint_if_wal_usage_at_least = Some(value.clamp(0.0, 1.0));
+    self
+  }
+
+  /// Disable close-time checkpointing in `Kite::close()`.
+  pub fn disable_close_checkpoint(mut self) -> Self {
+    self.close_checkpoint_if_wal_usage_at_least = None;
+    self
+  }
+
   /// Set replication role (disabled | primary | replica)
   pub fn replication_role(mut self, role: ReplicationRole) -> Self {
     self.replication_role = role;
@@ -753,8 +770,7 @@ impl KiteOptions {
 
   /// Recommended profile for reopen-heavy workloads.
   ///
-  /// Pair this with `KiteRuntimeProfile::reopen_heavy()` and
-  /// `Kite::close_with_checkpoint_if_wal_over(...)` to cap replay cost on reopen.
+  /// Uses a smaller WAL and lower auto-checkpoint threshold to cap replay cost on reopen.
   pub fn recommended_reopen_heavy() -> Self {
     Self::new()
       .sync_mode(SyncMode::Normal)
@@ -819,7 +835,7 @@ impl KiteRuntimeProfile {
   pub fn reopen_heavy() -> Self {
     Self {
       options: KiteOptions::recommended_reopen_heavy(),
-      close_checkpoint_if_wal_usage_at_least: Some(0.1),
+      close_checkpoint_if_wal_usage_at_least: Some(0.2),
     }
   }
 }
@@ -837,6 +853,8 @@ pub fn kite<P: AsRef<Path>>(path: P, options: KiteOptions) -> Result<Kite> {
 pub struct Kite {
   /// Underlying database
   db: SingleFileDB,
+  /// Close-time checkpoint threshold.
+  close_checkpoint_if_wal_usage_at_least: Option<f64>,
   /// Node type definitions by name
   nodes: HashMap<String, NodeDef>,
   /// Edge type definitions by name
@@ -870,6 +888,10 @@ impl Kite {
     } else {
       db_path = PathBuf::from(format!("{}{}", path.display(), single_file_extension()));
     }
+
+    let close_checkpoint_if_wal_usage_at_least = options
+      .close_checkpoint_if_wal_usage_at_least
+      .map(|value| value.clamp(0.0, 1.0));
 
     let mut db_options = SingleFileOpenOptions::new()
       .read_only(options.read_only)
@@ -952,6 +974,7 @@ impl Kite {
 
     Ok(Self {
       db,
+      close_checkpoint_if_wal_usage_at_least,
       nodes,
       edges,
       key_prefix_to_node,
@@ -2211,7 +2234,13 @@ impl Kite {
 
   /// Close the database
   pub fn close(self) -> Result<()> {
-    close_single_file(self.db)
+    match self.close_checkpoint_if_wal_usage_at_least {
+      Some(threshold) => close_single_file_with_options(
+        self.db,
+        SingleFileCloseOptions::new().checkpoint_if_wal_usage_at_least(threshold),
+      ),
+      None => close_single_file(self.db),
+    }
   }
 
   /// Close the database and run a blocking checkpoint if WAL usage is above threshold.
@@ -3908,6 +3937,7 @@ mod tests {
     let safe = KiteOptions::recommended_safe();
     assert_eq!(safe.sync_mode, SyncMode::Full);
     assert!(!safe.group_commit_enabled);
+    assert_eq!(safe.close_checkpoint_if_wal_usage_at_least, Some(0.2));
 
     let balanced = KiteOptions::recommended_balanced();
     assert_eq!(balanced.sync_mode, SyncMode::Normal);
@@ -3915,19 +3945,32 @@ mod tests {
     assert_eq!(balanced.group_commit_window_ms, 2);
     assert_eq!(balanced.wal_size, Some(64 * 1024 * 1024));
     assert_eq!(balanced.checkpoint_threshold, Some(0.5));
+    assert_eq!(balanced.close_checkpoint_if_wal_usage_at_least, Some(0.2));
 
     let reopen = KiteOptions::recommended_reopen_heavy();
     assert_eq!(reopen.sync_mode, SyncMode::Normal);
     assert!(reopen.group_commit_enabled);
     assert_eq!(reopen.wal_size, Some(16 * 1024 * 1024));
     assert_eq!(reopen.checkpoint_threshold, Some(0.2));
+    assert_eq!(reopen.close_checkpoint_if_wal_usage_at_least, Some(0.2));
   }
 
   #[test]
   fn test_runtime_profile_reopen_heavy_has_close_threshold() {
     let profile = KiteRuntimeProfile::from_kind(KiteRuntimeProfileKind::ReopenHeavy);
     assert_eq!(profile.options.wal_size, Some(16 * 1024 * 1024));
-    assert_eq!(profile.close_checkpoint_if_wal_usage_at_least, Some(0.1));
+    assert_eq!(profile.close_checkpoint_if_wal_usage_at_least, Some(0.2));
+  }
+
+  #[test]
+  fn test_kite_options_close_checkpoint_threshold_configurable() {
+    let options = KiteOptions::new()
+      .close_checkpoint_if_wal_usage_at_least(0.35)
+      .disable_close_checkpoint();
+    assert_eq!(options.close_checkpoint_if_wal_usage_at_least, None);
+
+    let clamped = KiteOptions::new().close_checkpoint_if_wal_usage_at_least(1.5);
+    assert_eq!(clamped.close_checkpoint_if_wal_usage_at_least, Some(1.0));
   }
 
   #[test]

@@ -88,6 +88,8 @@ pub struct JsKiteOptions {
   pub wal_size_mb: Option<i64>,
   /// WAL usage threshold (0.0-1.0) to trigger auto-checkpoint
   pub checkpoint_threshold: Option<f64>,
+  /// On close, checkpoint if WAL usage is at or above this threshold (default: 0.2)
+  pub close_checkpoint_if_wal_usage_at_least: Option<f64>,
   /// Replication role: "Disabled", "Primary", or "Replica"
   pub replication_role: Option<JsReplicationRole>,
   /// Replication sidecar path override

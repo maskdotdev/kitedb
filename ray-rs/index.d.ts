@@ -1204,6 +1204,8 @@ export interface JsKiteOptions {
   walSizeMb?: number
   /** WAL usage threshold (0.0-1.0) to trigger auto-checkpoint */
   checkpointThreshold?: number
+  /** On close, checkpoint if WAL usage is at or above this threshold (default: 0.2) */
+  closeCheckpointIfWalUsageAtLeast?: number
 }
 
 /** Node property key-value pair for JS */

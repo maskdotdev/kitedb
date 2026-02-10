@@ -142,6 +142,9 @@ impl Kite {
     if let Some(threshold) = options.checkpoint_threshold {
       kite_opts.checkpoint_threshold = Some(threshold.clamp(0.0, 1.0));
     }
+    if let Some(threshold) = options.close_checkpoint_if_wal_usage_at_least {
+      kite_opts.close_checkpoint_if_wal_usage_at_least = Some(threshold.clamp(0.0, 1.0));
+    }
     if let Some(role) = options.replication_role {
       kite_opts.replication_role = role.into();
     }
@@ -1181,6 +1184,9 @@ impl napi::Task for OpenKiteTask {
     }
     if let Some(threshold) = self.options.checkpoint_threshold {
       kite_opts.checkpoint_threshold = Some(threshold.clamp(0.0, 1.0));
+    }
+    if let Some(threshold) = self.options.close_checkpoint_if_wal_usage_at_least {
+      kite_opts.close_checkpoint_if_wal_usage_at_least = Some(threshold.clamp(0.0, 1.0));
     }
     if let Some(role) = self.options.replication_role.take() {
       kite_opts.replication_role = role.into();

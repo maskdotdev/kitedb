@@ -135,6 +135,7 @@ class Kite:
         nodes: List[NodeDef[Any]],
         edges: List[EdgeDef],
         options: Optional[OpenOptions] = None,
+        close_checkpoint_if_wal_usage_at_least: Optional[float] = 0.2,
     ):
         """
         Open or create a Kite database.
@@ -144,8 +145,15 @@ class Kite:
             nodes: List of node definitions
             edges: List of edge definitions
             options: Optional database options
+            close_checkpoint_if_wal_usage_at_least:
+                On close, checkpoint if WAL usage >= threshold. Set None to disable.
         """
         self._db = Database(path, options)
+        self._close_checkpoint_if_wal_usage_at_least = (
+            None
+            if close_checkpoint_if_wal_usage_at_least is None
+            else max(0.0, min(1.0, float(close_checkpoint_if_wal_usage_at_least)))
+        )
         self._nodes: Dict[str, NodeDef[Any]] = {n.name: n for n in nodes}
         self._edges: Dict[str, EdgeDef] = {e.name: e for e in edges}
         self._etype_ids: Dict[EdgeDef, int] = {}
@@ -793,7 +801,12 @@ class Kite:
     
     def close(self) -> None:
         """Close the database."""
-        self._db.close()
+        if self._close_checkpoint_if_wal_usage_at_least is None:
+            self._db.close()
+            return
+        self._db.close_with_checkpoint_if_wal_over(
+            self._close_checkpoint_if_wal_usage_at_least
+        )
     
     @property
     def raw(self) -> Database:
@@ -914,6 +927,7 @@ def kite(
     nodes: List[NodeDef[Any]],
     edges: List[EdgeDef],
     options: Optional[OpenOptions] = None,
+    close_checkpoint_if_wal_usage_at_least: Optional[float] = 0.2,
 ) -> Kite:
     """
     Open or create a KiteDB database.
@@ -925,6 +939,8 @@ def kite(
         nodes: List of node definitions
         edges: List of edge definitions
         options: Optional database options
+        close_checkpoint_if_wal_usage_at_least:
+            On close, checkpoint if WAL usage >= threshold. Set None to disable.
     
     Returns:
         Kite database instance
@@ -951,7 +967,13 @@ def kite(
         >>> with kite("./my-graph", nodes=[user], edges=[knows]) as db:
         ...     alice = db.insert(user).values(key="alice", name="Alice").returning()
     """
-    return Kite(path, nodes=nodes, edges=edges, options=options)
+    return Kite(
+        path,
+        nodes=nodes,
+        edges=edges,
+        options=options,
+        close_checkpoint_if_wal_usage_at_least=close_checkpoint_if_wal_usage_at_least,
+    )
 
 
 __all__ = [
