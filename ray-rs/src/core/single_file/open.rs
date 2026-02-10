@@ -819,7 +819,16 @@ pub fn open_single_file<P: AsRef<Path>>(
   // Load vector-store state from snapshot (if present).
   // Newer snapshots keep stores lazy until first access.
   let (mut vector_stores, mut vector_store_lazy_entries) = if let Some(ref snapshot) = snapshot {
-    vector_store_state_from_snapshot(snapshot)?
+    if snapshot
+      .header
+      .flags
+      .contains(SnapshotFlags::HAS_VECTOR_STORES)
+      || snapshot.header.flags.contains(SnapshotFlags::HAS_VECTORS)
+    {
+      vector_store_state_from_snapshot(snapshot)?
+    } else {
+      (HashMap::new(), HashMap::new())
+    }
   } else {
     (HashMap::new(), HashMap::new())
   };

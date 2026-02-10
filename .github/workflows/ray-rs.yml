@@ -143,6 +143,39 @@ jobs:
           name: open-close-vector-gate-logs
           path: docs/benchmarks/results/ci-${{ github.run_id }}-${{ github.run_attempt }}-open-close-vector-gate*.txt
           if-no-files-found: ignore
+  open-close-non-vector-gate:
+    name: Open/Close Non-Vector Gate
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ray-rs/target/
+          key: open-close-non-vector-gate-${{ hashFiles('ray-rs/Cargo.lock') }}
+      - name: Run open/close non-vector gate
+        run: ./scripts/open-close-non-vector-gate.sh
+        env:
+          STAMP: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          ATTEMPTS: "1"
+          MAX_SMALL_RW_US: "900.0"
+          MAX_SMALL_RO_US: "900.0"
+          MAX_LARGE_RW_US: "5000.0"
+          MAX_LARGE_RO_US: "5000.0"
+      - name: Upload open/close non-vector gate logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-close-non-vector-gate-logs
+          path: docs/benchmarks/results/ci-${{ github.run_id }}-${{ github.run_attempt }}-open-close-non-vector-gate*.txt
+          if-no-files-found: ignore
   ann-quality-gate:
     name: ANN Quality Gate
     if: github.event_name != 'schedule'

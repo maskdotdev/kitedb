@@ -325,6 +325,15 @@ pub(crate) fn vector_store_state_from_snapshot(
   HashMap<PropKeyId, VectorManifest>,
   HashMap<PropKeyId, VectorStoreLazyEntry>,
 )> {
+  if !snapshot
+    .header
+    .flags
+    .contains(SnapshotFlags::HAS_VECTOR_STORES)
+    && !snapshot.header.flags.contains(SnapshotFlags::HAS_VECTORS)
+  {
+    return Ok((HashMap::new(), HashMap::new()));
+  }
+
   if snapshot
     .header
     .flags
@@ -532,11 +541,15 @@ fn deserialize_vector_store_entry(
 
 #[cfg(test)]
 mod tests {
-  use super::vector_stores_from_snapshot;
+  use super::{vector_store_state_from_snapshot, vector_stores_from_snapshot};
   use crate::core::single_file::{close_single_file, open_single_file, SingleFileOpenOptions};
   use crate::core::snapshot::reader::SnapshotData;
   use crate::core::snapshot::writer::{build_snapshot_to_memory, NodeData, SnapshotBuildInput};
-  use crate::types::{PropValue, SnapshotFlags};
+  use crate::types::{
+    PropValue, SectionId, SnapshotFlags, SECTION_ENTRY_SIZE, SNAPSHOT_HEADER_SIZE,
+  };
+  use crate::util::binary::{read_u64, write_u32, write_u64};
+  use crate::util::crc::crc32c;
   use crate::vector::distance::normalize;
   use crate::vector::store::{create_vector_store, vector_store_has, vector_store_insert};
   use crate::vector::types::VectorStoreConfig;
@@ -735,5 +748,67 @@ mod tests {
     ));
     drop(snapshot_guard);
     close_single_file(db).expect("expected value");
+  }
+
+  #[test]
+  fn test_no_vector_flags_ignore_vector_sections() {
+    let mut buffer = build_snapshot_to_memory(SnapshotBuildInput {
+      generation: 1,
+      nodes: vec![NodeData {
+        node_id: 1,
+        key: None,
+        labels: vec![],
+        props: HashMap::new(),
+      }],
+      edges: Vec::new(),
+      labels: HashMap::new(),
+      etypes: HashMap::new(),
+      propkeys: HashMap::new(),
+      vector_stores: None,
+      compression: None,
+    })
+    .expect("expected value");
+
+    // Corrupt-insert a VectorStoreIndex section table entry while keeping
+    // HAS_VECTOR_STORES/HAS_VECTORS flags unset. Loader should ignore it.
+    let entry_offset =
+      SNAPSHOT_HEADER_SIZE + (SectionId::VectorStoreIndex as usize) * SECTION_ENTRY_SIZE;
+    let mut prev_end = 0u64;
+    for section_idx in 0..(SectionId::VectorStoreIndex as usize) {
+      let sec_entry = SNAPSHOT_HEADER_SIZE + section_idx * SECTION_ENTRY_SIZE;
+      let offset = read_u64(&buffer, sec_entry);
+      let len = read_u64(&buffer, sec_entry + 8);
+      if len > 0 {
+        prev_end = prev_end.max(offset + len);
+      }
+    }
+    let fake_payload_offset = ((prev_end + 63) / 64) * 64;
+    let required_size = (((fake_payload_offset + 1 + 63) / 64) * 64 + 4) as usize;
+    if buffer.len() < required_size {
+      buffer.resize(required_size, 0);
+    }
+    write_u64(&mut buffer, entry_offset, fake_payload_offset);
+    write_u64(&mut buffer, entry_offset + 8, 1);
+    write_u32(&mut buffer, entry_offset + 16, 0);
+    write_u32(&mut buffer, entry_offset + 20, 1);
+    let crc_offset = buffer.len() - 4;
+    let crc = crc32c(&buffer[..crc_offset]);
+    write_u32(&mut buffer, crc_offset, crc);
+
+    let mut tmp = NamedTempFile::new().expect("expected value");
+    tmp.write_all(&buffer).expect("expected value");
+    tmp.flush().expect("expected value");
+
+    let snapshot = SnapshotData::load(tmp.path()).expect("expected value");
+    assert!(!snapshot
+      .header
+      .flags
+      .contains(SnapshotFlags::HAS_VECTOR_STORES));
+    assert!(!snapshot.header.flags.contains(SnapshotFlags::HAS_VECTORS));
+
+    let (stores, lazy_entries) =
+      vector_store_state_from_snapshot(&snapshot).expect("expected value");
+    assert!(stores.is_empty());
+    assert!(lazy_entries.is_empty());
   }
 }
