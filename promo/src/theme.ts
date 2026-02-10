@@ -1,4 +1,4 @@
-// KiteDB Brand Colors from ray-docs
+// KiteDB Brand Colors
 export const theme = {
   // Dark mode background colors
   background: "#05070d",

@@ -180,7 +180,7 @@ const Terminal: React.FC<{
   );
 };
 
-// Hero text with glow
+// Hero text - clean solid style
 const HeroText: React.FC<{
   children: string;
   delay?: number;
@@ -203,26 +203,14 @@ const HeroText: React.FC<{
     extrapolateRight: "clamp",
   });
 
-  const glowIntensity = subtle ? 0.4 : interpolate(
-    Math.sin((frame - delay) * 0.1),
-    [-1, 1],
-    [0.6, 1]
-  );
-
   return (
     <div
       style={{
         fontFamily: theme.fontSans,
         fontSize,
         fontWeight: 700,
-        color: subtle ? theme.mutedForeground : "rgba(150, 230, 255, 0.95)",
-        textShadow: subtle
-          ? "none"
-          : `
-            0 0 5px rgba(255, 255, 255, ${glowIntensity}),
-            0 0 28px rgba(0, 180, 255, ${0.9 * glowIntensity}),
-            0 0 50px rgba(0, 150, 255, ${0.5 * glowIntensity})
-          `,
+        color: subtle ? theme.mutedForeground : "#ffffff",
+        textShadow: subtle ? "none" : "0 2px 20px rgba(0, 0, 0, 0.5)",
         opacity,
         transform: `translateY(${translateY}px)`,
         letterSpacing: "-0.02em",
@@ -239,14 +227,48 @@ const HeroText: React.FC<{
 // SCENE 1: INSTANT HOOK (0-3s / 0-90 frames)
 // ============================================================================
 
+// Title card - static, use as thumbnail
+const Scene0_Title: React.FC = () => {
+  return (
+    <AbsoluteFill
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 16,
+      }}
+    >
+      <div
+        style={{
+          fontFamily: theme.fontSans,
+          fontSize: 88,
+          fontWeight: 800,
+          color: "#ffffff",
+          letterSpacing: "-0.02em",
+        }}
+      >
+        KiteDB
+      </div>
+      <div
+        style={{
+          fontFamily: theme.fontSans,
+          fontSize: 32,
+          fontWeight: 500,
+          color: theme.accent,
+          textShadow: `0 0 20px ${theme.accent}`,
+          letterSpacing: "0.02em",
+        }}
+      >
+        The fastest graph database
+      </div>
+    </AbsoluteFill>
+  );
+};
+
 const Scene1_InstantHook: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-
-  // Flash effect at start
-  const flashOpacity = interpolate(frame, [0, 3, 8], [1, 0.8, 0], {
-    extrapolateRight: "clamp",
-  });
 
   // Query text types instantly
   const queryText = "db.from(alice).out(Knows).toArray()";
@@ -259,7 +281,7 @@ const Scene1_InstantHook: React.FC = () => {
     }))
   );
 
-  // Result appears FAST - before viewer expects
+  // Result appears FAST
   const showResult = frame > 28;
   const resultOpacity = interpolate(frame, [28, 35], [0, 1], {
     extrapolateLeft: "clamp",
@@ -268,7 +290,7 @@ const Scene1_InstantHook: React.FC = () => {
 
   // Terminal entry
   const terminalProgress = spring({
-    frame: frame - 5,
+    frame: frame - 2,
     fps,
     config: { damping: 20, stiffness: 120 },
   });
@@ -296,18 +318,6 @@ const Scene1_InstantHook: React.FC = () => {
         gap: 50,
       }}
     >
-      {/* Initial flash */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: theme.accent,
-          opacity: flashOpacity,
-          pointerEvents: "none",
-        }}
-      />
-
-      {/* Terminal with instant query */}
       <Terminal
         title="kitedb — query"
         width={850}
@@ -333,9 +343,9 @@ const Scene1_InstantHook: React.FC = () => {
             }}
           >
             <span style={{ color: theme.terminalGreen }}>✓</span>{" "}
-            <span style={{ color: "#64748b" }}>3 results in</span>{" "}
+            <span style={{ color: "#64748b" }}>5 results in</span>{" "}
             <span style={{ color: theme.accent, textShadow: `0 0 10px ${theme.accent}` }}>
-              0.12ms
+              417ns
             </span>
           </div>
         )}
@@ -362,11 +372,16 @@ const Scene1_InstantHook: React.FC = () => {
 // SCENE 2: SPEED PROOF (3-8s / 90-240 frames)
 // ============================================================================
 
-const SpeedComparisonTerminal: React.FC<{
-  title: string;
-  isKite: boolean;
+// Benchmark bar component for visual comparison
+const BenchmarkBar: React.FC<{
+  label: string;
+  value: string;
+  rawNs: number;
+  maxNs: number;
+  color: string;
   delay: number;
-}> = ({ title, isKite, delay }) => {
+  isWinner?: boolean;
+}> = ({ label, value, rawNs, maxNs, color, delay, isWinner = false }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -376,129 +391,65 @@ const SpeedComparisonTerminal: React.FC<{
     config: { damping: 20, stiffness: 100 },
   });
 
-  const opacity = interpolate(entryProgress, [0, 1], [0, 1], {
+  const barWidth = interpolate(entryProgress, [0, 1], [0, (rawNs / maxNs) * 100], {
     extrapolateRight: "clamp",
   });
 
-  // Typing animation
-  const query = isKite
-    ? "db.from(user).out(Follows).limit(100)"
-    : "SELECT * FROM follows WHERE user_id = ? LIMIT 100";
-
-  const typedChars = Math.floor(
-    interpolate(frame - delay, [10, 40], [0, query.length], {
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
-    })
-  );
-
-  // Results timing - KiteDB is instant, generic has delay
-  const resultDelay = isKite ? 45 : 90;
-  const showResults = frame - delay > resultDelay;
-
-  const resultOpacity = interpolate(
-    frame - delay,
-    [resultDelay, resultDelay + 10],
-    [0, 1],
-    {
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
-    }
-  );
-
-  // Loading spinner for generic DB
-  const showLoading = !isKite && frame - delay > 45 && frame - delay < 90;
-  const spinnerRotation = (frame - delay) * 8;
-
-  // Results cascade in
-  const results = ["Alice Chen", "Bob Wilson", "Carol Davis", "Dan Smith"];
-  const resultLines = results.map((name, i) => {
-    const lineDelay = resultDelay + 5 + i * 5;
-    const lineOpacity = interpolate(frame - delay, [lineDelay, lineDelay + 5], [0, 1], {
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
-    });
-    const lineTranslate = interpolate(frame - delay, [lineDelay, lineDelay + 5], [10, 0], {
-      extrapolateLeft: "clamp",
-      extrapolateRight: "clamp",
-    });
-    return { name, opacity: lineOpacity, translate: lineTranslate };
+  const opacity = interpolate(entryProgress, [0, 0.3], [0, 1], {
+    extrapolateRight: "clamp",
   });
 
+  const glowPulse = isWinner ? interpolate(
+    Math.sin((frame - delay) * 0.15),
+    [-1, 1],
+    [0.5, 1]
+  ) : 0;
+
   return (
-    <div style={{ opacity }}>
-      <Terminal title={title} width={700} glow={isKite && showResults}>
-        <div style={{ display: "flex", alignItems: "center" }}>
-          <span style={{ color: theme.accent, marginRight: 12 }}>❯</span>
-          <span style={{ color: theme.foreground, fontSize: 18 }}>
-            {query.slice(0, typedChars)}
-          </span>
-          <Cursor frame={frame} visible={typedChars < query.length} />
-        </div>
-
-        {/* Loading state for generic */}
-        {showLoading && (
-          <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 10 }}>
-            <div
-              style={{
-                width: 16,
-                height: 16,
-                border: "2px solid #64748b",
-                borderTopColor: "transparent",
-                borderRadius: "50%",
-                transform: `rotate(${spinnerRotation}deg)`,
-              }}
-            />
-            <span style={{ color: "#64748b" }}>Loading...</span>
-          </div>
-        )}
-
-        {/* Results */}
-        {showResults && (
-          <div style={{ marginTop: 16, opacity: resultOpacity }}>
-            {resultLines.map((line) => (
-              <div
-                key={line.name}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                  opacity: line.opacity,
-                  transform: `translateX(${line.translate}px)`,
-                  marginBottom: 4,
-                }}
-              >
-                <span style={{ color: isKite ? theme.terminalGreen : "#64748b" }}>
-                  {isKite ? "●" : "○"}
-                </span>
-                <span style={{ color: theme.foreground }}>{line.name}</span>
-              </div>
-            ))}
-            <div
-              style={{
-                marginTop: 12,
-                color: isKite ? theme.accentStrong : "#64748b",
-                fontSize: 16,
-              }}
-            >
-              {isKite ? "✓ 0.08ms" : "⏱ 127ms"}
-            </div>
-          </div>
-        )}
-      </Terminal>
-
-      {/* Label */}
-      <div
-        style={{
-          textAlign: "center",
-          marginTop: 16,
-          fontFamily: theme.fontSans,
-          fontSize: 18,
-          color: isKite ? theme.accent : "#64748b",
-          fontWeight: isKite ? 600 : 400,
-        }}
-      >
-        {isKite ? "KiteDB" : "Traditional DB"}
+    <div style={{ opacity, marginBottom: 24 }}>
+      <div style={{ 
+        display: "flex", 
+        justifyContent: "space-between", 
+        marginBottom: 8,
+        fontFamily: theme.fontSans,
+      }}>
+        <span style={{ 
+          color: isWinner ? theme.accent : theme.mutedForeground,
+          fontSize: 22,
+          fontWeight: isWinner ? 700 : 500,
+        }}>
+          {label}
+          {isWinner && <span style={{ marginLeft: 12, color: theme.terminalGreen }}>⚡</span>}
+        </span>
+        <span style={{ 
+          color: isWinner ? theme.accentStrong : "#64748b",
+          fontFamily: theme.fontMono,
+          fontSize: 22,
+          fontWeight: isWinner ? 700 : 400,
+          textShadow: isWinner ? `0 0 10px ${theme.accent}` : "none",
+        }}>
+          {value}
+        </span>
+      </div>
+      <div style={{
+        height: 32,
+        background: "rgba(20, 30, 45, 0.8)",
+        borderRadius: 6,
+        overflow: "hidden",
+        border: `1px solid ${isWinner ? "rgba(42, 242, 255, 0.3)" : "#1a2a42"}`,
+      }}>
+        <div style={{
+          width: `${Math.max(barWidth, isWinner ? 3 : barWidth)}%`,
+          height: "100%",
+          background: isWinner 
+            ? `linear-gradient(90deg, ${color}, ${theme.accentStrong})`
+            : color,
+          borderRadius: 4,
+          boxShadow: isWinner 
+            ? `0 0 20px rgba(42, 242, 255, ${glowPulse}), inset 0 1px 0 rgba(255,255,255,0.2)`
+            : "none",
+          transition: "width 0.3s ease-out",
+        }} />
       </div>
     </div>
   );
@@ -508,7 +459,25 @@ const Scene2_SpeedProof: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  const textProgress = spring({
+  // Benchmark data: 10K nodes, 20K edges
+  // KiteDB: p50 708ns, Memgraph: p50 338.17µs
+  const kitedbNs = 708;
+  const memgraphNs = 338170; // 338.17µs in ns
+  const speedup = Math.round(memgraphNs / kitedbNs);
+
+  const headerProgress = spring({
+    frame: frame - 5,
+    fps,
+    config: { damping: 20, stiffness: 100 },
+  });
+
+  const speedupProgress = spring({
+    frame: frame - 70,
+    fps,
+    config: { damping: 12, stiffness: 60 },
+  });
+
+  const subtitleProgress = spring({
     frame: frame - 100,
     fps,
     config: { damping: 15, stiffness: 80 },
@@ -524,25 +493,116 @@ const Scene2_SpeedProof: React.FC = () => {
         gap: 40,
       }}
     >
-      {/* Side by side terminals */}
-      <div style={{ display: "flex", gap: 60 }}>
-        <SpeedComparisonTerminal title="database — query" isKite={false} delay={5} />
-        <SpeedComparisonTerminal title="kitedb — query" isKite={true} delay={10} />
+      {/* Header with dataset info */}
+      <div
+        style={{
+          opacity: interpolate(headerProgress, [0, 1], [0, 1], {
+            extrapolateRight: "clamp",
+          }),
+          transform: `translateY(${interpolate(headerProgress, [0, 1], [-20, 0], {
+            extrapolateRight: "clamp",
+          })}px)`,
+          textAlign: "center",
+        }}
+      >
+        <div style={{
+          fontFamily: theme.fontSans,
+          fontSize: 28,
+          color: theme.mutedForeground,
+          marginBottom: 8,
+        }}>
+          Graph Traversal Benchmark
+        </div>
+        <div style={{
+          fontFamily: theme.fontMono,
+          fontSize: 20,
+          color: "#64748b",
+          display: "flex",
+          gap: 32,
+          justifyContent: "center",
+        }}>
+          <span>10K nodes</span>
+          <span style={{ color: "#3a4a5a" }}>•</span>
+          <span>20K edges</span>
+          <span style={{ color: "#3a4a5a" }}>•</span>
+          <span>p50 latency</span>
+        </div>
+      </div>
+
+      {/* Benchmark comparison */}
+      <div style={{
+        width: 700,
+        background: "rgba(10, 14, 20, 0.8)",
+        border: "1px solid #1a2a42",
+        borderRadius: 12,
+        padding: "32px 40px",
+        boxShadow: "0 20px 60px -20px rgba(0, 0, 0, 0.8)",
+      }}>
+        <BenchmarkBar
+          label="KiteDB"
+          value="708ns"
+          rawNs={kitedbNs}
+          maxNs={memgraphNs}
+          color={theme.accent}
+          delay={20}
+          isWinner
+        />
+        <BenchmarkBar
+          label={`Other "Fast" Graph DB`}
+          value="338.17µs"
+          rawNs={memgraphNs}
+          maxNs={memgraphNs}
+          color="#64748b"
+          delay={40}
+        />
+      </div>
+
+      {/* Speedup callout */}
+      <div
+        style={{
+          opacity: interpolate(speedupProgress, [0, 1], [0, 1], {
+            extrapolateRight: "clamp",
+          }),
+          transform: `scale(${interpolate(speedupProgress, [0, 1], [0.8, 1], {
+            extrapolateRight: "clamp",
+          })})`,
+          display: "flex",
+          alignItems: "baseline",
+          gap: 12,
+        }}
+      >
+        <span style={{
+          fontFamily: theme.fontSans,
+          fontSize: 96,
+          fontWeight: 800,
+          color: "#ffffff",
+          textShadow: "0 2px 24px rgba(0, 0, 0, 0.5)",
+        }}>
+          {speedup}x
+        </span>
+        <span style={{
+          fontFamily: theme.fontSans,
+          fontSize: 36,
+          color: theme.mutedForeground,
+          fontWeight: 500,
+        }}>
+          faster
+        </span>
       </div>
 
       {/* Subtitle */}
       <div
         style={{
-          opacity: interpolate(textProgress, [0, 1], [0, 1], {
+          opacity: interpolate(subtitleProgress, [0, 1], [0, 1], {
             extrapolateRight: "clamp",
           }),
-          transform: `translateY(${interpolate(textProgress, [0, 1], [15, 0], {
+          transform: `translateY(${interpolate(subtitleProgress, [0, 1], [15, 0], {
             extrapolateRight: "clamp",
           })}px)`,
         }}
       >
         <HeroText fontSize={40} subtle>
-          Instant reads. Zero friction.
+          Sub-microsecond queries. Zero compromise.
         </HeroText>
       </div>
     </AbsoluteFill>
@@ -563,14 +623,14 @@ const Scene3_FluentSyntax: React.FC = () => {
 const friends = db
   .from(alice)
   .out(Knows)
-  .where(n => n.get("active"))
-  .toArray()
+  .whereNode(n => n.get("active"))
+  .toArray()  // 284ns
 
-// Find shortest path
+// Find shortest path  
 const path = db
   .shortestPath(alice).to(bob)
   .via(Knows)
-  .dijkstra()`;
+  .dijkstra()  // 1.2µs`;
 
   // Typewriter effect
   const typingSpeed = 2;
@@ -791,11 +851,11 @@ const Scene4_DeveloperFlow: React.FC = () => {
   const { fps } = useVideoConfig();
 
   const snippets = [
-    { code: ".filter(n => n.age > 25)", result: "847 nodes", delay: 0, position: { x: 200, y: 200 } },
-    { code: ".out(WorksAt)", result: "traversed 3.2K edges", delay: 30, position: { x: 600, y: 350 } },
-    { code: ".unique()", result: "312 companies", delay: 60, position: { x: 300, y: 500 } },
-    { code: ".orderBy('revenue')", result: "sorted in 0.4ms", delay: 90, position: { x: 700, y: 250 } },
-    { code: ".take(10).toArray()", result: "done ✓", delay: 120, position: { x: 450, y: 400 } },
+    { code: ".whereNode(n => n.age > 25)", result: "847 nodes • 312ns", delay: 0, position: { x: 180, y: 200 } },
+    { code: ".out(WorksAt)", result: "3.2K edges • 89ns", delay: 30, position: { x: 600, y: 350 } },
+    { code: ".nodes()", result: "312 unique • 47ns", delay: 60, position: { x: 280, y: 500 } },
+    { code: ".take(10)", result: "limited • 8ns", delay: 90, position: { x: 720, y: 250 } },
+    { code: ".toArray()", result: "done ✓ • 156ns", delay: 120, position: { x: 450, y: 400 } },
   ];
 
   // Center text
@@ -888,9 +948,11 @@ const Scene5_Performance: React.FC = () => {
 
   // Metrics that fade in
   const metrics = [
-    { label: "Zero-copy mmap", delay: 20 },
-    { label: "ACID transactions", delay: 35 },
-    { label: "Single file storage", delay: 50 },
+    { label: "Zero-copy mmap", delay: 15 },
+    { label: "CSR adjacency", delay: 28 },
+    { label: "MVCC snapshots", delay: 41 },
+    { label: "No network hops", delay: 54 },
+    { label: "Single file", delay: 67 },
   ];
 
   // Text
@@ -1076,12 +1138,9 @@ const Scene6_EndCard: React.FC = () => {
         Install. Query. Ship.
       </div>
 
-      {/* Logo + KiteDB */}
+      {/* Logo */}
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 24,
           opacity: interpolate(logoProgress, [0, 1], [0, 1], {
             extrapolateRight: "clamp",
           }),
@@ -1090,22 +1149,7 @@ const Scene6_EndCard: React.FC = () => {
           })})`,
         }}
       >
-        <KiteLogo scale={1.2} delay={60} />
-        <div
-          style={{
-            fontFamily: theme.fontSans,
-            fontSize: 64,
-            fontWeight: 700,
-            color: "rgba(150, 230, 255, 0.95)",
-            textShadow: `
-              0 0 5px rgba(255, 255, 255, 0.8),
-              0 0 28px rgba(0, 180, 255, 0.9),
-              0 0 50px rgba(0, 150, 255, 0.5)
-            `,
-          }}
-        >
-          KiteDB
-        </div>
+        <KiteLogo scale={1.5} delay={60} />
       </div>
 
       {/* URL */}
@@ -1124,7 +1168,7 @@ const Scene6_EndCard: React.FC = () => {
           marginTop: 10,
         }}
       >
-        kitedb.io
+        kitedb.vercel.app
       </div>
     </AbsoluteFill>
   );
@@ -1141,33 +1185,38 @@ export const KiteDBPromo: React.FC = () => {
     <AbsoluteFill style={{ backgroundColor: theme.background }}>
       <Background />
 
-      {/* Scene 1: Instant Hook (0-3s) */}
-      <Sequence from={0} durationInFrames={3 * fps} name="Hook">
+      {/* Scene 0: Title (0-250ms / ~8 frames at 30fps) */}
+      <Sequence from={0} durationInFrames={8} name="Title">
+        <Scene0_Title />
+      </Sequence>
+
+      {/* Scene 1: Hook (250ms-3.25s) */}
+      <Sequence from={8} durationInFrames={3 * fps} name="Hook">
         <Scene1_InstantHook />
       </Sequence>
 
-      {/* Scene 2: Speed Proof (3-8s) */}
-      <Sequence from={3 * fps} durationInFrames={5 * fps} name="SpeedProof">
+      {/* Scene 2: Speed Proof (3.25-8.25s) */}
+      <Sequence from={8 + 3 * fps} durationInFrames={5 * fps} name="SpeedProof">
         <Scene2_SpeedProof />
       </Sequence>
 
-      {/* Scene 3: Fluent Query Syntax (8-14s) */}
-      <Sequence from={8 * fps} durationInFrames={6 * fps} name="FluentSyntax">
+      {/* Scene 3: Fluent Query Syntax (8.25-14.25s) */}
+      <Sequence from={8 + 8 * fps} durationInFrames={6 * fps} name="FluentSyntax">
         <Scene3_FluentSyntax />
       </Sequence>
 
-      {/* Scene 4: Developer Flow (14-20s) */}
-      <Sequence from={14 * fps} durationInFrames={6 * fps} name="DeveloperFlow">
+      {/* Scene 4: Developer Flow (14.25-20.25s) */}
+      <Sequence from={8 + 14 * fps} durationInFrames={6 * fps} name="DeveloperFlow">
         <Scene4_DeveloperFlow />
       </Sequence>
 
-      {/* Scene 5: Built for Speed (20-25s) */}
-      <Sequence from={20 * fps} durationInFrames={5 * fps} name="Performance">
+      {/* Scene 5: Built for Speed (20.25-25.25s) */}
+      <Sequence from={8 + 20 * fps} durationInFrames={5 * fps} name="Performance">
         <Scene5_Performance />
       </Sequence>
 
-      {/* Scene 6: Installation + End Card (25-30s) */}
-      <Sequence from={25 * fps} durationInFrames={5 * fps} name="EndCard">
+      {/* Scene 6: Installation + End Card (25.25-30.25s) */}
+      <Sequence from={8 + 25 * fps} durationInFrames={5 * fps} name="EndCard">
         <Scene6_EndCard />
       </Sequence>
     </AbsoluteFill>

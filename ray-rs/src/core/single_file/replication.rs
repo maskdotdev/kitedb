@@ -39,6 +39,9 @@ const REPLICATION_SNAPSHOT_INLINE_MAX_BYTES: u64 = 32 * 1024 * 1024;
 const REPLICA_CATCH_UP_MAX_ATTEMPTS: usize = 5;
 const REPLICA_CATCH_UP_INITIAL_BACKOFF_MS: u64 = 10;
 const REPLICA_CATCH_UP_MAX_BACKOFF_MS: u64 = 160;
+const REPLICA_BOOTSTRAP_MAX_ATTEMPTS: usize = 20;
+const REPLICA_BOOTSTRAP_INITIAL_BACKOFF_MS: u64 = 10;
+const REPLICA_BOOTSTRAP_MAX_BACKOFF_MS: u64 = 320;
 
 impl SingleFileDB {
   /// Promote this primary instance to the next replication epoch.
@@ -97,58 +100,88 @@ impl SingleFileDB {
       KiteError::InvalidReplication("replica source db path is not configured".to_string())
     })?;
 
-    let source = open_single_file(
-      &source_db_path,
-      SingleFileOpenOptions::new()
-        .read_only(true)
-        .create_if_missing(false)
-        .replication_role(ReplicationRole::Disabled),
-    )?;
+    let mut attempts = 0usize;
+    let mut backoff_ms = REPLICA_BOOTSTRAP_INITIAL_BACKOFF_MS;
+    loop {
+      attempts = attempts.saturating_add(1);
+      let source = open_single_file(
+        &source_db_path,
+        SingleFileOpenOptions::new()
+          .read_only(true)
+          .create_if_missing(false)
+          .replication_role(ReplicationRole::Disabled),
+      )?;
 
-    let bootstrap_start = runtime.source_head_position()?;
-    let bootstrap_source_fingerprint = source_db_fingerprint(&source_db_path)?;
-    let sync_result = sync_graph_state(self, &source, || {
-      let bootstrap_end = runtime.source_head_position()?;
-      let bootstrap_end_fingerprint = source_db_fingerprint(&source_db_path)?;
-      if bootstrap_end != bootstrap_start || bootstrap_end_fingerprint != bootstrap_source_fingerprint
-      {
-        return Err(KiteError::InvalidReplication(format!(
-          "source primary advanced during snapshot bootstrap; start={}:{}, end={}:{}, start_crc={:08x}, end_crc={:08x}; quiesce writes and retry",
-          bootstrap_start.0,
-          bootstrap_start.1,
-          bootstrap_end.0,
-          bootstrap_end.1,
-          bootstrap_source_fingerprint.1,
-          bootstrap_end_fingerprint.1
-        )));
+      let bootstrap_start = runtime.source_head_position()?;
+      let bootstrap_source_fingerprint = source_db_fingerprint(&source_db_path)?;
+      let sync_result = (|| {
+        std::thread::sleep(Duration::from_millis(10));
+        let quiesce_head = runtime.source_head_position()?;
+        let quiesce_fingerprint = source_db_fingerprint(&source_db_path)?;
+        if quiesce_head != bootstrap_start || quiesce_fingerprint != bootstrap_source_fingerprint {
+          return Err(KiteError::InvalidReplication(format!(
+            "source primary did not quiesce for snapshot bootstrap; start={}:{}, observed={}:{}, start_crc={:08x}, observed_crc={:08x}; quiesce writes and retry",
+            bootstrap_start.0,
+            bootstrap_start.1,
+            quiesce_head.0,
+            quiesce_head.1,
+            bootstrap_source_fingerprint.1,
+            quiesce_fingerprint.1
+          )));
+        }
+        sync_graph_state(self, &source, || {
+          let bootstrap_end = runtime.source_head_position()?;
+          let bootstrap_end_fingerprint = source_db_fingerprint(&source_db_path)?;
+          if bootstrap_end != bootstrap_start
+            || bootstrap_end_fingerprint != bootstrap_source_fingerprint
+          {
+            return Err(KiteError::InvalidReplication(format!(
+              "source primary advanced during snapshot bootstrap; start={}:{}, end={}:{}, start_crc={:08x}, end_crc={:08x}; quiesce writes and retry",
+              bootstrap_start.0,
+              bootstrap_start.1,
+              bootstrap_end.0,
+              bootstrap_end.1,
+              bootstrap_source_fingerprint.1,
+              bootstrap_end_fingerprint.1
+            )));
+          }
+          std::thread::sleep(Duration::from_millis(10));
+          let quiesce_head = runtime.source_head_position()?;
+          let quiesce_fingerprint = source_db_fingerprint(&source_db_path)?;
+          if quiesce_head != bootstrap_start || quiesce_fingerprint != bootstrap_source_fingerprint {
+            return Err(KiteError::InvalidReplication(format!(
+              "source primary did not quiesce for snapshot bootstrap; start={}:{}, observed={}:{}, start_crc={:08x}, observed_crc={:08x}; quiesce writes and retry",
+              bootstrap_start.0,
+              bootstrap_start.1,
+              quiesce_head.0,
+              quiesce_head.1,
+              bootstrap_source_fingerprint.1,
+              quiesce_fingerprint.1
+            )));
+          }
+          Ok(())
+        })
+      })()
+      .and_then(|_| {
+        runtime.mark_applied(bootstrap_start.0, bootstrap_start.1)?;
+        runtime.clear_error()
+      });
+
+      let close_result = close_single_file(source);
+      if let Err(error) = sync_result {
+        if is_bootstrap_quiesce_error(&error) && attempts < REPLICA_BOOTSTRAP_MAX_ATTEMPTS {
+          std::thread::sleep(Duration::from_millis(backoff_ms));
+          backoff_ms = backoff_ms
+            .saturating_mul(2)
+            .min(REPLICA_BOOTSTRAP_MAX_BACKOFF_MS);
+          continue;
+        }
+        let _ = runtime.mark_error(error.to_string(), false);
+        return Err(error);
       }
-      std::thread::sleep(Duration::from_millis(10));
-      let quiesce_head = runtime.source_head_position()?;
-      let quiesce_fingerprint = source_db_fingerprint(&source_db_path)?;
-      if quiesce_head != bootstrap_start || quiesce_fingerprint != bootstrap_source_fingerprint {
-        return Err(KiteError::InvalidReplication(format!(
-          "source primary did not quiesce for snapshot bootstrap; start={}:{}, observed={}:{}, start_crc={:08x}, observed_crc={:08x}; quiesce writes and retry",
-          bootstrap_start.0,
-          bootstrap_start.1,
-          quiesce_head.0,
-          quiesce_head.1,
-          bootstrap_source_fingerprint.1,
-          quiesce_fingerprint.1
-        )));
-      }
-      Ok(())
-    })
-    .and_then(|_| {
-      runtime.mark_applied(bootstrap_start.0, bootstrap_start.1)?;
-      runtime.clear_error()
-    });
-    if let Err(error) = sync_result.as_ref() {
-      let _ = runtime.mark_error(error.to_string(), false);
+      close_result?;
+      return Ok(());
     }
-    let close_result = close_single_file(source);
-    sync_result?;
-    close_result?;
-    Ok(())
   }
 
   /// Force snapshot reseed for replicas that lost log continuity.
@@ -446,6 +479,16 @@ fn is_reseed_error(error: &KiteError) -> bool {
     error,
     KiteError::InvalidReplication(message) if message.to_ascii_lowercase().contains("reseed")
   )
+}
+
+fn is_bootstrap_quiesce_error(error: &KiteError) -> bool {
+  match error {
+    KiteError::InvalidReplication(message) => {
+      message.contains("source primary advanced during snapshot bootstrap")
+        || message.contains("source primary did not quiesce for snapshot bootstrap")
+    }
+    _ => false,
+  }
 }
 
 fn read_snapshot_transport_payload(

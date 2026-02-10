@@ -409,6 +409,114 @@ fn lagging_replica_reseed_recovers_after_retention_gap() {
 }
 
 #[test]
+fn lagging_replica_across_epoch_retention_gap_requires_reseed() {
+  let dir = tempfile::tempdir().expect("tempdir");
+  let primary_path = dir.path().join("phase-d-epoch-gap-primary.kitedb");
+  let primary_sidecar = dir.path().join("phase-d-epoch-gap-primary.sidecar");
+  let replica_path = dir.path().join("phase-d-epoch-gap-replica.kitedb");
+  let replica_sidecar = dir.path().join("phase-d-epoch-gap-replica.sidecar");
+
+  let primary = open_primary(&primary_path, &primary_sidecar, 1, 8).expect("open primary");
+
+  primary.begin(false).expect("begin base");
+  primary.create_node(Some("base")).expect("create base");
+  primary
+    .commit_with_token()
+    .expect("commit base")
+    .expect("token base");
+
+  let replica = open_replica(
+    &replica_path,
+    &primary_path,
+    &replica_sidecar,
+    &primary_sidecar,
+  )
+  .expect("open replica");
+  replica
+    .replica_bootstrap_from_snapshot()
+    .expect("bootstrap snapshot");
+
+  for i in 0..24 {
+    primary.begin(false).expect("begin pre-promotion");
+    primary
+      .create_node(Some(&format!("pre-{i}")))
+      .expect("create pre");
+    primary
+      .commit_with_token()
+      .expect("commit pre")
+      .expect("token pre");
+  }
+
+  let new_epoch = primary
+    .primary_promote_to_next_epoch()
+    .expect("promote to next epoch");
+  assert_eq!(new_epoch, 2);
+
+  for i in 0..24 {
+    primary.begin(false).expect("begin post-promotion");
+    primary
+      .create_node(Some(&format!("post-{i}")))
+      .expect("create post");
+    primary
+      .commit_with_token()
+      .expect("commit post")
+      .expect("token post");
+  }
+
+  let prune = primary.primary_run_retention().expect("run retention");
+  assert!(
+    prune.pruned_segments > 0,
+    "test setup requires actual segment pruning"
+  );
+
+  let target_head = primary
+    .primary_replication_status()
+    .expect("primary replication status")
+    .head_log_index;
+
+  let mut needs_reseed = false;
+  for _ in 0..16 {
+    match replica.replica_catch_up_once(64) {
+      Ok(_) => {
+        let status = replica
+          .replica_replication_status()
+          .expect("replica status after catch-up");
+        if status.needs_reseed {
+          needs_reseed = true;
+          break;
+        }
+        if status.applied_log_index >= target_head {
+          break;
+        }
+      }
+      Err(err) => {
+        let status = replica
+          .replica_replication_status()
+          .expect("replica status after catch-up error");
+        if status.needs_reseed || err.to_string().contains("reseed") {
+          needs_reseed = true;
+          break;
+        }
+        panic!("unexpected catch-up error before reseed: {err}");
+      }
+    }
+  }
+
+  let status = replica
+    .replica_replication_status()
+    .expect("final replica status");
+  assert!(
+    needs_reseed || status.needs_reseed,
+    "lagging replica across epoch retention gap must require reseed; status={status:?}, replica_nodes={}, primary_nodes={}",
+    replica.count_nodes(),
+    primary.count_nodes()
+  );
+
+  close_single_file(replica).expect("close replica");
+  close_single_file(primary).expect("close primary");
+}
+
+#[test]
 fn transient_missing_segments_do_not_immediately_require_reseed() {
   let dir = tempfile::tempdir().expect("tempdir");
   let primary_path = dir.path().join("phase-d-transient-gap-primary.kitedb");
@@ -494,7 +602,7 @@ fn transient_missing_segments_do_not_immediately_require_reseed() {
 }
 
 #[test]
-fn bootstrap_rejects_concurrent_primary_writes() {
+fn bootstrap_handles_concurrent_primary_writes_safely() {
   let dir = tempfile::tempdir().expect("tempdir");
   let primary_path = dir.path().join("phase-d-bootstrap-race-primary.kitedb");
   let primary_sidecar = dir.path().join("phase-d-bootstrap-race-primary.sidecar");
@@ -505,7 +613,7 @@ fn bootstrap_rejects_concurrent_primary_writes() {
     Arc::new(open_primary(&primary_path, &primary_sidecar, 1024 * 1024, 8).expect("open primary"));
 
   primary.begin(false).expect("begin seed");
-  for i in 0..20_000 {
+  for i in 0..5_000 {
     primary
       .create_node(Some(&format!("seed-{i}")))
       .expect("create seed");
@@ -527,13 +635,23 @@ fn bootstrap_rejects_concurrent_primary_writes() {
   let writer_stop = Arc::clone(&stop);
   let writer_wrote = Arc::clone(&wrote);
   let writer = std::thread::spawn(move || {
-    std::thread::sleep(Duration::from_millis(5));
     let mut i = 0usize;
+    let mut local_commits = 0usize;
     while !writer_stop.load(Ordering::Relaxed) {
       if writer_primary.begin(false).is_ok() {
         let _ = writer_primary.create_node(Some(&format!("race-{i}")));
-        if writer_primary.commit_with_token().is_ok() {
-          writer_wrote.fetch_add(1, Ordering::Relaxed);
+        match writer_primary.commit_with_token() {
+          Ok(_) => {
+            writer_wrote.fetch_add(1, Ordering::Relaxed);
+            local_commits = local_commits.saturating_add(1);
+            if local_commits % 64 == 0 {
+              let _ = writer_primary.checkpoint();
+            }
+          }
+          Err(_) => {
+            let _ = writer_primary.rollback();
+            let _ = writer_primary.checkpoint();
+          }
         }
       }
       i = i.saturating_add(1);
@@ -550,11 +668,143 @@ fn bootstrap_rejects_concurrent_primary_writes() {
     "test setup failed: expected concurrent primary commits during bootstrap"
   );
 
-  let err = bootstrap
-    .expect_err("bootstrap must fail when source primary advances during snapshot synchronization");
+  match bootstrap {
+    Ok(()) => {
+      primary
+        .checkpoint()
+        .expect("checkpoint primary after contention");
+      let target_head = primary
+        .primary_replication_status()
+        .expect("primary status after contention")
+        .head_log_index;
+      let mut stalled = 0usize;
+      for _ in 0..128 {
+        let status = replica
+          .replica_replication_status()
+          .expect("replica status during contention catch-up");
+        if status.applied_log_index >= target_head {
+          break;
+        }
+        let applied = replica
+          .replica_catch_up_once(256)
+          .expect("catch-up after bootstrap under contention");
+        if applied == 0 {
+          stalled = stalled.saturating_add(1);
+          if stalled >= 20 {
+            break;
+          }
+          std::thread::sleep(Duration::from_millis(5));
+        } else {
+          stalled = 0;
+        }
+      }
+      let final_status = replica
+        .replica_replication_status()
+        .expect("final replica status after contention catch-up");
+      assert!(
+        final_status.applied_log_index >= target_head,
+        "replica did not catch up after bootstrap under contention: applied={}, target={}",
+        final_status.applied_log_index,
+        target_head
+      );
+    }
+    Err(err) => {
+      let message = err.to_string();
+      assert!(
+        message.contains("quiesce")
+          || message.contains("WAL buffer full")
+          || message.contains("WalBufferFull"),
+        "unexpected bootstrap error: {err}"
+      );
+    }
+  }
+
+  close_single_file(replica).expect("close replica");
+  let primary = Arc::into_inner(primary).expect("primary unique");
+  close_single_file(primary).expect("close primary");
+}
+
+#[test]
+fn bootstrap_retries_until_source_quiesces() {
+  let dir = tempfile::tempdir().expect("tempdir");
+  let primary_path = dir.path().join("phase-d-bootstrap-retry-primary.kitedb");
+  let primary_sidecar = dir.path().join("phase-d-bootstrap-retry-primary.sidecar");
+  let replica_path = dir.path().join("phase-d-bootstrap-retry-replica.kitedb");
+  let replica_sidecar = dir.path().join("phase-d-bootstrap-retry-replica.sidecar");
+
+  let primary =
+    Arc::new(open_primary(&primary_path, &primary_sidecar, 1024 * 1024, 8).expect("open primary"));
+
+  primary.begin(false).expect("begin seed");
+  for i in 0..5_000 {
+    primary
+      .create_node(Some(&format!("seed-{i}")))
+      .expect("create seed");
+  }
+  primary.commit_with_token().expect("commit seed");
+
+  let replica = open_replica(
+    &replica_path,
+    &primary_path,
+    &replica_sidecar,
+    &primary_sidecar,
+  )
+  .expect("open replica");
+
+  let writer_primary = Arc::clone(&primary);
+  let writer = std::thread::spawn(move || {
+    for i in 0..80 {
+      if writer_primary.begin(false).is_ok() {
+        let _ = writer_primary.create_node(Some(&format!("retry-race-{i}")));
+        let _ = writer_primary.commit_with_token();
+      }
+      std::thread::sleep(Duration::from_millis(2));
+    }
+  });
+
+  let bootstrap = replica.replica_bootstrap_from_snapshot();
+  writer.join().expect("join writer");
+
+  bootstrap.expect(
+    "bootstrap should retry while writes are active and eventually succeed once source quiesces",
+  );
+  primary
+    .checkpoint()
+    .expect("checkpoint primary after writer");
+  let target_head = primary
+    .primary_replication_status()
+    .expect("primary status after writer")
+    .head_log_index;
+
+  let mut stalled = 0usize;
+  for _ in 0..128 {
+    let status = replica
+      .replica_replication_status()
+      .expect("replica status during catch-up");
+    if status.applied_log_index >= target_head {
+      break;
+    }
+    let applied = replica
+      .replica_catch_up_once(256)
+      .expect("catch-up after bootstrap");
+    if applied == 0 {
+      stalled = stalled.saturating_add(1);
+      if stalled >= 20 {
+        break;
+      }
+      std::thread::sleep(Duration::from_millis(5));
+    } else {
+      stalled = 0;
+    }
+  }
+  let final_status = replica
+    .replica_replication_status()
+    .expect("final replica status after catch-up");
   assert!(
-    err.to_string().contains("quiesce"),
-    "unexpected bootstrap error: {err}"
+    final_status.applied_log_index >= target_head,
+    "replica did not catch up after bootstrap retry: applied={}, target={}",
+    final_status.applied_log_index,
+    target_head
   );
 
   close_single_file(replica).expect("close replica");

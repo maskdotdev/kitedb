@@ -219,7 +219,7 @@ impl ReplicaReplication {
     let (applied_epoch, applied_log_index) = self.applied_position();
     let manifest = ManifestStore::new(source_sidecar_path.join(MANIFEST_FILE_NAME)).read()?;
     let expected_next_log = applied_log_index.saturating_add(1);
-    if manifest.epoch == applied_epoch && expected_next_log < manifest.retained_floor {
+    if expected_next_log < manifest.retained_floor {
       let message = format!(
         "replica needs reseed: applied log {} is below retained floor {}",
         applied_log_index, manifest.retained_floor
@@ -240,7 +240,7 @@ impl ReplicaReplication {
     )?;
 
     if let Some(first) = filtered.first() {
-      if first.epoch == applied_epoch && first.log_index > expected_next_log {
+      if first.log_index > expected_next_log {
         let detail = format!(
           "missing log range {}..{}",
           expected_next_log,

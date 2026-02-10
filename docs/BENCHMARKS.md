@@ -219,6 +219,32 @@ Notes (SQLite):
 - WAL autocheckpoint disabled; `journal_size_limit` set to match WAL size
 - Edge props stored in a separate table; edges use `INSERT OR IGNORE` and props use `INSERT OR REPLACE`
 
+### RayDB vs Memgraph (local 1-hop traversal comparison)
+
+This is a **local-only** comparison harness for your own machine. It builds the
+same graph in both engines and benchmarks a query equivalent to:
+
+`db.from(alice).out(Knows).toArray()`
+
+Prerequisites:
+- Memgraph running locally (default `127.0.0.1:7687`)
+
+Run with your requested shape (10k nodes, 20k edges, alice fan-out 10) using the
+Rust benchmark:
+
+```bash
+cd ray-rs
+cargo run --release --example ray_vs_memgraph_bench --no-default-features -- \
+  --nodes 10000 --edges 20000 --query-results 10 --iterations 5000
+```
+
+Adjust result cardinality to your `5-20` target:
+- `--query-results 5`
+- `--query-results 20`
+
+Optional Python harness is still available at:
+- `ray-rs/python/benchmarks/benchmark_raydb_vs_memgraph.py`
+
 ### Replication performance gates (Phase D carry-over)
 
 Run both replication perf gates:

@@ -52,3 +52,6 @@ ray-rs/python/benchmarks/results/*.txt
 # Bench/trace outputs
 ray-rs/flamegraph.svg
 ray-rs/*.trace/
+
+# code-intelligence
+.code-intelligence/
