@@ -52,6 +52,8 @@ jobs:
       rs: ${{ steps.flags.outputs.rs }}
     steps:
       - uses: actions/checkout@v4
+      - name: Verify Python aarch64 ring guard
+        run: ./scripts/test-python-aarch64-ring-ci-guard.sh
       - id: flags
         run: |
           COMMIT_MSG=$(git log -1 --pretty=%B)
@@ -447,6 +449,8 @@ jobs:
   build-python-linux:
     name: Build Python - Linux ${{ matrix.target }}
     runs-on: ${{ matrix.platform.runner }}
+    env:
+      CFLAGS_aarch64_unknown_linux_gnu: -D__ARM_ARCH=8
     needs:
       - meta
     if: needs.meta.outputs.py == 'true' || needs.meta.outputs.all == 'true'
