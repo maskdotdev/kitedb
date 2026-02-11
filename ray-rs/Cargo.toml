@@ -1,6 +1,6 @@
 [package]
 name = "kitedb"
-version = "0.2.16"
+version = "0.2.17"
 edition = "2021"
 authors = ["KiteDB Contributors"]
 description = "High-performance embedded graph database"

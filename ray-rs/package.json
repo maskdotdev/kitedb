@@ -1,6 +1,6 @@
 {
   "name": "@kitedb/core",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "description": "KiteDB - High-performance embedded graph database with vector search",
   "author": "mask <mask@mask.dev>",
   "homepage": "https://kitedb.vercel.com/",
