@@ -62,7 +62,7 @@ Legend: parity = full feature match, partial = similar capability with API or be
 | Export/Import  | `export*`, `import*`               | `export*`, `import*`               | parity  | Python exposes JSON object and file helpers. |
 | Streaming      | `stream*`, `get*Page`              | `stream*`, `get*Page`              | parity  | Same batching/pagination behavior.           |
 | Backup/Restore | `createBackup`, `restoreBackup`    | `create_backup`, `restore_backup`  | parity  | Naming differences only.                     |
-| Metrics/Health | `collectMetrics`, `healthCheck`    | `collect_metrics`, `health_check`  | parity  | Naming differences only.                     |
+| Metrics/Health | `collectMetrics`, `collectReplicationMetricsPrometheus`, `collectReplicationMetricsOtelJson`, `pushReplicationMetricsOtelJson`, `collectReplicationSnapshotTransportJson`, `collectReplicationLogTransportJson`, `healthCheck` | `collect_metrics`, `collect_replication_metrics_prometheus`, `collect_replication_metrics_otel_json`, `push_replication_metrics_otel_json`, `collect_replication_snapshot_transport_json`, `collect_replication_log_transport_json`, `health_check` | parity  | Naming differences only.                     |
 
 ## Vector Search
 

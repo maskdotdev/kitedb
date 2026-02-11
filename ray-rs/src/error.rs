@@ -116,6 +116,10 @@ pub enum KiteError {
   /// Invalid query or builder usage
   #[error("Invalid query: {0}")]
   InvalidQuery(Cow<'static, str>),
+
+  /// Replication metadata/record validation failure
+  #[error("Invalid replication state: {0}")]
+  InvalidReplication(String),
 }
 
 /// Result type alias for KiteDB operations

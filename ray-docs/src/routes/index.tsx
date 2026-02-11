@@ -107,7 +107,7 @@ function HomePage() {
 		typescript: `import { kite } from '@kitedb/core';
 
 // Open database with schema
-const db = kite('./knowledge.kitedb', {
+const db = await kite('./knowledge.kitedb', {
   nodes: [
     {
       name: 'document',
@@ -187,14 +187,14 @@ const results = db
   .nodes();`,
 		rust: `// Find all topics discussed by Alice's documents
 let topics = db
-    .from(alice.id)
+    .from(alice.id())
     .out(Some("wrote"))      // Alice -> Document
     .out(Some("discusses"))  // Document -> Topic
     .nodes()?;
 
 // Multi-hop traversal
 let results = db
-    .from(start_node.id)
+    .from(start_node.id())
     .out(Some("knows"))
     .out(Some("worksAt"))
     .take(10)
@@ -245,7 +245,7 @@ let mut index = VectorIndex::new(VectorIndexOptions {
 })?;
 
 // Add vectors for nodes
-index.set(doc.id, &embedding)?;
+index.set(doc.id(), &embedding)?;
 
 // Find similar documents
 let similar = index.search(&query_embedding, SimilarOptions {
@@ -300,12 +300,12 @@ let doc = db.insert("document")
     .returning()?;
 
 // Create relationships
-db.link(doc.id, "discusses", topic.id, Some(json!({
+db.link(doc.id(), "discusses", topic.id(), Some(json!({
     "relevance": 0.95
 })))?;
 
 // Update properties
-db.update_by_id(doc.id)
+db.update_by_id(doc.id())
     .set("title", "Updated Title")
     .execute()?;`,
 		python: `# Insert with returning
@@ -317,8 +317,8 @@ doc = (db.insert(document)
 db.link(doc, discusses, topic, relevance=0.95)
 
 # Update properties
-(db.update_by_id(doc.id)
-    .set("title", "Updated Title")
+(db.update(doc)
+    .set(title="Updated Title")
     .execute())`,
 	};
 
@@ -614,8 +614,8 @@ db.link(doc, discusses, topic, relevance=0.95)
 										icon={<Database class="w-5 h-5" aria-hidden="true" />}
 									/>
 									<ElectricCard
-										title="HNSW Vector Index"
-										description="Log-time nearest neighbor search with high recall at scale."
+										title="IVF Vector Index"
+										description="Approximate nearest-neighbor search tuned with nProbe and threshold."
 										icon={<Search class="w-5 h-5" aria-hidden="true" />}
 									/>
 								</div>
@@ -671,7 +671,7 @@ db.link(doc, discusses, topic, relevance=0.95)
 									/>
 									<ElectricCard
 										title="MVCC Transactions"
-										description="Snapshot isolation with non-blocking readers by default."
+										description="Consistent reads with serialized commits for durable writes."
 										icon={<GitBranch class="w-5 h-5" aria-hidden="true" />}
 									/>
 								</div>
@@ -838,10 +838,10 @@ db.link(doc, discusses, topic, relevance=0.95)
 										<Network class="w-6 h-6" aria-hidden="true" />
 									</div>
 									<h3 class="font-mono font-semibold text-white text-sm group-hover:text-[#00d4ff] transition-colors">
-										HNSW_INDEX
+										IVF_INDEX
 									</h3>
 									<p class="mt-2 text-xs text-slate-400">
-										O(log n) approximate nearest neighbor queries.
+										Approximate nearest-neighbor search with tunable probe count.
 									</p>
 								</div>
 							</article>

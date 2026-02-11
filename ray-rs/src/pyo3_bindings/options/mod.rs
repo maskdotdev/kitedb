@@ -17,5 +17,5 @@ pub mod streaming;
 pub use backup::{BackupOptions, BackupResult, OfflineBackupOptions, RestoreOptions};
 pub use export::{ExportOptions, ExportResult, ImportOptions, ImportResult};
 pub use maintenance::{CompressionOptions, SingleFileOptimizeOptions, VacuumOptions};
-pub use open::{OpenOptions, SnapshotParseMode, SyncMode};
+pub use open::{OpenOptions, RuntimeProfile, SnapshotParseMode, SyncMode};
 pub use streaming::{PaginationOptions, StreamOptions};

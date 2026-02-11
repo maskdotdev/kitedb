@@ -320,7 +320,7 @@ export function PerformancePage() {
 
 			<p>
 				Latest snapshot (single-file raw, Rust core, 10k nodes / 50k edges,
-				edge types=3, edge props=10, sync_mode=Normal, group_commit=false,
+				edge types=3, edge props=10, syncMode=Normal, groupCommitEnabled=false,
 				February 4, 2026):
 			</p>
 
@@ -379,16 +379,16 @@ export function PerformancePage() {
 			<h3>Write Durability vs Throughput</h3>
 			<ul class="space-y-2 text-sm text-slate-400">
 				<li>
-					<b class="text-slate-200">Defaults stay safe:</b> <code>sync_mode=Full</code>,{" "}
-					<code>group_commit=false</code>.
+					<b class="text-slate-200">Defaults stay safe:</b> <code>syncMode=Full</code>,{" "}
+					<code>groupCommitEnabled=false</code>.
 				</li>
 				<li>
 					<b class="text-slate-200">Single-writer, low latency:</b>{" "}
-					<code>sync_mode=Normal</code> + <code>group_commit=false</code>.
+					<code>syncMode=Normal</code> + <code>groupCommitEnabled=false</code>.
 				</li>
 				<li>
 					<b class="text-slate-200">Multi-writer throughput:</b>{" "}
-					<code>sync_mode=Normal</code> + <code>group_commit=true</code> (1-2ms).
+					<code>syncMode=Normal</code> + <code>groupCommitEnabled=true</code> (1-2ms).
 					<span class="text-slate-500">
 						{" "}
 						Scaling saturates quickly; prefer prep-parallel + single writer for max ingest. See{" "}
@@ -397,7 +397,7 @@ export function PerformancePage() {
 				</li>
 				<li>
 					<b class="text-slate-200">Highest speed, weakest durability:</b>{" "}
-					<code>sync_mode=Off</code> (testing/throwaway only).
+					<code>syncMode=Off</code> (testing/throwaway only).
 				</li>
 			</ul>
 			<p class="text-sm text-slate-500 mt-3">
@@ -410,8 +410,8 @@ export function PerformancePage() {
 				<thead>
 					<tr>
 						<th>Workload</th>
-						<th>sync_mode</th>
-						<th>group_commit</th>
+						<th>syncMode</th>
+						<th>groupCommitEnabled</th>
 						<th>Why</th>
 					</tr>
 				</thead>
@@ -447,14 +447,14 @@ export function PerformancePage() {
 			<ul class="space-y-2 text-sm text-slate-400">
 				<li>
 					<b class="text-slate-200">Fastest ingest (single writer):</b>{" "}
-					<code>begin_bulk()</code> + <code>create_nodes_batch()</code> +{" "}
-					<code>add_edges_batch()</code> / <code>add_edges_with_props_batch()</code>,{" "}
-					<code>sync_mode=Normal</code>, <code>group_commit=false</code>, WAL ≥ 256MB,
+					<code>beginBulk()</code> + <code>createNodesBatch()</code> +{" "}
+					<code>addEdgesBatch()</code> / <code>addEdgesWithPropsBatch()</code>,{" "}
+					<code>syncMode=Normal</code>, <code>groupCommitEnabled=false</code>, WAL ≥ 256MB,
 					auto-checkpoint off during ingest, then checkpoint.
 				</li>
 				<li>
 					<b class="text-slate-200">Multi-writer throughput:</b>{" "}
-					<code>sync_mode=Normal</code> + <code>group_commit=true</code> (1-2ms window),
+					<code>syncMode=Normal</code> + <code>groupCommitEnabled=true</code> (1-2ms window),
 					batched ops per transaction.
 				</li>
 				<li>
@@ -463,7 +463,7 @@ export function PerformancePage() {
 				</li>
 				<li>
 					<b class="text-slate-200">Max speed, lowest durability:</b>{" "}
-					<code>sync_mode=Off</code> for testing only.
+					<code>syncMode=Off</code> for testing only.
 				</li>
 			</ul>
 			<p class="text-sm text-slate-500 mt-3">
@@ -473,10 +473,10 @@ export function PerformancePage() {
 			<h3 class="mt-6">Bulk Ingest Example (Low-Level)</h3>
 			<CodeBlock
 				code={`// Fast ingest: low-level API
-db.begin_bulk();
-const nodeIds = db.create_nodes_batch(keys); // keys: string[]
-db.add_edges_batch(edges); // edges: { src, etype, dst }[]
-db.add_edges_with_props_batch(edgesWithProps);
+db.beginBulk();
+const nodeIds = db.createNodesBatch(keys); // keys: string[]
+db.addEdgesBatch(edges); // edges: { src, etype, dst }[]
+db.addEdgesWithPropsBatch(edgesWithProps);
 db.commit();
 
 // Optional: checkpoint after ingest
@@ -490,12 +490,12 @@ db.checkpoint();`}
 			<CodeBlock
 				code={`// Slow: Individual inserts (1 WAL sync per op)
 for (const key of keys) {
-  db.create_node(key);
+  db.createNode(key);
 }
 
 // Fast: Batch + bulk-load transaction
-db.begin_bulk();
-db.create_nodes_batch(keys);
+db.beginBulk();
+db.createNodesBatch(keys);
 db.commit();
 
 // 1000 nodes × 1μs + 1 WAL sync = ~2ms`}
@@ -538,10 +538,10 @@ Design keys to match your access patterns.`}
 			<CodeBlock
 				code={`// For write-heavy bursts: Compact snapshots after large ingests
 await importLargeDataset();
-await db.optimize();
+db.optimize();
 
 // Inspect storage stats
-const stats = await db.stats();`}
+const stats = db.stats();`}
 				language="typescript"
 			/>
 
@@ -553,21 +553,19 @@ const stats = await db.stats();`}
 
 			<CodeBlock
 				code={`// Get database statistics
-const stats = await db.stats();
+const stats = db.stats();
 console.log(stats);
 // {
-//   nodes: 100000,
-//   edges: 500000,
-//   snapshotSize: 10485760,
-//   deltaSize: 524288,
-//   walUsage: 0.45
+//   snapshotNodes: 100000,
+//   snapshotEdges: 500000,
+//   deltaNodesCreated: 1200,
+//   deltaEdgesAdded: 3400,
+//   walBytes: 10485760,
+//   recommendCompact: false
 // }
 
-// If walUsage is consistently high:
-// → Checkpoint more frequently or increase WAL size
-
-// If deltaSize is large:
-// → Checkpoint to consolidate into snapshot`}
+// If recommendCompact is true:
+// → Run db.checkpoint() or db.optimize()`}
 				language="typescript"
 			/>
 

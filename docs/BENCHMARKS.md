@@ -3,7 +3,7 @@
 This document summarizes **measured** benchmark results. Raw outputs live in
 `docs/benchmarks/results/` so we can trace every number back to an actual run.
 
-> Latest numbers below were captured on **February 4, 2026**. Prior results
+> Latest numbers below were captured on **February 4-5, 2026**. Prior results
 > from **February 3, 2026** are retained for comparison. If you need fresh
 > numbers, rerun the commands in the next section and update this doc with the
 > new output files.
@@ -33,6 +33,19 @@ Optional knobs (Rust):
 - `--sync-mode full|normal|off` (default: normal)
 - `--group-commit-enabled`
 - `--group-commit-window-ms N` (default: 2)
+
+### Rust (replication catch-up throughput)
+
+```bash
+cd ray-rs
+cargo run --release --example replication_catchup_bench --no-default-features -- \
+  --seed-commits 1000 --backlog-commits 5000 --max-frames 256 --sync-mode normal
+```
+
+Key outputs:
+- `primary_frames_per_sec`
+- `catchup_frames_per_sec`
+- `throughput_ratio` (`catchup/primary`)
 
 ### Python bindings (single-file raw)
 
@@ -64,6 +77,134 @@ cargo run --release --example vector_bench --no-default-features -- \
   --vectors 10000 --dimensions 768 --iterations 1000 --k 10 --n-probe 10
 ```
 
+### Vector compaction strategy (Rust)
+
+```bash
+cd ray-rs
+cargo run --release --example vector_compaction_bench --no-default-features -- \
+  --vectors 50000 --dimensions 384 --fragment-target-size 5000 \
+  --delete-ratio 0.35 --min-deletion-ratio 0.30 --max-fragments 4 --min-vectors-to-compact 10000
+```
+
+Use this to compare compaction threshold tradeoffs before changing default vector/ANN maintenance policy.
+
+Automated matrix sweep:
+
+```bash
+cd ray-rs
+./scripts/vector-compaction-matrix.sh
+```
+
+Latest matrix snapshot (2026-02-08, 50k vectors, 384 dims, fragment target 5k):
+- Result artifacts:
+  - `docs/benchmarks/results/2026-02-08-vector-compaction-matrix.txt`
+  - `docs/benchmarks/results/2026-02-08-vector-compaction-matrix.csv`
+  - `docs/benchmarks/results/2026-02-08-vector-compaction-min-vectors-sweep.txt`
+  - `docs/benchmarks/results/2026-02-08-vector-compaction-min-vectors-sweep.csv`
+- `min_deletion_ratio=0.30`, `max_fragments=4` gives balanced reclaim/latency:
+  - `delete_ratio=0.35`: `14.32%` reclaim (single-run latency in low-double-digit ms on this host)
+  - `delete_ratio=0.55`: `22.24%` reclaim (single-run latency in single-digit ms on this host)
+- `max_fragments=8` reclaims more (`28.18%` / `44.18%`) but roughly doubles compaction latency.
+- `min_deletion_ratio=0.40` can skip moderate-churn compaction (`delete_ratio=0.35`), so stale deleted bytes remain.
+- Recommendation: keep defaults `min_deletion_ratio=0.30`, `max_fragments_per_compaction=4`, `min_vectors_to_compact=10000`.
+
+### ANN algorithm matrix (Rust: IVF vs IVF-PQ)
+
+Single run:
+
+```bash
+cd ray-rs
+cargo run --release --example vector_ann_bench --no-default-features -- \
+  --algorithm ivf_pq --vectors 20000 --dimensions 384 --queries 200 --k 10 --n-probe 16 \
+  --pq-subspaces 48 --pq-centroids 256 --residuals false
+```
+
+Matrix sweep:
+
+```bash
+cd ray-rs
+./scripts/vector-ann-matrix.sh
+```
+
+Latest matrix snapshot (2026-02-08, 20k vectors, 384 dims, 200 queries, k=10):
+- Result artifacts:
+  - `docs/benchmarks/results/2026-02-08-vector-ann-matrix.txt`
+  - `docs/benchmarks/results/2026-02-08-vector-ann-matrix.csv`
+- At same `n_probe`, IVF had higher recall than IVF-PQ in this baseline:
+  - `n_probe=8`: IVF `0.1660`, IVF-PQ `0.1195` (`residuals=false`)
+  - `n_probe=16`: IVF `0.2905`, IVF-PQ `0.1775` (`residuals=false`)
+- IVF-PQ (`residuals=false`) had lower search p95 latency than IVF:
+  - `n_probe=8`: `0.4508ms` vs IVF `0.7660ms`
+  - `n_probe=16`: `1.3993ms` vs IVF `4.0272ms`
+- IVF-PQ build time was much higher than IVF in this baseline.
+- Current recommendation: use latency-first IVF-PQ as default ANN path with
+  `residuals=false`, `pq_subspaces=48`, `pq_centroids=256`; monitor recall floor via ANN gate.
+
+PQ tuning sweep:
+
+```bash
+cd ray-rs
+./scripts/vector-ann-pq-tuning.sh
+```
+
+Latest tuning snapshot (2026-02-08):
+- Result artifacts:
+  - `docs/benchmarks/results/2026-02-08-vector-ann-pq-tuning.txt`
+  - `docs/benchmarks/results/2026-02-08-vector-ann-pq-tuning.csv`
+- Best recall-preserving PQ config in this sweep:
+  - `residuals=false`, `pq_subspaces=48`, `pq_centroids=256`
+  - `n_probe=8`: recall ratio vs IVF `0.6875`, p95 ratio vs IVF `0.6155`
+  - `n_probe=16`: recall ratio vs IVF `0.6636`, p95 ratio vs IVF `0.4634`
+- Current implication: this configuration is the best IVF-PQ candidate for latency-first profiles, but still below IVF recall in this workload.
+
+CI tracking:
+- Main workflow (`.github/workflows/ray-rs.yml`) includes non-blocking `ann-pq-tracking`
+  (weekly schedule + manual dispatch) running `./scripts/vector-ann-pq-tuning.sh`.
+- Results are uploaded as artifact `ann-pq-tracking-logs`.
+- Tracking logs are run-scoped with stamp `ci-<run_id>-<run_attempt>`.
+- Scheduled runs skip release/publish gating jobs; schedule path is tracking-only.
+- Manual dispatch input `ann_pq_profile`:
+  - `fast` (default): lightweight trend sweep.
+  - `full`: deeper sweep (`RESIDUALS_SET=false true`) for investigation.
+
+ANN quality/latency gate:
+
+```bash
+cd ray-rs
+./scripts/vector-ann-gate.sh
+```
+
+Defaults:
+- `ALGORITHM=ivf_pq`, `RESIDUALS=false`, `PQ_SUBSPACES=48`, `PQ_CENTROIDS=256`
+- `N_PROBE=16`, `ATTEMPTS=3`
+- `MIN_RECALL_AT_K=0.16`
+- `MAX_P95_MS=8.0`
+
+Latest gate snapshot (2026-02-08): see `docs/benchmarks/results/2026-02-08-vector-ann-gate.attempt*.txt` (pass).
+
+CI:
+- Main-branch workflow (`.github/workflows/ray-rs.yml`) runs `./scripts/vector-ann-gate.sh`
+  and uploads logs as artifact `ann-quality-gate-logs`.
+- Gate logs are run-scoped with stamp `ci-<run_id>-<run_attempt>`.
+
+### Index pipeline hypothesis (network-dominant)
+
+```bash
+cd ray-rs
+cargo run --release --example index_pipeline_hypothesis_bench --no-default-features -- \
+  --mode both --changes 200 --working-set 200 --vector-dims 128 \
+  --tree-sitter-latency-ms 2 --scip-latency-ms 6 --embed-latency-ms 200 \
+  --embed-batch-size 32 --embed-flush-ms 20 --embed-inflight 4 \
+  --vector-apply-batch-size 64 --sync-mode normal
+```
+
+Interpretation:
+- If `parallel` hot-path elapsed is much lower than `sequential`, async embed queueing is working.
+- If `parallel` hot-path p95 is lower than `sequential`, TS+SCIP parallel parse plus unified graph commit is working.
+- If `parallel` freshness p95 is too high, tune `--embed-batch-size`, `--embed-flush-ms`,
+  and `--embed-inflight` (or reduce overwrite churn with larger working set / dedupe rules).
+- Replacement ratio (`Queue ... replaced=...`) quantifies stale embed work eliminated by dedupe.
+
 ### SQLite baseline (single-file raw)
 
 ```bash
@@ -77,6 +218,152 @@ Notes (SQLite):
 - `temp_store=MEMORY`, `locking_mode=EXCLUSIVE`, `cache_size=256MB`
 - WAL autocheckpoint disabled; `journal_size_limit` set to match WAL size
 - Edge props stored in a separate table; edges use `INSERT OR IGNORE` and props use `INSERT OR REPLACE`
+
+### RayDB vs Memgraph (local 1-hop traversal comparison)
+
+This is a **local-only** comparison harness for your own machine. It builds the
+same graph in both engines and benchmarks a query equivalent to:
+
+`db.from(alice).out(Knows).toArray()`
+
+Prerequisites:
+- Memgraph running locally (default `127.0.0.1:7687`)
+
+Run with your requested shape (10k nodes, 20k edges, alice fan-out 10) using the
+Rust benchmark:
+
+```bash
+cd ray-rs
+cargo run --release --example ray_vs_memgraph_bench --no-default-features -- \
+  --nodes 10000 --edges 20000 --query-results 10 --iterations 5000
+```
+
+Adjust result cardinality to your `5-20` target:
+- `--query-results 5`
+- `--query-results 20`
+
+Optional Python harness is still available at:
+- `ray-rs/python/benchmarks/benchmark_raydb_vs_memgraph.py`
+
+### Replication performance gates (Phase D carry-over)
+
+Run both replication perf gates:
+
+```bash
+cd ray-rs
+./scripts/replication-perf-gate.sh
+```
+
+#### Gate A: primary commit overhead
+
+Compares write latency with replication disabled vs enabled (`role=primary`)
+using the same benchmark harness.
+
+```bash
+cd ray-rs
+./scripts/replication-bench-gate.sh
+```
+
+Defaults:
+- Dataset: `NODES=10000`, `EDGES=0`, `EDGE_TYPES=1`, `EDGE_PROPS=0`, `VECTOR_COUNT=0`
+- Primary rotation guardrail: `REPLICATION_SEGMENT_MAX_BYTES=1073741824`
+- `ITERATIONS=20000`
+- `SYNC_MODE=normal`
+- `ATTEMPTS=7` (median ratio across attempts is used for pass/fail)
+- Pass threshold: `P95_MAX_RATIO=1.30` (replication-on p95 / baseline p95)
+- `ITERATIONS` must be `>= 100`
+
+Example override:
+
+```bash
+cd ray-rs
+ITERATIONS=2000 ATTEMPTS=5 P95_MAX_RATIO=1.05 ./scripts/replication-bench-gate.sh
+```
+
+Outputs:
+- `docs/benchmarks/results/YYYY-MM-DD-replication-gate-baseline.txt` (single-attempt mode)
+- `docs/benchmarks/results/YYYY-MM-DD-replication-gate-primary.txt` (single-attempt mode)
+- `docs/benchmarks/results/YYYY-MM-DD-replication-gate-{baseline,primary}.attemptN.txt` (multi-attempt mode)
+- `STAMP` can be overridden for run-scoped output naming (used by CI).
+
+#### Gate B: replica catch-up throughput
+
+Ensures replica catch-up throughput stays healthy relative to primary commit
+throughput on the same workload.
+
+```bash
+cd ray-rs
+./scripts/replication-catchup-gate.sh
+```
+
+Defaults:
+- `SEED_COMMITS=1000`
+- `BACKLOG_COMMITS=5000`
+- `MAX_FRAMES=256`
+- `SYNC_MODE=normal`
+- `ATTEMPTS=3` (retry count for noisy host variance)
+- Pass threshold: `MIN_CATCHUP_FPS=3000`
+- Pass threshold: `MIN_THROUGHPUT_RATIO=0.13` (catch-up fps / primary fps)
+- `BACKLOG_COMMITS` must be `>= 100`
+
+Example override:
+
+```bash
+cd ray-rs
+BACKLOG_COMMITS=10000 ATTEMPTS=5 MIN_THROUGHPUT_RATIO=1.10 ./scripts/replication-catchup-gate.sh
+```
+
+Output:
+- `docs/benchmarks/results/YYYY-MM-DD-replication-catchup-gate.txt` (single-attempt mode)
+- `docs/benchmarks/results/YYYY-MM-DD-replication-catchup-gate.attemptN.txt` (multi-attempt mode)
+- `STAMP` can be overridden for run-scoped output naming (used by CI).
+
+Notes:
+- Gate A = commit-path overhead.
+- Gate B = replica apply throughput.
+- Keep replication correctness suite green alongside perf gates:
+  - `cargo test --no-default-features --test replication_phase_a --test replication_phase_b --test replication_phase_c --test replication_phase_d --test replication_faults_phase_d`
+  - `cargo test --no-default-features replication::`
+
+#### Gate C: replication soak stability (lag churn + promote/reseed)
+
+Exercises a `1 primary + 5 replicas` soak-style scenario with rotating lag churn,
+periodic promotion fence checks, and reseed recovery under retention pressure.
+
+```bash
+cd ray-rs
+./scripts/replication-soak-gate.sh
+```
+
+Defaults:
+- `REPLICAS=5`
+- `CYCLES=6`
+- `COMMITS_PER_CYCLE=40`
+- `ACTIVE_REPLICAS=3`
+- `CHURN_INTERVAL=2`
+- `PROMOTION_INTERVAL=3`
+- `RESEED_CHECK_INTERVAL=2`
+- `MAX_FRAMES=128`
+- `RECOVERY_MAX_LOOPS=80`
+- `SEGMENT_MAX_BYTES=1`
+- `RETENTION_MIN=64`
+- `ATTEMPTS=1`
+- Pass threshold: `MAX_ALLOWED_LAG=1200`
+- Pass threshold: `MIN_PROMOTIONS=2`
+- Pass threshold: `MIN_RESEEDS=1`
+- Invariant checks: divergence must be `0`, stale-fence rejections must equal promotions.
+
+Example override:
+
+```bash
+cd ray-rs
+CYCLES=18 COMMITS_PER_CYCLE=120 CHURN_INTERVAL=3 PROMOTION_INTERVAL=6 RESEED_CHECK_INTERVAL=3 MAX_ALLOWED_LAG=3000 ATTEMPTS=2 ./scripts/replication-soak-gate.sh
+```
+
+Output:
+- `docs/benchmarks/results/YYYY-MM-DD-replication-soak-gate.txt` (single-attempt mode)
+- `docs/benchmarks/results/YYYY-MM-DD-replication-soak-gate.attemptN.txt` (multi-attempt mode)
+- `STAMP` can be overridden for run-scoped output naming (used by CI tracking jobs).
 
 ## Latest Results (2026-02-04)
 
@@ -335,6 +622,35 @@ Sync=Off, GC off:
 | 8 | 349.01K/s |
 | 10 | 313.67K/s |
 | 16 | 296.99K/s |
+
+#### Index pipeline hypothesis notes (2026-02-05)
+
+Goal: validate whether remote embedding latency dominates enough that we should
+decouple graph hot path from vector persistence using async batching + dedupe.
+
+Harness:
+- `ray-rs/examples/index_pipeline_hypothesis_bench.rs`
+- Simulated tree-sitter + SCIP parse, graph writes, synthetic embed latency, batched vector apply.
+- `sequential`: TS parse -> TS graph commit -> SCIP parse -> SCIP graph commit -> embed -> vector apply.
+- `parallel`: TS+SCIP parse overlap -> unified graph commit -> async embed queue -> batched vector apply.
+
+Sample runs (200 events, working set=200, batch=32, flush=20ms, inflight=4, vector-apply-batch=64):
+
+| TS/SCIP parse | Embed latency | Mode | Hot path elapsed | Total elapsed | Hot p95 | Freshness p95 | Replaced jobs |
+|---------------|---------------|------|------------------|---------------|---------|----------------|---------------|
+| 1ms / 1ms | 50ms/batch | Sequential | 11.260s | 11.314s | 2.64ms | 55.09ms | n/a |
+| 1ms / 1ms | 50ms/batch | Parallel | 0.255s | 0.329s | 1.30ms | 168.43ms | 6.00% |
+| 2ms / 6ms | 200ms/batch | Sequential | 42.477s | 42.679s | 10.22ms | 205.11ms | n/a |
+| 2ms / 6ms | 200ms/batch | Parallel | 1.448s | 1.687s | 7.60ms | 775.61ms | 5.50% |
+
+Takeaway:
+- Hot path throughput improves dramatically with async pipeline.
+- Vector freshness depends on batching/queue pressure and overwrite churn; tune freshness separately
+  from hot-path latency target.
+
+Raw logs:
+- `docs/benchmarks/results/2026-02-05-index-pipeline-hypothesis-embed50.txt`
+- `docs/benchmarks/results/2026-02-05-index-pipeline-hypothesis-embed200.txt`
 
 ## Prior Results (2026-02-03)
 

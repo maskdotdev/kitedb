@@ -5,15 +5,20 @@
 
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
+use pyo3::types::{PyDict, PyList};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::RwLock;
 
+use crate::api::kite::KiteRuntimeProfile as RustKiteRuntimeProfile;
 use crate::backup as core_backup;
 use crate::core::single_file::{
-  close_single_file, is_single_file_path, open_single_file, SingleFileDB as RustSingleFileDB,
+  close_single_file, close_single_file_with_options, is_single_file_path, open_single_file,
+  SingleFileCloseOptions as RustSingleFileCloseOptions, SingleFileDB as RustSingleFileDB,
   VacuumOptions as RustVacuumOptions,
 };
 use crate::metrics as core_metrics;
+use crate::replication::types::CommitToken;
 use crate::types::{ETypeId, EdgeWithProps as CoreEdgeWithProps, NodeId, PropKeyId};
 
 // Import from modular structure
@@ -23,8 +28,8 @@ use super::ops::{
 };
 use super::options::{
   BackupOptions, BackupResult, ExportOptions, ExportResult, ImportOptions, ImportResult,
-  OfflineBackupOptions, OpenOptions, PaginationOptions, RestoreOptions, SingleFileOptimizeOptions,
-  StreamOptions,
+  OfflineBackupOptions, OpenOptions, PaginationOptions, RestoreOptions, RuntimeProfile,
+  SingleFileOptimizeOptions, StreamOptions,
 };
 use super::stats::{CacheStats, CheckResult, DatabaseMetrics, DbStats, HealthCheckResult};
 use super::traversal::{PyPathEdge, PyPathResult, PyTraversalResult};
@@ -178,6 +183,12 @@ impl PyDatabase {
     })
   }
 
+  #[staticmethod]
+  #[pyo3(signature = (path, options=None))]
+  fn open(path: String, options: Option<OpenOptions>) -> PyResult<Self> {
+    Self::new(path, options)
+  }
+
   fn close(&self) -> PyResult<()> {
     let mut guard = self
       .inner
@@ -187,6 +198,24 @@ impl PyDatabase {
       match db {
         DatabaseInner::SingleFile(db) => close_single_file(*db)
           .map_err(|e| PyRuntimeError::new_err(format!("Failed to close: {e}")))?,
+      }
+    }
+    Ok(())
+  }
+
+  #[pyo3(signature = (threshold))]
+  fn close_with_checkpoint_if_wal_over(&self, threshold: f64) -> PyResult<()> {
+    let mut guard = self
+      .inner
+      .write()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    if let Some(db) = guard.take() {
+      match db {
+        DatabaseInner::SingleFile(db) => close_single_file_with_options(
+          *db,
+          RustSingleFileCloseOptions::new().checkpoint_if_wal_usage_at_least(threshold),
+        )
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to close: {e}")))?,
       }
     }
     Ok(())
@@ -266,6 +295,243 @@ impl PyDatabase {
 
   fn has_transaction(&self) -> PyResult<bool> {
     dispatch_ok!(self, |db| db.has_transaction(), |_db| false)
+  }
+
+  /// Commit and return replication commit token (e.g. "2:41") when available.
+  fn commit_with_token(&self) -> PyResult<Option<String>> {
+    dispatch!(
+      self,
+      |db| db
+        .commit_with_token()
+        .map(|token| token.map(|value| value.to_string()))
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to commit: {e}"))),
+      |_db| { unreachable!("multi-file database support removed") }
+    )
+  }
+
+  /// Wait until this DB has observed at least the provided commit token.
+  fn wait_for_token(&self, token: String, timeout_ms: i64) -> PyResult<bool> {
+    if timeout_ms < 0 {
+      return Err(PyRuntimeError::new_err("timeout_ms must be non-negative"));
+    }
+    let token = CommitToken::from_str(&token)
+      .map_err(|e| PyRuntimeError::new_err(format!("Invalid token: {e}")))?;
+    dispatch!(
+      self,
+      |db| db
+        .wait_for_token(token, timeout_ms as u64)
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed waiting for token: {e}"))),
+      |_db| { unreachable!("multi-file database support removed") }
+    )
+  }
+
+  /// Primary replication status dictionary when role=primary, else None.
+  fn primary_replication_status(&self, py: Python<'_>) -> PyResult<Option<PyObject>> {
+    let guard = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    match guard.as_ref() {
+      Some(DatabaseInner::SingleFile(db)) => {
+        let Some(status) = db.primary_replication_status() else {
+          return Ok(None);
+        };
+
+        let out = PyDict::new_bound(py);
+        out.set_item("role", status.role.to_string())?;
+        out.set_item("epoch", status.epoch)?;
+        out.set_item("head_log_index", status.head_log_index)?;
+        out.set_item("retained_floor", status.retained_floor)?;
+        out.set_item(
+          "sidecar_path",
+          status.sidecar_path.to_string_lossy().to_string(),
+        )?;
+        out.set_item(
+          "last_token",
+          status.last_token.map(|token| token.to_string()),
+        )?;
+        out.set_item("append_attempts", status.append_attempts)?;
+        out.set_item("append_failures", status.append_failures)?;
+        out.set_item("append_successes", status.append_successes)?;
+
+        let lags = PyList::empty_bound(py);
+        for lag in status.replica_lags {
+          let lag_item = PyDict::new_bound(py);
+          lag_item.set_item("replica_id", lag.replica_id)?;
+          lag_item.set_item("epoch", lag.epoch)?;
+          lag_item.set_item("applied_log_index", lag.applied_log_index)?;
+          lags.append(lag_item)?;
+        }
+        out.set_item("replica_lags", lags)?;
+
+        Ok(Some(out.into_py(py)))
+      }
+      None => Err(PyRuntimeError::new_err("Database is closed")),
+    }
+  }
+
+  /// Replica replication status dictionary when role=replica, else None.
+  fn replica_replication_status(&self, py: Python<'_>) -> PyResult<Option<PyObject>> {
+    let guard = self
+      .inner
+      .read()
+      .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+    match guard.as_ref() {
+      Some(DatabaseInner::SingleFile(db)) => {
+        let Some(status) = db.replica_replication_status() else {
+          return Ok(None);
+        };
+
+        let out = PyDict::new_bound(py);
+        out.set_item("role", status.role.to_string())?;
+        out.set_item(
+          "source_db_path",
+          status
+            .source_db_path
+            .map(|path| path.to_string_lossy().to_string()),
+        )?;
+        out.set_item(
+          "source_sidecar_path",
+          status
+            .source_sidecar_path
+            .map(|path| path.to_string_lossy().to_string()),
+        )?;
+        out.set_item("applied_epoch", status.applied_epoch)?;
+        out.set_item("applied_log_index", status.applied_log_index)?;
+        out.set_item("last_error", status.last_error)?;
+        out.set_item("needs_reseed", status.needs_reseed)?;
+        Ok(Some(out.into_py(py)))
+      }
+      None => Err(PyRuntimeError::new_err("Database is closed")),
+    }
+  }
+
+  /// Promote this primary to the next replication epoch.
+  fn primary_promote_to_next_epoch(&self) -> PyResult<i64> {
+    dispatch!(
+      self,
+      |db| db
+        .primary_promote_to_next_epoch()
+        .map(|value| value as i64)
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to promote primary: {e}"))),
+      |_db| { unreachable!("multi-file database support removed") }
+    )
+  }
+
+  /// Report replica progress cursor to primary.
+  fn primary_report_replica_progress(
+    &self,
+    replica_id: String,
+    epoch: i64,
+    applied_log_index: i64,
+  ) -> PyResult<()> {
+    if epoch < 0 || applied_log_index < 0 {
+      return Err(PyRuntimeError::new_err(
+        "epoch and applied_log_index must be non-negative",
+      ));
+    }
+    dispatch!(
+      self,
+      |db| db
+        .primary_report_replica_progress(&replica_id, epoch as u64, applied_log_index as u64)
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to report replica progress: {e}"))),
+      |_db| { unreachable!("multi-file database support removed") }
+    )
+  }
+
+  /// Run primary retention and return (pruned_segments, retained_floor).
+  fn primary_run_retention(&self) -> PyResult<(i64, i64)> {
+    dispatch!(
+      self,
+      |db| db
+        .primary_run_retention()
+        .map(|outcome| (
+          outcome.pruned_segments as i64,
+          outcome.retained_floor as i64
+        ))
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to run retention: {e}"))),
+      |_db| { unreachable!("multi-file database support removed") }
+    )
+  }
+
+  /// Export latest primary snapshot metadata and optional bytes as transport JSON.
+  #[pyo3(signature = (include_data=false))]
+  fn export_replication_snapshot_transport_json(&self, include_data: bool) -> PyResult<String> {
+    dispatch!(
+      self,
+      |db| db
+        .primary_export_snapshot_transport_json(include_data)
+        .map_err(|e| {
+          PyRuntimeError::new_err(format!("Failed to export replication snapshot: {e}"))
+        }),
+      |_db| { unreachable!("multi-file database support removed") }
+    )
+  }
+
+  /// Export primary replication log page (cursor + limits) as transport JSON.
+  #[pyo3(signature = (cursor=None, max_frames=128, max_bytes=1048576, include_payload=true))]
+  fn export_replication_log_transport_json(
+    &self,
+    cursor: Option<String>,
+    max_frames: i64,
+    max_bytes: i64,
+    include_payload: bool,
+  ) -> PyResult<String> {
+    if max_frames <= 0 {
+      return Err(PyRuntimeError::new_err("max_frames must be positive"));
+    }
+    if max_bytes <= 0 {
+      return Err(PyRuntimeError::new_err("max_bytes must be positive"));
+    }
+    dispatch!(
+      self,
+      |db| db
+        .primary_export_log_transport_json(
+          cursor.as_deref(),
+          max_frames as usize,
+          max_bytes as usize,
+          include_payload,
+        )
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to export replication log: {e}"))),
+      |_db| { unreachable!("multi-file database support removed") }
+    )
+  }
+
+  /// Bootstrap replica state from source snapshot.
+  fn replica_bootstrap_from_snapshot(&self) -> PyResult<()> {
+    dispatch!(
+      self,
+      |db| db
+        .replica_bootstrap_from_snapshot()
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to bootstrap replica: {e}"))),
+      |_db| { unreachable!("multi-file database support removed") }
+    )
+  }
+
+  /// Pull and apply at most max_frames frames on replica.
+  fn replica_catch_up_once(&self, max_frames: i64) -> PyResult<i64> {
+    if max_frames < 0 {
+      return Err(PyRuntimeError::new_err("max_frames must be non-negative"));
+    }
+    dispatch!(
+      self,
+      |db| db
+        .replica_catch_up_once(max_frames as usize)
+        .map(|count| count as i64)
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed replica catch-up: {e}"))),
+      |_db| { unreachable!("multi-file database support removed") }
+    )
+  }
+
+  /// Force a replica reseed from source snapshot.
+  fn replica_reseed_from_snapshot(&self) -> PyResult<()> {
+    dispatch!(
+      self,
+      |db| db
+        .replica_reseed_from_snapshot()
+        .map_err(|e| PyRuntimeError::new_err(format!("Failed to reseed replica: {e}"))),
+      |_db| { unreachable!("multi-file database support removed") }
+    )
   }
 
   // ==========================================================================
@@ -1529,6 +1795,21 @@ pub fn open_database(path: String, options: Option<OpenOptions>) -> PyResult<PyD
 }
 
 #[pyfunction]
+pub fn recommended_safe_profile() -> RuntimeProfile {
+  RuntimeProfile::from_kite_runtime_profile(RustKiteRuntimeProfile::safe())
+}
+
+#[pyfunction]
+pub fn recommended_balanced_profile() -> RuntimeProfile {
+  RuntimeProfile::from_kite_runtime_profile(RustKiteRuntimeProfile::balanced())
+}
+
+#[pyfunction]
+pub fn recommended_reopen_heavy_profile() -> RuntimeProfile {
+  RuntimeProfile::from_kite_runtime_profile(RustKiteRuntimeProfile::reopen_heavy())
+}
+
+#[pyfunction]
 pub fn collect_metrics(db: &PyDatabase) -> PyResult<DatabaseMetrics> {
   let guard = db
     .inner
@@ -1538,6 +1819,660 @@ pub fn collect_metrics(db: &PyDatabase) -> PyResult<DatabaseMetrics> {
     Some(DatabaseInner::SingleFile(d)) => Ok(DatabaseMetrics::from(
       core_metrics::collect_metrics_single_file(d),
     )),
+    None => Err(PyRuntimeError::new_err("Database is closed")),
+  }
+}
+
+#[pyfunction]
+pub fn collect_replication_metrics_prometheus(db: &PyDatabase) -> PyResult<String> {
+  let guard = db
+    .inner
+    .read()
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+  match guard.as_ref() {
+    Some(DatabaseInner::SingleFile(d)) => {
+      Ok(core_metrics::collect_replication_metrics_prometheus_single_file(d))
+    }
+    None => Err(PyRuntimeError::new_err("Database is closed")),
+  }
+}
+
+#[pyfunction]
+pub fn collect_replication_metrics_otel_json(db: &PyDatabase) -> PyResult<String> {
+  let guard = db
+    .inner
+    .read()
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+  match guard.as_ref() {
+    Some(DatabaseInner::SingleFile(d)) => {
+      Ok(core_metrics::collect_replication_metrics_otel_json_single_file(d))
+    }
+    None => Err(PyRuntimeError::new_err("Database is closed")),
+  }
+}
+
+#[pyfunction]
+pub fn collect_replication_metrics_otel_protobuf(db: &PyDatabase) -> PyResult<Vec<u8>> {
+  let guard = db
+    .inner
+    .read()
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+  match guard.as_ref() {
+    Some(DatabaseInner::SingleFile(d)) => {
+      Ok(core_metrics::collect_replication_metrics_otel_protobuf_single_file(d))
+    }
+    None => Err(PyRuntimeError::new_err("Database is closed")),
+  }
+}
+
+#[pyfunction]
+#[pyo3(signature = (db, include_data=false))]
+pub fn collect_replication_snapshot_transport_json(
+  db: &PyDatabase,
+  include_data: bool,
+) -> PyResult<String> {
+  let guard = db
+    .inner
+    .read()
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+  match guard.as_ref() {
+    Some(DatabaseInner::SingleFile(d)) => d
+      .primary_export_snapshot_transport_json(include_data)
+      .map_err(|e| PyRuntimeError::new_err(format!("Failed to export replication snapshot: {e}"))),
+    None => Err(PyRuntimeError::new_err("Database is closed")),
+  }
+}
+
+#[pyfunction]
+#[pyo3(signature = (db, cursor=None, max_frames=128, max_bytes=1048576, include_payload=true))]
+pub fn collect_replication_log_transport_json(
+  db: &PyDatabase,
+  cursor: Option<String>,
+  max_frames: i64,
+  max_bytes: i64,
+  include_payload: bool,
+) -> PyResult<String> {
+  if max_frames <= 0 {
+    return Err(PyRuntimeError::new_err("max_frames must be positive"));
+  }
+  if max_bytes <= 0 {
+    return Err(PyRuntimeError::new_err("max_bytes must be positive"));
+  }
+
+  let guard = db
+    .inner
+    .read()
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+  match guard.as_ref() {
+    Some(DatabaseInner::SingleFile(d)) => d
+      .primary_export_log_transport_json(
+        cursor.as_deref(),
+        max_frames as usize,
+        max_bytes as usize,
+        include_payload,
+      )
+      .map_err(|e| PyRuntimeError::new_err(format!("Failed to export replication log: {e}"))),
+    None => Err(PyRuntimeError::new_err("Database is closed")),
+  }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_otel_push_options_py(
+  timeout_ms: i64,
+  bearer_token: Option<String>,
+  retry_max_attempts: i64,
+  retry_backoff_ms: i64,
+  retry_backoff_max_ms: i64,
+  retry_jitter_ratio: f64,
+  adaptive_retry: bool,
+  adaptive_retry_mode: Option<String>,
+  adaptive_retry_ewma_alpha: f64,
+  circuit_breaker_failure_threshold: i64,
+  circuit_breaker_open_ms: i64,
+  circuit_breaker_half_open_probes: i64,
+  circuit_breaker_state_path: Option<String>,
+  circuit_breaker_state_url: Option<String>,
+  circuit_breaker_state_patch: bool,
+  circuit_breaker_state_patch_batch: bool,
+  circuit_breaker_state_patch_batch_max_keys: i64,
+  circuit_breaker_state_patch_merge: bool,
+  circuit_breaker_state_patch_merge_max_keys: i64,
+  circuit_breaker_state_patch_retry_max_attempts: i64,
+  circuit_breaker_state_cas: bool,
+  circuit_breaker_state_lease_id: Option<String>,
+  circuit_breaker_scope_key: Option<String>,
+  compression_gzip: bool,
+  https_only: bool,
+  ca_cert_pem_path: Option<String>,
+  client_cert_pem_path: Option<String>,
+  client_key_pem_path: Option<String>,
+) -> PyResult<core_metrics::OtlpHttpPushOptions> {
+  if timeout_ms <= 0 {
+    return Err(PyRuntimeError::new_err("timeout_ms must be positive"));
+  }
+  if retry_max_attempts <= 0 {
+    return Err(PyRuntimeError::new_err(
+      "retry_max_attempts must be positive",
+    ));
+  }
+  if retry_backoff_ms < 0 {
+    return Err(PyRuntimeError::new_err(
+      "retry_backoff_ms must be non-negative",
+    ));
+  }
+  if retry_backoff_max_ms < 0 {
+    return Err(PyRuntimeError::new_err(
+      "retry_backoff_max_ms must be non-negative",
+    ));
+  }
+  if retry_backoff_max_ms > 0 && retry_backoff_max_ms < retry_backoff_ms {
+    return Err(PyRuntimeError::new_err(
+      "retry_backoff_max_ms must be >= retry_backoff_ms when non-zero",
+    ));
+  }
+  if !(0.0..=1.0).contains(&retry_jitter_ratio) {
+    return Err(PyRuntimeError::new_err(
+      "retry_jitter_ratio must be within [0.0, 1.0]",
+    ));
+  }
+  let adaptive_retry_mode = match adaptive_retry_mode
+    .as_deref()
+    .map(str::trim)
+    .filter(|value| !value.is_empty())
+  {
+    None => core_metrics::OtlpAdaptiveRetryMode::Linear,
+    Some(value) if value.eq_ignore_ascii_case("linear") => {
+      core_metrics::OtlpAdaptiveRetryMode::Linear
+    }
+    Some(value) if value.eq_ignore_ascii_case("ewma") => core_metrics::OtlpAdaptiveRetryMode::Ewma,
+    Some(_) => {
+      return Err(PyRuntimeError::new_err(
+        "adaptive_retry_mode must be one of: linear, ewma",
+      ));
+    }
+  };
+  if !(0.0..=1.0).contains(&adaptive_retry_ewma_alpha) {
+    return Err(PyRuntimeError::new_err(
+      "adaptive_retry_ewma_alpha must be within [0.0, 1.0]",
+    ));
+  }
+  if circuit_breaker_failure_threshold < 0 {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_failure_threshold must be non-negative",
+    ));
+  }
+  if circuit_breaker_open_ms < 0 {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_open_ms must be non-negative",
+    ));
+  }
+  if circuit_breaker_failure_threshold > 0 && circuit_breaker_open_ms == 0 {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_open_ms must be > 0 when circuit_breaker_failure_threshold is enabled",
+    ));
+  }
+  if circuit_breaker_half_open_probes < 0 {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_half_open_probes must be non-negative",
+    ));
+  }
+  if circuit_breaker_failure_threshold > 0 && circuit_breaker_half_open_probes == 0 {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_half_open_probes must be > 0 when circuit_breaker_failure_threshold is enabled",
+    ));
+  }
+  if let Some(path) = circuit_breaker_state_path.as_deref() {
+    if path.trim().is_empty() {
+      return Err(PyRuntimeError::new_err(
+        "circuit_breaker_state_path must not be empty when provided",
+      ));
+    }
+  }
+  if let Some(url) = circuit_breaker_state_url.as_deref() {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+      return Err(PyRuntimeError::new_err(
+        "circuit_breaker_state_url must not be empty when provided",
+      ));
+    }
+    if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
+      return Err(PyRuntimeError::new_err(
+        "circuit_breaker_state_url must use http:// or https://",
+      ));
+    }
+    if https_only && trimmed.starts_with("http://") {
+      return Err(PyRuntimeError::new_err(
+        "circuit_breaker_state_url must use https when https_only is enabled",
+      ));
+    }
+  }
+  if circuit_breaker_state_path.is_some() && circuit_breaker_state_url.is_some() {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_state_path and circuit_breaker_state_url are mutually exclusive",
+    ));
+  }
+  if circuit_breaker_state_patch && circuit_breaker_state_url.is_none() {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_state_patch requires circuit_breaker_state_url",
+    ));
+  }
+  if circuit_breaker_state_patch_batch && !circuit_breaker_state_patch {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_state_patch_batch requires circuit_breaker_state_patch",
+    ));
+  }
+  if circuit_breaker_state_patch_merge && !circuit_breaker_state_patch {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_state_patch_merge requires circuit_breaker_state_patch",
+    ));
+  }
+  if circuit_breaker_state_patch_batch_max_keys <= 0 {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_state_patch_batch_max_keys must be > 0",
+    ));
+  }
+  if circuit_breaker_state_patch_merge_max_keys <= 0 {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_state_patch_merge_max_keys must be > 0",
+    ));
+  }
+  if circuit_breaker_state_patch_retry_max_attempts <= 0 {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_state_patch_retry_max_attempts must be > 0",
+    ));
+  }
+  if circuit_breaker_state_cas && circuit_breaker_state_url.is_none() {
+    return Err(PyRuntimeError::new_err(
+      "circuit_breaker_state_cas requires circuit_breaker_state_url",
+    ));
+  }
+  if let Some(lease_id) = circuit_breaker_state_lease_id.as_deref() {
+    if lease_id.trim().is_empty() {
+      return Err(PyRuntimeError::new_err(
+        "circuit_breaker_state_lease_id must not be empty when provided",
+      ));
+    }
+    if circuit_breaker_state_url.is_none() {
+      return Err(PyRuntimeError::new_err(
+        "circuit_breaker_state_lease_id requires circuit_breaker_state_url",
+      ));
+    }
+  }
+  if let Some(scope_key) = circuit_breaker_scope_key.as_deref() {
+    if scope_key.trim().is_empty() {
+      return Err(PyRuntimeError::new_err(
+        "circuit_breaker_scope_key must not be empty when provided",
+      ));
+    }
+  }
+
+  Ok(core_metrics::OtlpHttpPushOptions {
+    timeout_ms: timeout_ms as u64,
+    bearer_token,
+    retry_max_attempts: retry_max_attempts as u32,
+    retry_backoff_ms: retry_backoff_ms as u64,
+    retry_backoff_max_ms: retry_backoff_max_ms as u64,
+    retry_jitter_ratio,
+    adaptive_retry_mode,
+    adaptive_retry_ewma_alpha,
+    adaptive_retry,
+    circuit_breaker_failure_threshold: circuit_breaker_failure_threshold as u32,
+    circuit_breaker_open_ms: circuit_breaker_open_ms as u64,
+    circuit_breaker_half_open_probes: circuit_breaker_half_open_probes as u32,
+    circuit_breaker_state_path,
+    circuit_breaker_state_url,
+    circuit_breaker_state_patch,
+    circuit_breaker_state_patch_batch,
+    circuit_breaker_state_patch_batch_max_keys: circuit_breaker_state_patch_batch_max_keys as u32,
+    circuit_breaker_state_patch_merge,
+    circuit_breaker_state_patch_merge_max_keys: circuit_breaker_state_patch_merge_max_keys as u32,
+    circuit_breaker_state_patch_retry_max_attempts: circuit_breaker_state_patch_retry_max_attempts
+      as u32,
+    circuit_breaker_state_cas,
+    circuit_breaker_state_lease_id,
+    circuit_breaker_scope_key,
+    compression_gzip,
+    tls: core_metrics::OtlpHttpTlsOptions {
+      https_only,
+      ca_cert_pem_path,
+      client_cert_pem_path,
+      client_key_pem_path,
+    },
+  })
+}
+
+#[pyfunction]
+#[pyo3(signature = (
+  db,
+  endpoint,
+  timeout_ms=5000,
+  bearer_token=None,
+  retry_max_attempts=1,
+  retry_backoff_ms=100,
+  retry_backoff_max_ms=2000,
+  retry_jitter_ratio=0.0,
+  adaptive_retry=false,
+  adaptive_retry_mode=None,
+  adaptive_retry_ewma_alpha=0.3,
+  circuit_breaker_failure_threshold=0,
+  circuit_breaker_open_ms=0,
+  circuit_breaker_half_open_probes=1,
+  circuit_breaker_state_path=None,
+  circuit_breaker_state_url=None,
+  circuit_breaker_state_patch=false,
+  circuit_breaker_state_patch_batch=false,
+  circuit_breaker_state_patch_batch_max_keys=8,
+  circuit_breaker_state_patch_merge=false,
+  circuit_breaker_state_patch_merge_max_keys=32,
+  circuit_breaker_state_patch_retry_max_attempts=1,
+  circuit_breaker_state_cas=false,
+  circuit_breaker_state_lease_id=None,
+  circuit_breaker_scope_key=None,
+  compression_gzip=false,
+  https_only=false,
+  ca_cert_pem_path=None,
+  client_cert_pem_path=None,
+  client_key_pem_path=None
+))]
+pub fn push_replication_metrics_otel_json(
+  db: &PyDatabase,
+  endpoint: String,
+  timeout_ms: i64,
+  bearer_token: Option<String>,
+  retry_max_attempts: i64,
+  retry_backoff_ms: i64,
+  retry_backoff_max_ms: i64,
+  retry_jitter_ratio: f64,
+  adaptive_retry: bool,
+  adaptive_retry_mode: Option<String>,
+  adaptive_retry_ewma_alpha: f64,
+  circuit_breaker_failure_threshold: i64,
+  circuit_breaker_open_ms: i64,
+  circuit_breaker_half_open_probes: i64,
+  circuit_breaker_state_path: Option<String>,
+  circuit_breaker_state_url: Option<String>,
+  circuit_breaker_state_patch: bool,
+  circuit_breaker_state_patch_batch: bool,
+  circuit_breaker_state_patch_batch_max_keys: i64,
+  circuit_breaker_state_patch_merge: bool,
+  circuit_breaker_state_patch_merge_max_keys: i64,
+  circuit_breaker_state_patch_retry_max_attempts: i64,
+  circuit_breaker_state_cas: bool,
+  circuit_breaker_state_lease_id: Option<String>,
+  circuit_breaker_scope_key: Option<String>,
+  compression_gzip: bool,
+  https_only: bool,
+  ca_cert_pem_path: Option<String>,
+  client_cert_pem_path: Option<String>,
+  client_key_pem_path: Option<String>,
+) -> PyResult<(i64, String)> {
+  let options = build_otel_push_options_py(
+    timeout_ms,
+    bearer_token,
+    retry_max_attempts,
+    retry_backoff_ms,
+    retry_backoff_max_ms,
+    retry_jitter_ratio,
+    adaptive_retry,
+    adaptive_retry_mode,
+    adaptive_retry_ewma_alpha,
+    circuit_breaker_failure_threshold,
+    circuit_breaker_open_ms,
+    circuit_breaker_half_open_probes,
+    circuit_breaker_state_path,
+    circuit_breaker_state_url,
+    circuit_breaker_state_patch,
+    circuit_breaker_state_patch_batch,
+    circuit_breaker_state_patch_batch_max_keys,
+    circuit_breaker_state_patch_merge,
+    circuit_breaker_state_patch_merge_max_keys,
+    circuit_breaker_state_patch_retry_max_attempts,
+    circuit_breaker_state_cas,
+    circuit_breaker_state_lease_id,
+    circuit_breaker_scope_key,
+    compression_gzip,
+    https_only,
+    ca_cert_pem_path,
+    client_cert_pem_path,
+    client_key_pem_path,
+  )?;
+
+  let guard = db
+    .inner
+    .read()
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+  match guard.as_ref() {
+    Some(DatabaseInner::SingleFile(d)) => {
+      let result = core_metrics::push_replication_metrics_otel_json_single_file_with_options(
+        d, &endpoint, &options,
+      )
+      .map_err(|e| PyRuntimeError::new_err(format!("Failed to push replication metrics: {e}")))?;
+      Ok((result.status_code, result.response_body))
+    }
+    None => Err(PyRuntimeError::new_err("Database is closed")),
+  }
+}
+
+#[pyfunction]
+#[pyo3(signature = (
+  db,
+  endpoint,
+  timeout_ms=5000,
+  bearer_token=None,
+  retry_max_attempts=1,
+  retry_backoff_ms=100,
+  retry_backoff_max_ms=2000,
+  retry_jitter_ratio=0.0,
+  adaptive_retry=false,
+  adaptive_retry_mode=None,
+  adaptive_retry_ewma_alpha=0.3,
+  circuit_breaker_failure_threshold=0,
+  circuit_breaker_open_ms=0,
+  circuit_breaker_half_open_probes=1,
+  circuit_breaker_state_path=None,
+  circuit_breaker_state_url=None,
+  circuit_breaker_state_patch=false,
+  circuit_breaker_state_patch_batch=false,
+  circuit_breaker_state_patch_batch_max_keys=8,
+  circuit_breaker_state_patch_merge=false,
+  circuit_breaker_state_patch_merge_max_keys=32,
+  circuit_breaker_state_patch_retry_max_attempts=1,
+  circuit_breaker_state_cas=false,
+  circuit_breaker_state_lease_id=None,
+  circuit_breaker_scope_key=None,
+  compression_gzip=false,
+  https_only=false,
+  ca_cert_pem_path=None,
+  client_cert_pem_path=None,
+  client_key_pem_path=None
+))]
+pub fn push_replication_metrics_otel_protobuf(
+  db: &PyDatabase,
+  endpoint: String,
+  timeout_ms: i64,
+  bearer_token: Option<String>,
+  retry_max_attempts: i64,
+  retry_backoff_ms: i64,
+  retry_backoff_max_ms: i64,
+  retry_jitter_ratio: f64,
+  adaptive_retry: bool,
+  adaptive_retry_mode: Option<String>,
+  adaptive_retry_ewma_alpha: f64,
+  circuit_breaker_failure_threshold: i64,
+  circuit_breaker_open_ms: i64,
+  circuit_breaker_half_open_probes: i64,
+  circuit_breaker_state_path: Option<String>,
+  circuit_breaker_state_url: Option<String>,
+  circuit_breaker_state_patch: bool,
+  circuit_breaker_state_patch_batch: bool,
+  circuit_breaker_state_patch_batch_max_keys: i64,
+  circuit_breaker_state_patch_merge: bool,
+  circuit_breaker_state_patch_merge_max_keys: i64,
+  circuit_breaker_state_patch_retry_max_attempts: i64,
+  circuit_breaker_state_cas: bool,
+  circuit_breaker_state_lease_id: Option<String>,
+  circuit_breaker_scope_key: Option<String>,
+  compression_gzip: bool,
+  https_only: bool,
+  ca_cert_pem_path: Option<String>,
+  client_cert_pem_path: Option<String>,
+  client_key_pem_path: Option<String>,
+) -> PyResult<(i64, String)> {
+  let options = build_otel_push_options_py(
+    timeout_ms,
+    bearer_token,
+    retry_max_attempts,
+    retry_backoff_ms,
+    retry_backoff_max_ms,
+    retry_jitter_ratio,
+    adaptive_retry,
+    adaptive_retry_mode,
+    adaptive_retry_ewma_alpha,
+    circuit_breaker_failure_threshold,
+    circuit_breaker_open_ms,
+    circuit_breaker_half_open_probes,
+    circuit_breaker_state_path,
+    circuit_breaker_state_url,
+    circuit_breaker_state_patch,
+    circuit_breaker_state_patch_batch,
+    circuit_breaker_state_patch_batch_max_keys,
+    circuit_breaker_state_patch_merge,
+    circuit_breaker_state_patch_merge_max_keys,
+    circuit_breaker_state_patch_retry_max_attempts,
+    circuit_breaker_state_cas,
+    circuit_breaker_state_lease_id,
+    circuit_breaker_scope_key,
+    compression_gzip,
+    https_only,
+    ca_cert_pem_path,
+    client_cert_pem_path,
+    client_key_pem_path,
+  )?;
+
+  let guard = db
+    .inner
+    .read()
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+  match guard.as_ref() {
+    Some(DatabaseInner::SingleFile(d)) => {
+      let result = core_metrics::push_replication_metrics_otel_protobuf_single_file_with_options(
+        d, &endpoint, &options,
+      )
+      .map_err(|e| PyRuntimeError::new_err(format!("Failed to push replication metrics: {e}")))?;
+      Ok((result.status_code, result.response_body))
+    }
+    None => Err(PyRuntimeError::new_err("Database is closed")),
+  }
+}
+
+#[pyfunction]
+#[pyo3(signature = (
+  db,
+  endpoint,
+  timeout_ms=5000,
+  bearer_token=None,
+  retry_max_attempts=1,
+  retry_backoff_ms=100,
+  retry_backoff_max_ms=2000,
+  retry_jitter_ratio=0.0,
+  adaptive_retry=false,
+  adaptive_retry_mode=None,
+  adaptive_retry_ewma_alpha=0.3,
+  circuit_breaker_failure_threshold=0,
+  circuit_breaker_open_ms=0,
+  circuit_breaker_half_open_probes=1,
+  circuit_breaker_state_path=None,
+  circuit_breaker_state_url=None,
+  circuit_breaker_state_patch=false,
+  circuit_breaker_state_patch_batch=false,
+  circuit_breaker_state_patch_batch_max_keys=8,
+  circuit_breaker_state_patch_merge=false,
+  circuit_breaker_state_patch_merge_max_keys=32,
+  circuit_breaker_state_patch_retry_max_attempts=1,
+  circuit_breaker_state_cas=false,
+  circuit_breaker_state_lease_id=None,
+  circuit_breaker_scope_key=None,
+  compression_gzip=false,
+  https_only=false,
+  ca_cert_pem_path=None,
+  client_cert_pem_path=None,
+  client_key_pem_path=None
+))]
+pub fn push_replication_metrics_otel_grpc(
+  db: &PyDatabase,
+  endpoint: String,
+  timeout_ms: i64,
+  bearer_token: Option<String>,
+  retry_max_attempts: i64,
+  retry_backoff_ms: i64,
+  retry_backoff_max_ms: i64,
+  retry_jitter_ratio: f64,
+  adaptive_retry: bool,
+  adaptive_retry_mode: Option<String>,
+  adaptive_retry_ewma_alpha: f64,
+  circuit_breaker_failure_threshold: i64,
+  circuit_breaker_open_ms: i64,
+  circuit_breaker_half_open_probes: i64,
+  circuit_breaker_state_path: Option<String>,
+  circuit_breaker_state_url: Option<String>,
+  circuit_breaker_state_patch: bool,
+  circuit_breaker_state_patch_batch: bool,
+  circuit_breaker_state_patch_batch_max_keys: i64,
+  circuit_breaker_state_patch_merge: bool,
+  circuit_breaker_state_patch_merge_max_keys: i64,
+  circuit_breaker_state_patch_retry_max_attempts: i64,
+  circuit_breaker_state_cas: bool,
+  circuit_breaker_state_lease_id: Option<String>,
+  circuit_breaker_scope_key: Option<String>,
+  compression_gzip: bool,
+  https_only: bool,
+  ca_cert_pem_path: Option<String>,
+  client_cert_pem_path: Option<String>,
+  client_key_pem_path: Option<String>,
+) -> PyResult<(i64, String)> {
+  let options = build_otel_push_options_py(
+    timeout_ms,
+    bearer_token,
+    retry_max_attempts,
+    retry_backoff_ms,
+    retry_backoff_max_ms,
+    retry_jitter_ratio,
+    adaptive_retry,
+    adaptive_retry_mode,
+    adaptive_retry_ewma_alpha,
+    circuit_breaker_failure_threshold,
+    circuit_breaker_open_ms,
+    circuit_breaker_half_open_probes,
+    circuit_breaker_state_path,
+    circuit_breaker_state_url,
+    circuit_breaker_state_patch,
+    circuit_breaker_state_patch_batch,
+    circuit_breaker_state_patch_batch_max_keys,
+    circuit_breaker_state_patch_merge,
+    circuit_breaker_state_patch_merge_max_keys,
+    circuit_breaker_state_patch_retry_max_attempts,
+    circuit_breaker_state_cas,
+    circuit_breaker_state_lease_id,
+    circuit_breaker_scope_key,
+    compression_gzip,
+    https_only,
+    ca_cert_pem_path,
+    client_cert_pem_path,
+    client_key_pem_path,
+  )?;
+
+  let guard = db
+    .inner
+    .read()
+    .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+  match guard.as_ref() {
+    Some(DatabaseInner::SingleFile(d)) => {
+      let result = core_metrics::push_replication_metrics_otel_grpc_single_file_with_options(
+        d, &endpoint, &options,
+      )
+      .map_err(|e| PyRuntimeError::new_err(format!("Failed to push replication metrics: {e}")))?;
+      Ok((result.status_code, result.response_body))
+    }
     None => Err(PyRuntimeError::new_err("Database is closed")),
   }
 }

@@ -68,6 +68,11 @@ class SyncMode:
     @staticmethod
     def off() -> SyncMode: ...
 
+class RuntimeProfile:
+    """Preset profile for open/close behavior."""
+    open_options: OpenOptions
+    close_checkpoint_if_wal_usage_at_least: Optional[float]
+
 class DbStats:
     """Database statistics."""
     snapshot_gen: int
@@ -355,7 +360,10 @@ class Database:
     read_only: bool
     
     def __init__(self, path: str, options: Optional[OpenOptions] = None) -> None: ...
+    @staticmethod
+    def open(path: str, options: Optional[OpenOptions] = None) -> Database: ...
     def close(self) -> None: ...
+    def close_with_checkpoint_if_wal_over(self, threshold: float) -> None: ...
     def __enter__(self) -> Database: ...
     def __exit__(self, exc_type: Any, exc_value: Any, traceback: Any) -> bool: ...
     
@@ -533,7 +541,120 @@ class Database:
     ) -> List[int]: ...
 
 def open_database(path: str, options: Optional[OpenOptions] = None) -> Database: ...
+def recommended_safe_profile() -> RuntimeProfile: ...
+def recommended_balanced_profile() -> RuntimeProfile: ...
+def recommended_reopen_heavy_profile() -> RuntimeProfile: ...
 def collect_metrics(db: Database) -> DatabaseMetrics: ...
+def collect_replication_snapshot_transport_json(
+    db: Database,
+    include_data: bool = False,
+) -> str: ...
+def collect_replication_log_transport_json(
+    db: Database,
+    cursor: Optional[str] = None,
+    max_frames: int = 128,
+    max_bytes: int = 1048576,
+    include_payload: bool = True,
+) -> str: ...
+def collect_replication_metrics_otel_json(db: Database) -> str: ...
+def collect_replication_metrics_otel_protobuf(db: Database) -> bytes: ...
+def collect_replication_metrics_prometheus(db: Database) -> str: ...
+def push_replication_metrics_otel_json(
+    db: Database,
+    endpoint: str,
+    timeout_ms: int = 5000,
+    bearer_token: Optional[str] = None,
+    retry_max_attempts: int = 1,
+    retry_backoff_ms: int = 100,
+    retry_backoff_max_ms: int = 2000,
+    retry_jitter_ratio: float = 0.0,
+    adaptive_retry: bool = False,
+    adaptive_retry_mode: Optional[str] = None,
+    adaptive_retry_ewma_alpha: float = 0.3,
+    circuit_breaker_failure_threshold: int = 0,
+    circuit_breaker_open_ms: int = 0,
+    circuit_breaker_half_open_probes: int = 1,
+    circuit_breaker_state_path: Optional[str] = None,
+    circuit_breaker_state_url: Optional[str] = None,
+    circuit_breaker_state_patch: bool = False,
+    circuit_breaker_state_patch_batch: bool = False,
+    circuit_breaker_state_patch_batch_max_keys: int = 8,
+    circuit_breaker_state_patch_merge: bool = False,
+    circuit_breaker_state_patch_merge_max_keys: int = 32,
+    circuit_breaker_state_patch_retry_max_attempts: int = 1,
+    circuit_breaker_state_cas: bool = False,
+    circuit_breaker_state_lease_id: Optional[str] = None,
+    circuit_breaker_scope_key: Optional[str] = None,
+    compression_gzip: bool = False,
+    https_only: bool = False,
+    ca_cert_pem_path: Optional[str] = None,
+    client_cert_pem_path: Optional[str] = None,
+    client_key_pem_path: Optional[str] = None,
+) -> Tuple[int, str]: ...
+def push_replication_metrics_otel_grpc(
+    db: Database,
+    endpoint: str,
+    timeout_ms: int = 5000,
+    bearer_token: Optional[str] = None,
+    retry_max_attempts: int = 1,
+    retry_backoff_ms: int = 100,
+    retry_backoff_max_ms: int = 2000,
+    retry_jitter_ratio: float = 0.0,
+    adaptive_retry: bool = False,
+    adaptive_retry_mode: Optional[str] = None,
+    adaptive_retry_ewma_alpha: float = 0.3,
+    circuit_breaker_failure_threshold: int = 0,
+    circuit_breaker_open_ms: int = 0,
+    circuit_breaker_half_open_probes: int = 1,
+    circuit_breaker_state_path: Optional[str] = None,
+    circuit_breaker_state_url: Optional[str] = None,
+    circuit_breaker_state_patch: bool = False,
+    circuit_breaker_state_patch_batch: bool = False,
+    circuit_breaker_state_patch_batch_max_keys: int = 8,
+    circuit_breaker_state_patch_merge: bool = False,
+    circuit_breaker_state_patch_merge_max_keys: int = 32,
+    circuit_breaker_state_patch_retry_max_attempts: int = 1,
+    circuit_breaker_state_cas: bool = False,
+    circuit_breaker_state_lease_id: Optional[str] = None,
+    circuit_breaker_scope_key: Optional[str] = None,
+    compression_gzip: bool = False,
+    https_only: bool = False,
+    ca_cert_pem_path: Optional[str] = None,
+    client_cert_pem_path: Optional[str] = None,
+    client_key_pem_path: Optional[str] = None,
+) -> Tuple[int, str]: ...
+def push_replication_metrics_otel_protobuf(
+    db: Database,
+    endpoint: str,
+    timeout_ms: int = 5000,
+    bearer_token: Optional[str] = None,
+    retry_max_attempts: int = 1,
+    retry_backoff_ms: int = 100,
+    retry_backoff_max_ms: int = 2000,
+    retry_jitter_ratio: float = 0.0,
+    adaptive_retry: bool = False,
+    adaptive_retry_mode: Optional[str] = None,
+    adaptive_retry_ewma_alpha: float = 0.3,
+    circuit_breaker_failure_threshold: int = 0,
+    circuit_breaker_open_ms: int = 0,
+    circuit_breaker_half_open_probes: int = 1,
+    circuit_breaker_state_path: Optional[str] = None,
+    circuit_breaker_state_url: Optional[str] = None,
+    circuit_breaker_state_patch: bool = False,
+    circuit_breaker_state_patch_batch: bool = False,
+    circuit_breaker_state_patch_batch_max_keys: int = 8,
+    circuit_breaker_state_patch_merge: bool = False,
+    circuit_breaker_state_patch_merge_max_keys: int = 32,
+    circuit_breaker_state_patch_retry_max_attempts: int = 1,
+    circuit_breaker_state_cas: bool = False,
+    circuit_breaker_state_lease_id: Optional[str] = None,
+    circuit_breaker_scope_key: Optional[str] = None,
+    compression_gzip: bool = False,
+    https_only: bool = False,
+    ca_cert_pem_path: Optional[str] = None,
+    client_cert_pem_path: Optional[str] = None,
+    client_key_pem_path: Optional[str] = None,
+) -> Tuple[int, str]: ...
 def health_check(db: Database) -> HealthCheckResult: ...
 def create_backup(db: Database, backup_path: str, options: Optional[BackupOptions] = None) -> BackupResult: ...
 def restore_backup(backup_path: str, restore_path: str, options: Optional[RestoreOptions] = None) -> str: ...

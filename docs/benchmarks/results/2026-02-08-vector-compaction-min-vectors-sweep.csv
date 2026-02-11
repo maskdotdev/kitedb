@@ -1,0 +1,7 @@
+delete_ratio,min_vectors_to_compact,compaction_performed,compaction_elapsed_ms,bytes_before,bytes_after,reclaim_percent,fragments_before,fragments_after
+0.35,5000,true,8.71,76806280,65807544,14.32,10,6
+0.35,10000,true,8.09,76806280,65807544,14.32,10,6
+0.35,20000,true,7.89,76806280,65807544,14.32,10,6
+0.55,5000,true,4.89,76806280,59726520,22.24,10,6
+0.55,10000,true,9.24,76806280,59726520,22.24,10,6
+0.55,20000,true,5.26,76806280,59726520,22.24,10,6

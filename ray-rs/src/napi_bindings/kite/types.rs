@@ -6,7 +6,7 @@
 use napi_derive::napi;
 use std::collections::HashMap;
 
-use super::super::database::{JsPropValue, JsSyncMode};
+use super::super::database::{JsPropValue, JsReplicationRole, JsSyncMode};
 
 // =============================================================================
 // Schema Input Types
@@ -88,4 +88,20 @@ pub struct JsKiteOptions {
   pub wal_size_mb: Option<i64>,
   /// WAL usage threshold (0.0-1.0) to trigger auto-checkpoint
   pub checkpoint_threshold: Option<f64>,
+  /// On close, checkpoint if WAL usage is at or above this threshold (default: 0.2)
+  pub close_checkpoint_if_wal_usage_at_least: Option<f64>,
+  /// Replication role: "Disabled", "Primary", or "Replica"
+  pub replication_role: Option<JsReplicationRole>,
+  /// Replication sidecar path override
+  pub replication_sidecar_path: Option<String>,
+  /// Source primary db path (replica role only)
+  pub replication_source_db_path: Option<String>,
+  /// Source primary sidecar path (replica role only)
+  pub replication_source_sidecar_path: Option<String>,
+  /// Segment rotation threshold in bytes (primary role only)
+  pub replication_segment_max_bytes: Option<i64>,
+  /// Minimum retained entries window (primary role only)
+  pub replication_retention_min_entries: Option<i64>,
+  /// Minimum retained segment age in milliseconds (primary role only)
+  pub replication_retention_min_ms: Option<i64>,
 }

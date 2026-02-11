@@ -1,0 +1,175 @@
+Vector ANN PQ tuning benchmark
+date=2026-02-08
+vectors=20000 dimensions=384 queries=200 k=10
+n_probes={8 16}
+pq_subspaces_set={24 48}
+pq_centroids_set={128 256}
+residuals_set={false}
+seed=42
+
+RUN baseline algorithm=ivf n_probe=8
+algorithm: ivf
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 8
+build_elapsed_ms: 1346.000
+search_p50_ms: 0.412833
+search_p95_ms: 0.526833
+mean_recall_at_k: 0.176000
+
+RUN baseline algorithm=ivf n_probe=16
+algorithm: ivf
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 16
+build_elapsed_ms: 1282.000
+search_p50_ms: 0.819666
+search_p95_ms: 1.155416
+mean_recall_at_k: 0.269000
+
+RUN algorithm=ivf_pq residuals=false n_probe=8 pq_subspaces=24 pq_centroids=128
+algorithm: ivf_pq
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 8
+pq_subspaces: 24
+pq_centroids: 128
+residuals: false
+build_elapsed_ms: 3887.000
+search_p50_ms: 0.181000
+search_p95_ms: 0.224042
+mean_recall_at_k: 0.060000
+
+RUN algorithm=ivf_pq residuals=false n_probe=8 pq_subspaces=24 pq_centroids=256
+algorithm: ivf_pq
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 8
+pq_subspaces: 24
+pq_centroids: 256
+residuals: false
+build_elapsed_ms: 6845.000
+search_p50_ms: 0.197792
+search_p95_ms: 0.293750
+mean_recall_at_k: 0.067000
+
+RUN algorithm=ivf_pq residuals=false n_probe=8 pq_subspaces=48 pq_centroids=128
+algorithm: ivf_pq
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 8
+pq_subspaces: 48
+pq_centroids: 128
+residuals: false
+build_elapsed_ms: 4726.000
+search_p50_ms: 0.263958
+search_p95_ms: 0.405166
+mean_recall_at_k: 0.114500
+
+RUN algorithm=ivf_pq residuals=false n_probe=8 pq_subspaces=48 pq_centroids=256
+algorithm: ivf_pq
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 8
+pq_subspaces: 48
+pq_centroids: 256
+residuals: false
+build_elapsed_ms: 6812.000
+search_p50_ms: 0.265625
+search_p95_ms: 0.324250
+mean_recall_at_k: 0.121000
+
+RUN algorithm=ivf_pq residuals=false n_probe=16 pq_subspaces=24 pq_centroids=128
+algorithm: ivf_pq
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 16
+pq_subspaces: 24
+pq_centroids: 128
+residuals: false
+build_elapsed_ms: 3839.000
+search_p50_ms: 0.270292
+search_p95_ms: 0.333959
+mean_recall_at_k: 0.068500
+
+RUN algorithm=ivf_pq residuals=false n_probe=16 pq_subspaces=24 pq_centroids=256
+algorithm: ivf_pq
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 16
+pq_subspaces: 24
+pq_centroids: 256
+residuals: false
+build_elapsed_ms: 6955.000
+search_p50_ms: 0.286875
+search_p95_ms: 0.435375
+mean_recall_at_k: 0.082500
+
+RUN algorithm=ivf_pq residuals=false n_probe=16 pq_subspaces=48 pq_centroids=128
+algorithm: ivf_pq
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 16
+pq_subspaces: 48
+pq_centroids: 128
+residuals: false
+build_elapsed_ms: 3889.000
+search_p50_ms: 0.385292
+search_p95_ms: 0.566083
+mean_recall_at_k: 0.159000
+
+RUN algorithm=ivf_pq residuals=false n_probe=16 pq_subspaces=48 pq_centroids=256
+algorithm: ivf_pq
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 16
+pq_subspaces: 48
+pq_centroids: 256
+residuals: false
+build_elapsed_ms: 6221.000
+search_p50_ms: 0.400833
+search_p95_ms: 0.535458
+mean_recall_at_k: 0.178500
+
+raw_output=/Users/mask/code/raydb/ray-rs/../docs/benchmarks/results/2026-02-08-vector-ann-pq-tuning.txt
+csv_output=/Users/mask/code/raydb/ray-rs/../docs/benchmarks/results/2026-02-08-vector-ann-pq-tuning.csv
+SUMMARY (best PQ configs by recall_ratio, then p95_ratio):
+algorithm,residuals,n_probe,pq_subspaces,pq_centroids,build_elapsed_ms,search_p50_ms,search_p95_ms,mean_recall_at_k,recall_ratio_vs_ivf,p95_ratio_vs_ivf
+ivf_pq,false,8,48,256,6812.000,0.265625,0.324250,0.121000,0.687500,0.615470
+ivf_pq,false,8,48,128,4726.000,0.263958,0.405166,0.114500,0.650568,0.769060
+ivf_pq,false,8,24,256,6845.000,0.197792,0.293750,0.067000,0.380682,0.557577
+ivf_pq,false,8,24,128,3887.000,0.181000,0.224042,0.060000,0.340909,0.425262
+ivf_pq,false,16,48,256,6221.000,0.400833,0.535458,0.178500,0.663569,0.463433
+ivf_pq,false,16,48,128,3889.000,0.385292,0.566083,0.159000,0.591078,0.489939
+ivf_pq,false,16,24,256,6955.000,0.286875,0.435375,0.082500,0.306691,0.376812
+ivf_pq,false,16,24,128,3839.000,0.270292,0.333959,0.068500,0.254647,0.289038

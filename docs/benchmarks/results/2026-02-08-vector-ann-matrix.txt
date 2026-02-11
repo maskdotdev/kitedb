@@ -1,0 +1,107 @@
+Vector ANN matrix benchmark
+date=2026-02-08
+vectors=20000 dimensions=384 queries=200 k=10
+n_probes={8 16}
+pq_subspaces=48 pq_centroids=256
+seed=42
+
+RUN algorithm=ivf residuals=na n_probe=8
+algorithm: ivf
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 8
+build_elapsed_ms: 1453.000
+search_p50_ms: 0.469542
+search_p95_ms: 0.766000
+mean_recall_at_k: 0.166000
+
+RUN algorithm=ivf_pq residuals=true n_probe=8
+algorithm: ivf_pq
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 8
+pq_subspaces: 48
+pq_centroids: 256
+residuals: true
+build_elapsed_ms: 9325.000
+search_p50_ms: 0.475416
+search_p95_ms: 0.901458
+mean_recall_at_k: 0.107500
+
+RUN algorithm=ivf_pq residuals=false n_probe=8
+algorithm: ivf_pq
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 8
+pq_subspaces: 48
+pq_centroids: 256
+residuals: false
+build_elapsed_ms: 8790.000
+search_p50_ms: 0.291292
+search_p95_ms: 0.450750
+mean_recall_at_k: 0.119500
+
+RUN algorithm=ivf residuals=na n_probe=16
+algorithm: ivf
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 16
+build_elapsed_ms: 3970.000
+search_p50_ms: 2.434625
+search_p95_ms: 4.027167
+mean_recall_at_k: 0.290500
+
+RUN algorithm=ivf_pq residuals=true n_probe=16
+algorithm: ivf_pq
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 16
+pq_subspaces: 48
+pq_centroids: 256
+residuals: true
+build_elapsed_ms: 20721.000
+search_p50_ms: 2.350041
+search_p95_ms: 5.996167
+mean_recall_at_k: 0.172500
+
+RUN algorithm=ivf_pq residuals=false n_probe=16
+algorithm: ivf_pq
+vectors: 20000
+dimensions: 384
+queries: 200
+k: 10
+n_clusters: 141
+n_probe: 16
+pq_subspaces: 48
+pq_centroids: 256
+residuals: false
+build_elapsed_ms: 21072.000
+search_p50_ms: 0.824291
+search_p95_ms: 1.399292
+mean_recall_at_k: 0.177500
+
+raw_output=/Users/mask/code/raydb/ray-rs/../docs/benchmarks/results/2026-02-08-vector-ann-matrix.txt
+csv_output=/Users/mask/code/raydb/ray-rs/../docs/benchmarks/results/2026-02-08-vector-ann-matrix.csv
+SUMMARY (best recall then p95 latency):
+algorithm,residuals,n_probe,build_elapsed_ms,search_p50_ms,search_p95_ms,mean_recall_at_k
+ivf,na,16,3970.000,2.434625,4.027167,0.290500
+ivf_pq,false,16,21072.000,0.824291,1.399292,0.177500
+ivf_pq,true,16,20721.000,2.350041,5.996167,0.172500
+ivf,na,8,1453.000,0.469542,0.766000,0.166000
+ivf_pq,false,8,8790.000,0.291292,0.450750,0.119500
+ivf_pq,true,8,9325.000,0.475416,0.901458,0.107500

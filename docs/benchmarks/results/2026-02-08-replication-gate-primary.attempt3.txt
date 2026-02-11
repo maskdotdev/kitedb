@@ -1,0 +1,56 @@
+========================================================================================================================
+Single-file Raw Benchmark (Rust)
+========================================================================================================================
+Nodes: 10,000
+Edges: 0
+Edge types: 1
+Edge props: 0
+Iterations: 10,000
+WAL size: 67,108,864 bytes
+Sync mode: Normal
+Group commit: false (window 2ms)
+Auto-checkpoint: false
+Checkpoint threshold: 0.8
+Vector dims: 128
+Vector count: 0
+Replication primary: true
+Replication segment max bytes: 1,073,741,824
+Skip checkpoint: false
+Reopen read-only: false
+========================================================================================================================
+
+[1/6] Building graph...
+  Creating nodes...
+  Created 5000 / 10000 nodes  Created 10000 / 10000 nodes
+  Creating edges...
+
+  Built in 4ms
+
+[2/6] Vector setup...
+
+--- Vector Operations ---
+  Skipped (vector_count/vector_dims == 0)
+
+[3/6] Checkpointing...
+  Checkpointed in 5ms
+
+[4/6] Key lookup benchmarks...
+
+--- Key Lookups (node_by_key) ---
+Random existing keys                          p50=      84ns p95=     209ns p99=     417ns max=  426.21us (6199347 ops/sec)
+
+[5/6] Traversal and edge benchmarks...
+
+--- 1-Hop Traversals (out) ---
+Random nodes                                  p50=      83ns p95=      84ns p99=     250ns max=   43.38us (11767032 ops/sec)
+
+--- Edge Exists ---
+Random edge exists                            p50=      42ns p95=      84ns p99=      84ns max=   24.83us (16610799 ops/sec)
+
+[6/6] Write benchmarks...
+
+--- Batch Writes (100 nodes) ---
+Batch of 100 nodes                            p50=   35.08us p95=   47.29us p99=  121.75us max=  121.75us (26827 ops/sec)
+
+--- Batch Writes (100 edges) ---
+Batch of 100 edges                            p50=   35.75us p95=   91.71us p99=  145.46us max=  145.46us (23991 ops/sec)

@@ -12,6 +12,7 @@ use std::thread::ThreadId;
 
 use parking_lot::{Condvar, Mutex, RwLock};
 
+use self::vector::VectorStoreLazyEntry;
 use crate::cache::manager::CacheManager;
 use crate::constants::*;
 use crate::core::pager::FilePager;
@@ -31,6 +32,7 @@ mod iter;
 mod open;
 mod read;
 mod recovery;
+mod replication;
 mod schema;
 mod transaction;
 mod vector;
@@ -43,7 +45,8 @@ mod stress;
 pub use compactor::{ResizeWalOptions, SingleFileOptimizeOptions, VacuumOptions};
 pub use iter::*;
 pub use open::{
-  close_single_file, open_single_file, SingleFileOpenOptions, SnapshotParseMode, SyncMode,
+  close_single_file, close_single_file_with_options, open_single_file, SingleFileCloseOptions,
+  SingleFileOpenOptions, SnapshotParseMode, SyncMode,
 };
 pub use transaction::SingleFileTxGuard;
 
@@ -149,6 +152,8 @@ pub struct SingleFileDB {
   /// Vector stores keyed by property key ID
   /// Each property key can have its own vector store with different dimensions
   pub(crate) vector_stores: RwLock<HashMap<PropKeyId, VectorManifest>>,
+  /// Lazy vector-store section index keyed by property key ID
+  pub(crate) vector_store_lazy_entries: RwLock<HashMap<PropKeyId, VectorStoreLazyEntry>>,
 
   /// Cache manager for property, traversal, query, and key caches
   pub(crate) cache: RwLock<Option<CacheManager>>,
@@ -163,6 +168,11 @@ pub struct SingleFileDB {
   pub(crate) group_commit_enabled: bool,
   /// Group commit window in milliseconds
   pub(crate) group_commit_window_ms: u64,
+
+  /// Primary replication runtime (enabled only when role=primary)
+  pub(crate) primary_replication: Option<crate::replication::primary::PrimaryReplication>,
+  /// Replica replication runtime (enabled only when role=replica)
+  pub(crate) replica_replication: Option<crate::replication::replica::ReplicaReplication>,
 
   #[cfg(feature = "bench-profile")]
   pub(crate) commit_lock_wait_ns: AtomicU64,

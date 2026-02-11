@@ -1,0 +1,579 @@
+Vector compaction matrix benchmark
+date=2026-02-08
+vectors=50000 dimensions=384 fragment_target_size=5000
+delete_ratios={0.35 0.55}
+min_deletion_ratios={0.20 0.30 0.40}
+max_fragments_set={2 4 8}
+min_vectors_to_compact=10000
+
+RUN delete_ratio=0.35 min_del=0.20 max_frag=2
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 35.00%
+strategy: min_deletion_ratio=0.2, max_fragments=2, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 480.66
+insert_throughput_vectors_per_sec: 104,024
+delete_elapsed_ms: 13.53
+deleted_vectors: 17,500 (requested 17,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 9.61
+compaction_performed: true
+candidate_fragments_before: 2 ([8, 2])
+
+Store stats (before -> after):
+  live_vectors: 32,500 -> 32,500
+  total_deleted: 17,500 -> 13,871
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 71,230,880
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 8
+  total_deleted_vectors: 17,500 -> 13,871
+  average_deletion_ratio: 35.00% -> 29.91%
+
+RUN delete_ratio=0.35 min_del=0.20 max_frag=4
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 35.00%
+strategy: min_deletion_ratio=0.2, max_fragments=4, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 189.36
+insert_throughput_vectors_per_sec: 264,050
+delete_elapsed_ms: 8.23
+deleted_vectors: 17,500 (requested 17,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 14.94
+compaction_performed: true
+candidate_fragments_before: 4 ([8, 2, 0, 9])
+
+Store stats (before -> after):
+  live_vectors: 32,500 -> 32,500
+  total_deleted: 17,500 -> 10,341
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 65,807,544
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 6
+  total_deleted_vectors: 17,500 -> 10,341
+  average_deletion_ratio: 35.00% -> 24.14%
+
+RUN delete_ratio=0.35 min_del=0.20 max_frag=8
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 35.00%
+strategy: min_deletion_ratio=0.2, max_fragments=8, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 260.49
+insert_throughput_vectors_per_sec: 191,946
+delete_elapsed_ms: 13.79
+deleted_vectors: 17,500 (requested 17,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 41.66
+compaction_performed: true
+candidate_fragments_before: 8 ([8, 2, 0, 9, 6, 4, 7, 3])
+
+Store stats (before -> after):
+  live_vectors: 32,500 -> 32,500
+  total_deleted: 17,500 -> 3,413
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 55,163,624
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 2
+  total_deleted_vectors: 17,500 -> 3,413
+  average_deletion_ratio: 35.00% -> 9.50%
+
+RUN delete_ratio=0.35 min_del=0.30 max_frag=2
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 35.00%
+strategy: min_deletion_ratio=0.3, max_fragments=2, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 227.67
+insert_throughput_vectors_per_sec: 219,621
+delete_elapsed_ms: 10.32
+deleted_vectors: 17,500 (requested 17,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 10.07
+compaction_performed: true
+candidate_fragments_before: 2 ([8, 2])
+
+Store stats (before -> after):
+  live_vectors: 32,500 -> 32,500
+  total_deleted: 17,500 -> 13,871
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 71,230,880
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 8
+  total_deleted_vectors: 17,500 -> 13,871
+  average_deletion_ratio: 35.00% -> 29.91%
+
+RUN delete_ratio=0.35 min_del=0.30 max_frag=4
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 35.00%
+strategy: min_deletion_ratio=0.3, max_fragments=4, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 208.88
+insert_throughput_vectors_per_sec: 239,369
+delete_elapsed_ms: 6.98
+deleted_vectors: 17,500 (requested 17,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 14.21
+compaction_performed: true
+candidate_fragments_before: 4 ([8, 2, 0, 9])
+
+Store stats (before -> after):
+  live_vectors: 32,500 -> 32,500
+  total_deleted: 17,500 -> 10,341
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 65,807,544
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 6
+  total_deleted_vectors: 17,500 -> 10,341
+  average_deletion_ratio: 35.00% -> 24.14%
+
+RUN delete_ratio=0.35 min_del=0.30 max_frag=8
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 35.00%
+strategy: min_deletion_ratio=0.3, max_fragments=8, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 204.27
+insert_throughput_vectors_per_sec: 244,770
+delete_elapsed_ms: 10.55
+deleted_vectors: 17,500 (requested 17,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 22.29
+compaction_performed: true
+candidate_fragments_before: 8 ([8, 2, 0, 9, 6, 4, 7, 3])
+
+Store stats (before -> after):
+  live_vectors: 32,500 -> 32,500
+  total_deleted: 17,500 -> 3,413
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 55,163,624
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 2
+  total_deleted_vectors: 17,500 -> 3,413
+  average_deletion_ratio: 35.00% -> 9.50%
+
+RUN delete_ratio=0.35 min_del=0.40 max_frag=2
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 35.00%
+strategy: min_deletion_ratio=0.4, max_fragments=2, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 161.05
+insert_throughput_vectors_per_sec: 310,459
+delete_elapsed_ms: 6.10
+deleted_vectors: 17,500 (requested 17,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 0.00
+compaction_performed: false
+candidate_fragments_before: 0 ([])
+
+Store stats (before -> after):
+  live_vectors: 32,500 -> 32,500
+  total_deleted: 17,500 -> 17,500
+  fragment_count: 12 -> 12
+  bytes_used: 76,806,280 -> 76,806,280
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 10
+  total_deleted_vectors: 17,500 -> 17,500
+  average_deletion_ratio: 35.00% -> 35.00%
+
+RUN delete_ratio=0.35 min_del=0.40 max_frag=4
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 35.00%
+strategy: min_deletion_ratio=0.4, max_fragments=4, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 161.79
+insert_throughput_vectors_per_sec: 309,039
+delete_elapsed_ms: 7.39
+deleted_vectors: 17,500 (requested 17,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 0.00
+compaction_performed: false
+candidate_fragments_before: 0 ([])
+
+Store stats (before -> after):
+  live_vectors: 32,500 -> 32,500
+  total_deleted: 17,500 -> 17,500
+  fragment_count: 12 -> 12
+  bytes_used: 76,806,280 -> 76,806,280
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 10
+  total_deleted_vectors: 17,500 -> 17,500
+  average_deletion_ratio: 35.00% -> 35.00%
+
+RUN delete_ratio=0.35 min_del=0.40 max_frag=8
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 35.00%
+strategy: min_deletion_ratio=0.4, max_fragments=8, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 153.33
+insert_throughput_vectors_per_sec: 326,099
+delete_elapsed_ms: 8.38
+deleted_vectors: 17,500 (requested 17,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 0.00
+compaction_performed: false
+candidate_fragments_before: 0 ([])
+
+Store stats (before -> after):
+  live_vectors: 32,500 -> 32,500
+  total_deleted: 17,500 -> 17,500
+  fragment_count: 12 -> 12
+  bytes_used: 76,806,280 -> 76,806,280
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 10
+  total_deleted_vectors: 17,500 -> 17,500
+  average_deletion_ratio: 35.00% -> 35.00%
+
+RUN delete_ratio=0.55 min_del=0.20 max_frag=2
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 55.00%
+strategy: min_deletion_ratio=0.2, max_fragments=2, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 140.57
+insert_throughput_vectors_per_sec: 355,707
+delete_elapsed_ms: 11.26
+deleted_vectors: 27,500 (requested 27,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 2.91
+compaction_performed: true
+candidate_fragments_before: 2 ([8, 2])
+
+Store stats (before -> after):
+  live_vectors: 22,500 -> 22,500
+  total_deleted: 27,500 -> 21,902
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 68,206,496
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 8
+  total_deleted_vectors: 27,500 -> 21,902
+  average_deletion_ratio: 55.00% -> 49.33%
+
+RUN delete_ratio=0.55 min_del=0.20 max_frag=4
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 55.00%
+strategy: min_deletion_ratio=0.2, max_fragments=4, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 132.17
+insert_throughput_vectors_per_sec: 378,311
+delete_elapsed_ms: 10.07
+deleted_vectors: 27,500 (requested 27,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 4.86
+compaction_performed: true
+candidate_fragments_before: 4 ([8, 2, 5, 0])
+
+Store stats (before -> after):
+  live_vectors: 22,500 -> 22,500
+  total_deleted: 27,500 -> 16,382
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 59,726,520
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 6
+  total_deleted_vectors: 27,500 -> 16,382
+  average_deletion_ratio: 55.00% -> 42.13%
+
+RUN delete_ratio=0.55 min_del=0.20 max_frag=8
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 55.00%
+strategy: min_deletion_ratio=0.2, max_fragments=8, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 135.36
+insert_throughput_vectors_per_sec: 369,392
+delete_elapsed_ms: 9.89
+deleted_vectors: 27,500 (requested 27,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 13.85
+compaction_performed: true
+candidate_fragments_before: 8 ([8, 2, 5, 0, 1, 9, 7, 4])
+
+Store stats (before -> after):
+  live_vectors: 22,500 -> 22,500
+  total_deleted: 27,500 -> 5,410
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 42,871,016
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 2
+  total_deleted_vectors: 27,500 -> 5,410
+  average_deletion_ratio: 55.00% -> 19.38%
+
+RUN delete_ratio=0.55 min_del=0.30 max_frag=2
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 55.00%
+strategy: min_deletion_ratio=0.3, max_fragments=2, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 143.90
+insert_throughput_vectors_per_sec: 347,454
+delete_elapsed_ms: 8.24
+deleted_vectors: 27,500 (requested 27,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 2.99
+compaction_performed: true
+candidate_fragments_before: 2 ([8, 2])
+
+Store stats (before -> after):
+  live_vectors: 22,500 -> 22,500
+  total_deleted: 27,500 -> 21,902
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 68,206,496
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 8
+  total_deleted_vectors: 27,500 -> 21,902
+  average_deletion_ratio: 55.00% -> 49.33%
+
+RUN delete_ratio=0.55 min_del=0.30 max_frag=4
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 55.00%
+strategy: min_deletion_ratio=0.3, max_fragments=4, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 116.29
+insert_throughput_vectors_per_sec: 429,948
+delete_elapsed_ms: 9.91
+deleted_vectors: 27,500 (requested 27,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 4.33
+compaction_performed: true
+candidate_fragments_before: 4 ([8, 2, 5, 0])
+
+Store stats (before -> after):
+  live_vectors: 22,500 -> 22,500
+  total_deleted: 27,500 -> 16,382
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 59,726,520
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 6
+  total_deleted_vectors: 27,500 -> 16,382
+  average_deletion_ratio: 55.00% -> 42.13%
+
+RUN delete_ratio=0.55 min_del=0.30 max_frag=8
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 55.00%
+strategy: min_deletion_ratio=0.3, max_fragments=8, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 119.95
+insert_throughput_vectors_per_sec: 416,844
+delete_elapsed_ms: 6.39
+deleted_vectors: 27,500 (requested 27,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 8.68
+compaction_performed: true
+candidate_fragments_before: 8 ([8, 2, 5, 0, 1, 9, 7, 4])
+
+Store stats (before -> after):
+  live_vectors: 22,500 -> 22,500
+  total_deleted: 27,500 -> 5,410
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 42,871,016
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 2
+  total_deleted_vectors: 27,500 -> 5,410
+  average_deletion_ratio: 55.00% -> 19.38%
+
+RUN delete_ratio=0.55 min_del=0.40 max_frag=2
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 55.00%
+strategy: min_deletion_ratio=0.4, max_fragments=2, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 109.13
+insert_throughput_vectors_per_sec: 458,149
+delete_elapsed_ms: 6.05
+deleted_vectors: 27,500 (requested 27,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 1.86
+compaction_performed: true
+candidate_fragments_before: 2 ([8, 2])
+
+Store stats (before -> after):
+  live_vectors: 22,500 -> 22,500
+  total_deleted: 27,500 -> 21,902
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 68,206,496
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 8
+  total_deleted_vectors: 27,500 -> 21,902
+  average_deletion_ratio: 55.00% -> 49.33%
+
+RUN delete_ratio=0.55 min_del=0.40 max_frag=4
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 55.00%
+strategy: min_deletion_ratio=0.4, max_fragments=4, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 114.19
+insert_throughput_vectors_per_sec: 437,872
+delete_elapsed_ms: 6.10
+deleted_vectors: 27,500 (requested 27,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 5.39
+compaction_performed: true
+candidate_fragments_before: 4 ([8, 2, 5, 0])
+
+Store stats (before -> after):
+  live_vectors: 22,500 -> 22,500
+  total_deleted: 27,500 -> 16,382
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 59,726,520
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 6
+  total_deleted_vectors: 27,500 -> 16,382
+  average_deletion_ratio: 55.00% -> 42.13%
+
+RUN delete_ratio=0.55 min_del=0.40 max_frag=8
+====================================================================================================
+Vector Compaction Strategy Benchmark (Rust)
+====================================================================================================
+vectors: 50,000
+dimensions: 384
+fragment_target_size: 5,000
+delete_ratio: 55.00%
+strategy: min_deletion_ratio=0.4, max_fragments=8, min_vectors_to_compact=10,000
+====================================================================================================
+insert_elapsed_ms: 109.15
+insert_throughput_vectors_per_sec: 458,089
+delete_elapsed_ms: 6.97
+deleted_vectors: 27,500 (requested 27,500)
+clear_deleted_elapsed_ms: 0.00
+cleared_fragments: 0
+compaction_elapsed_ms: 8.83
+compaction_performed: true
+candidate_fragments_before: 8 ([8, 2, 5, 0, 1, 9, 7, 4])
+
+Store stats (before -> after):
+  live_vectors: 22,500 -> 22,500
+  total_deleted: 27,500 -> 5,410
+  fragment_count: 12 -> 13
+  bytes_used: 76,806,280 -> 42,871,016
+
+Compaction stats (before -> after):
+  fragments_needing_compaction: 10 -> 2
+  total_deleted_vectors: 27,500 -> 5,410
+  average_deletion_ratio: 55.00% -> 19.38%
+
+raw_output=/Users/mask/code/raydb/ray-rs/../docs/benchmarks/results/2026-02-08-vector-compaction-matrix.txt
+csv_output=/Users/mask/code/raydb/ray-rs/../docs/benchmarks/results/2026-02-08-vector-compaction-matrix.csv
+SUMMARY (mean by strategy):
+min_deletion_ratio,max_fragments,runs,mean_compaction_elapsed_ms,mean_reclaim_percent,compaction_performed_ratio
+0.20,2,2,6.260,9.230,1.000
+0.20,4,2,9.900,18.280,1.000
+0.20,8,2,27.755,36.180,1.000
+0.30,2,2,6.530,9.230,1.000
+0.30,4,2,9.270,18.280,1.000
+0.30,8,2,15.485,36.180,1.000
+0.40,2,2,0.930,5.600,0.500
+0.40,4,2,2.695,11.120,0.500
+0.40,8,2,4.415,22.090,0.500

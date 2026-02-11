@@ -53,6 +53,7 @@ from kitedb._kitedb import (
     # Core classes
     Database,
     OpenOptions,
+    RuntimeProfile,
     SyncMode,
     SnapshotParseMode,
     DbStats,
@@ -102,7 +103,18 @@ from kitedb._kitedb import (
     
     # Functions
     open_database,
+    recommended_safe_profile,
+    recommended_balanced_profile,
+    recommended_reopen_heavy_profile,
     collect_metrics,
+    collect_replication_log_transport_json,
+    collect_replication_metrics_otel_json,
+    collect_replication_metrics_otel_protobuf,
+    collect_replication_metrics_prometheus,
+    collect_replication_snapshot_transport_json,
+    push_replication_metrics_otel_grpc,
+    push_replication_metrics_otel_json,
+    push_replication_metrics_otel_protobuf,
     health_check,
     create_backup,
     restore_backup,
@@ -160,6 +172,17 @@ from kitedb.vector_index import (
     SimilarOptions,
     VectorSearchHit,
     create_vector_index,
+)
+
+from kitedb.replication_auth import (
+    AsgiMtlsMatcherOptions,
+    ReplicationAdminAuthConfig,
+    ReplicationAdminAuthMode,
+    authorize_replication_admin_request,
+    create_asgi_tls_mtls_matcher,
+    create_replication_admin_authorizer,
+    is_asgi_tls_client_authorized,
+    is_replication_admin_authorized,
 )
 
 __version__ = version()
@@ -220,6 +243,7 @@ __all__ = [
     # Core
     "Database",
     "OpenOptions",
+    "RuntimeProfile",
     "SyncMode",
     "SnapshotParseMode",
     "DbStats",
@@ -269,7 +293,18 @@ __all__ = [
     
     # Functions
     "open_database",
+    "recommended_safe_profile",
+    "recommended_balanced_profile",
+    "recommended_reopen_heavy_profile",
     "collect_metrics",
+    "collect_replication_log_transport_json",
+    "collect_replication_metrics_otel_json",
+    "collect_replication_metrics_otel_protobuf",
+    "collect_replication_metrics_prometheus",
+    "collect_replication_snapshot_transport_json",
+    "push_replication_metrics_otel_grpc",
+    "push_replication_metrics_otel_json",
+    "push_replication_metrics_otel_protobuf",
     "health_check",
     "create_backup",
     "restore_backup",
@@ -277,6 +312,16 @@ __all__ = [
     "create_offline_backup",
     "version",
     "brute_force_search",
+
+    # Replication transport auth helpers
+    "ReplicationAdminAuthMode",
+    "ReplicationAdminAuthConfig",
+    "AsgiMtlsMatcherOptions",
+    "is_replication_admin_authorized",
+    "authorize_replication_admin_request",
+    "create_replication_admin_authorizer",
+    "is_asgi_tls_client_authorized",
+    "create_asgi_tls_mtls_matcher",
     
     # Version
     "__version__",

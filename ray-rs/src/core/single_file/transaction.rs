@@ -6,6 +6,8 @@ use crate::core::wal::record::{
   build_begin_payload, build_commit_payload, build_rollback_payload, WalRecord,
 };
 use crate::error::{KiteError, Result};
+use crate::replication::primary::PrimaryReplicationStatus;
+use crate::replication::types::CommitToken;
 use crate::types::*;
 use parking_lot::Mutex;
 use std::marker::PhantomData;
@@ -366,6 +368,11 @@ impl SingleFileDB {
 
   /// Commit the current transaction
   pub fn commit(&self) -> Result<()> {
+    self.commit_with_token().map(|_| ())
+  }
+
+  /// Commit the current transaction and return replication commit token if enabled.
+  pub fn commit_with_token(&self) -> Result<Option<CommitToken>> {
     let tx_handle = {
       let tid = std::thread::current().id();
       let mut current_tx = self.current_tx.lock();
@@ -385,7 +392,7 @@ impl SingleFileDB {
         let mut tx_mgr = mvcc.tx_manager.lock();
         tx_mgr.abort_tx(txid);
       }
-      return Ok(());
+      return Ok(None);
     }
     let prev_writers = self.active_writers.fetch_sub(1, Ordering::SeqCst);
     debug_assert!(prev_writers > 0, "active_writers underflow in commit");
@@ -407,8 +414,11 @@ impl SingleFileDB {
       commit_ts_for_mvcc = Some((commit_ts, tx_mgr.active_count() > 0));
     }
 
-    let group_commit_active = self.group_commit_enabled && self.sync_mode == SyncMode::Normal;
+    let replication_enabled = self.primary_replication.is_some();
+    let group_commit_active =
+      self.group_commit_enabled && self.sync_mode == SyncMode::Normal && !replication_enabled;
     let mut group_commit_seq = 0u64;
+    let mut commit_token = None;
 
     {
       // Serialize commit to preserve WAL ordering without holding the delta lock during I/O.
@@ -493,6 +503,10 @@ impl SingleFileDB {
         state.next_seq = state.next_seq.saturating_add(1);
         group_commit_seq = state.next_seq;
       }
+
+      if let Some(replication) = self.primary_replication.as_ref() {
+        commit_token = Some(replication.append_commit_wal_frame(txid, pending_wal)?);
+      }
     }
 
     if group_commit_active {
@@ -531,7 +545,7 @@ impl SingleFileDB {
       }
     }
 
-    Ok(())
+    Ok(commit_token)
   }
 
   /// Rollback the current transaction
@@ -587,6 +601,22 @@ impl SingleFileDB {
     self.current_tx_handle().as_ref().map(|tx| tx.lock().txid)
   }
 
+  /// Get the most recently emitted commit token from primary replication.
+  pub fn last_commit_token(&self) -> Option<CommitToken> {
+    self
+      .primary_replication
+      .as_ref()
+      .and_then(|replication| replication.last_token())
+  }
+
+  /// Get primary replication status when replication role is `primary`.
+  pub fn primary_replication_status(&self) -> Option<PrimaryReplicationStatus> {
+    self
+      .primary_replication
+      .as_ref()
+      .map(|replication| replication.status())
+  }
+
   /// Write a WAL record (internal helper)
   pub(crate) fn write_wal(&self, record: WalRecord) -> Result<()> {
     let mut pager = self.pager.lock();
@@ -601,13 +631,16 @@ impl SingleFileDB {
     record: WalRecord,
   ) -> Result<()> {
     let mut tx = tx_handle.lock();
+    let record_bytes = record.build();
     if tx.bulk_load {
-      let record_bytes = record.build();
       tx.pending_wal.extend_from_slice(&record_bytes);
       Ok(())
     } else {
       drop(tx);
-      self.write_wal(record)
+      self.write_wal(record)?;
+      let mut tx = tx_handle.lock();
+      tx.pending_wal.extend_from_slice(&record_bytes);
+      Ok(())
     }
   }
 

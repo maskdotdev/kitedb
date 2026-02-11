@@ -10,6 +10,8 @@ use crate::util::binary::*;
 use crate::util::compression::{maybe_compress, CompressionOptions, CompressionType};
 use crate::util::crc::crc32c;
 use crate::util::hash::xxhash64_string;
+use crate::vector::ivf::serialize::serialize_manifest;
+use crate::vector::types::VectorManifest;
 use std::collections::HashMap;
 
 // ============================================================================
@@ -43,6 +45,7 @@ pub struct SnapshotBuildInput {
   pub labels: HashMap<LabelId, String>,
   pub etypes: HashMap<ETypeId, String>,
   pub propkeys: HashMap<PropKeyId, String>,
+  pub vector_stores: Option<HashMap<PropKeyId, VectorManifest>>,
   pub compression: Option<CompressionOptions>,
 }
 
@@ -835,6 +838,42 @@ fn add_vector_sections(
   true
 }
 
+fn add_vector_store_sections(
+  add_section: &mut impl FnMut(SectionId, Vec<u8>),
+  vector_stores: Option<&HashMap<PropKeyId, VectorManifest>>,
+) -> bool {
+  let Some(vector_stores) = vector_stores else {
+    return false;
+  };
+  if vector_stores.is_empty() {
+    return false;
+  }
+
+  let mut ordered: Vec<(PropKeyId, &VectorManifest)> =
+    vector_stores.iter().map(|(&k, v)| (k, v)).collect();
+  ordered.sort_by_key(|(prop_key_id, _)| *prop_key_id);
+
+  let mut index_data = vec![0u8; 4 + ordered.len() * 20];
+  write_u32(&mut index_data, 0, ordered.len() as u32);
+  let mut blob_data = Vec::new();
+
+  for (i, (prop_key_id, manifest)) in ordered.iter().enumerate() {
+    let encoded = serialize_manifest(manifest);
+    let offset = blob_data.len() as u64;
+    let length = encoded.len() as u64;
+    blob_data.extend_from_slice(&encoded);
+
+    let entry_offset = 4 + i * 20;
+    write_u32(&mut index_data, entry_offset, *prop_key_id);
+    write_u64(&mut index_data, entry_offset + 4, offset);
+    write_u64(&mut index_data, entry_offset + 12, length);
+  }
+
+  add_section(SectionId::VectorStoreIndex, index_data);
+  add_section(SectionId::VectorStoreData, blob_data);
+  true
+}
+
 // ============================================================================
 // Main snapshot building
 // ============================================================================
@@ -851,6 +890,7 @@ pub fn build_snapshot_to_memory(input: SnapshotBuildInput) -> Result<Vec<u8>> {
     labels,
     etypes,
     propkeys,
+    vector_stores,
     compression,
   } = input;
 
@@ -866,10 +906,16 @@ pub fn build_snapshot_to_memory(input: SnapshotBuildInput) -> Result<Vec<u8>> {
   let num_strings = state.string_table.len();
 
   let mut add_section = |id: SectionId, data: Vec<u8>| {
-    let (compressed, compression_type) = maybe_compress(&data, &compression_opts);
+    let uncompressed_size = data.len() as u32;
+    let (compressed, compression_type) =
+      if matches!(id, SectionId::VectorStoreIndex | SectionId::VectorStoreData) {
+        (data, CompressionType::None)
+      } else {
+        maybe_compress(&data, &compression_opts)
+      };
     section_data.push(SectionData {
       id,
-      uncompressed_size: data.len() as u32,
+      uncompressed_size,
       data: compressed,
       compression: compression_type,
     });
@@ -922,6 +968,7 @@ pub fn build_snapshot_to_memory(input: SnapshotBuildInput) -> Result<Vec<u8>> {
   );
 
   let has_vectors = add_vector_sections(&mut add_section, vector_table);
+  let has_vector_stores = add_vector_store_sections(&mut add_section, vector_stores.as_ref());
 
   // Calculate total size and offsets
   let header_size = SNAPSHOT_HEADER_SIZE;
@@ -964,6 +1011,9 @@ pub fn build_snapshot_to_memory(input: SnapshotBuildInput) -> Result<Vec<u8>> {
   }
   if has_vectors {
     flags |= SnapshotFlags::HAS_VECTORS;
+  }
+  if has_vector_stores {
+    flags |= SnapshotFlags::HAS_VECTOR_STORES;
   }
   write_u32(&mut buffer, offset, flags.bits());
   offset += 4;
@@ -1034,7 +1084,11 @@ pub fn build_snapshot_to_memory(input: SnapshotBuildInput) -> Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::core::snapshot::reader::SnapshotData;
+  use crate::util::compression::{CompressionOptions, CompressionType};
   use crate::util::crc::crc32c;
+  use crate::vector::store::{create_vector_store, vector_store_insert};
+  use crate::vector::types::VectorStoreConfig;
   use std::io::Write;
   use tempfile::NamedTempFile;
 
@@ -1117,6 +1171,7 @@ mod tests {
       labels,
       etypes,
       propkeys,
+      vector_stores: None,
       compression: None,
     }
   }
@@ -1184,6 +1239,54 @@ mod tests {
   }
 
   #[test]
+  fn test_vector_store_sections_forced_uncompressed() {
+    let mut manifest = create_vector_store(VectorStoreConfig::new(64));
+    for node_id in 1..=1024u64 {
+      let mut vector = vec![0.0f32; 64];
+      vector[(node_id as usize) % 64] = 1.0;
+      vector_store_insert(&mut manifest, node_id, &vector).expect("expected value");
+    }
+
+    let mut stores = HashMap::new();
+    stores.insert(7, manifest);
+
+    let mut propkeys = HashMap::new();
+    propkeys.insert(7, "embedding".to_string());
+
+    let buffer = build_snapshot_to_memory(SnapshotBuildInput {
+      generation: 1,
+      nodes: vec![NodeData {
+        node_id: 1,
+        key: None,
+        labels: vec![],
+        props: HashMap::new(),
+      }],
+      edges: Vec::new(),
+      labels: HashMap::new(),
+      etypes: HashMap::new(),
+      propkeys,
+      vector_stores: Some(stores),
+      compression: Some(CompressionOptions {
+        enabled: true,
+        compression_type: CompressionType::Zstd,
+        min_size: 1,
+        level: 3,
+      }),
+    })
+    .expect("expected value");
+
+    let mut tmp = NamedTempFile::new().expect("expected value");
+    tmp.write_all(&buffer).expect("expected value");
+    tmp.flush().expect("expected value");
+
+    let snapshot = SnapshotData::load(tmp.path()).expect("expected value");
+    assert!(snapshot
+      .section_slice(SectionId::VectorStoreIndex)
+      .is_some());
+    assert!(snapshot.section_slice(SectionId::VectorStoreData).is_some());
+  }
+
+  #[test]
   fn test_build_empty_snapshot() {
     let input = SnapshotBuildInput {
       generation: 1,
@@ -1192,6 +1295,7 @@ mod tests {
       labels: HashMap::new(),
       etypes: HashMap::new(),
       propkeys: HashMap::new(),
+      vector_stores: None,
       compression: None,
     };
 
@@ -1224,6 +1328,7 @@ mod tests {
       labels: HashMap::new(),
       etypes,
       propkeys: HashMap::new(),
+      vector_stores: None,
       compression: None,
     };
 

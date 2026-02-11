@@ -12,7 +12,26 @@ on:
     paths:
       - "ray-rs/**"
       - ".github/workflows/ray-rs.yml"
+  schedule:
+    - cron: "0 9 * * 1"
   workflow_dispatch:
+    inputs:
+      ann_pq_profile:
+        description: ANN PQ tracking profile (manual runs only)
+        type: choice
+        required: false
+        default: fast
+        options:
+          - fast
+          - full
+      replication_soak_profile:
+        description: Replication soak tracking profile (manual runs only)
+        type: choice
+        required: false
+        default: fast
+        options:
+          - fast
+          - full
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -22,6 +41,7 @@ defaults:
 jobs:
   meta:
     name: Release Gate
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     outputs:
       all: ${{ steps.flags.outputs.all }}
@@ -53,6 +73,262 @@ jobs:
           if echo "$COMMIT_MSG" | grep -E "^(all|js|ts|py|rs|core): [0-9]+\.[0-9]+\.[0-9]+"; then
             echo "any=true" >> "$GITHUB_OUTPUT"
           fi
+
+  replication-perf-gate:
+    name: Replication Perf Gate
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ray-rs/target/
+          key: replication-perf-gate-${{ hashFiles('ray-rs/Cargo.lock') }}
+      - name: Run replication perf gate
+        run: ./scripts/replication-perf-gate.sh
+        env:
+          STAMP: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          # CI-tuned defaults to reduce runtime while keeping meaningful signal.
+          ITERATIONS: "10000"
+          SEED_COMMITS: "1000"
+          BACKLOG_COMMITS: "3000"
+          ATTEMPTS: "3"
+          P95_MAX_RATIO: "1.30"
+          MIN_CATCHUP_FPS: "2500"
+          MIN_THROUGHPUT_RATIO: "0.10"
+      - name: Upload replication benchmark logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: replication-perf-gate-logs
+          path: docs/benchmarks/results/ci-${{ github.run_id }}-${{ github.run_attempt }}-replication-*gate*.txt
+          if-no-files-found: ignore
+  open-close-vector-gate:
+    name: Open/Close Vector Gate
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ray-rs/target/
+          key: open-close-vector-gate-${{ hashFiles('ray-rs/Cargo.lock') }}
+      - name: Run open/close vector gate
+        run: ./scripts/open-close-vector-gate.sh
+        env:
+          STAMP: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          ATTEMPTS: "1"
+          MAX_SMALL_RW_RATIO: "5.0"
+          MAX_SMALL_RO_RATIO: "5.0"
+          MAX_LARGE_RW_RATIO: "2.5"
+          MAX_LARGE_RO_RATIO: "2.5"
+      - name: Upload open/close vector gate logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-close-vector-gate-logs
+          path: docs/benchmarks/results/ci-${{ github.run_id }}-${{ github.run_attempt }}-open-close-vector-gate*.txt
+          if-no-files-found: ignore
+  open-close-non-vector-gate:
+    name: Open/Close Non-Vector Gate
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ray-rs/target/
+          key: open-close-non-vector-gate-${{ hashFiles('ray-rs/Cargo.lock') }}
+      - name: Run open/close non-vector gate
+        run: ./scripts/open-close-non-vector-gate.sh
+        env:
+          STAMP: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          ATTEMPTS: "1"
+          MAX_SMALL_RW_US: "900.0"
+          MAX_SMALL_RO_US: "900.0"
+          MAX_LARGE_RW_US: "5000.0"
+          MAX_LARGE_RO_US: "5000.0"
+      - name: Upload open/close non-vector gate logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-close-non-vector-gate-logs
+          path: docs/benchmarks/results/ci-${{ github.run_id }}-${{ github.run_attempt }}-open-close-non-vector-gate*.txt
+          if-no-files-found: ignore
+  ann-quality-gate:
+    name: ANN Quality Gate
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ray-rs/target/
+          key: ann-quality-gate-${{ hashFiles('ray-rs/Cargo.lock') }}
+      - name: Run ANN quality gate
+        run: ./scripts/vector-ann-gate.sh
+        env:
+          STAMP: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          # CI defaults tuned from baseline matrix; latency-first IVF-PQ gate.
+          ATTEMPTS: "3"
+          ALGORITHM: "ivf_pq"
+          RESIDUALS: "false"
+          PQ_SUBSPACES: "48"
+          PQ_CENTROIDS: "256"
+          N_PROBE: "16"
+          MIN_RECALL_AT_K: "0.16"
+          MAX_P95_MS: "8.0"
+      - name: Upload ANN gate logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ann-quality-gate-logs
+          path: docs/benchmarks/results/ci-${{ github.run_id }}-${{ github.run_attempt }}-vector-ann-gate*.txt
+          if-no-files-found: ignore
+  replication-soak-tracking:
+    name: Replication Soak Tracking
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ray-rs/target/
+          key: replication-soak-tracking-${{ hashFiles('ray-rs/Cargo.lock') }}
+      - name: Run replication soak tracking (fast)
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.replication_soak_profile != 'full')
+        run: ./scripts/replication-soak-gate.sh
+        env:
+          STAMP: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          # Non-blocking churn/promotion/reseed trend run (scheduled + manual).
+          ATTEMPTS: "1"
+          REPLICAS: "5"
+          CYCLES: "12"
+          COMMITS_PER_CYCLE: "80"
+          ACTIVE_REPLICAS: "3"
+          CHURN_INTERVAL: "3"
+          PROMOTION_INTERVAL: "4"
+          RESEED_CHECK_INTERVAL: "2"
+          MAX_FRAMES: "128"
+          RECOVERY_MAX_LOOPS: "80"
+          SEGMENT_MAX_BYTES: "1"
+          RETENTION_MIN: "48"
+          MAX_ALLOWED_LAG: "2500"
+          MIN_PROMOTIONS: "2"
+          MIN_RESEEDS: "1"
+      - name: Run replication soak tracking (full)
+        if: github.event_name == 'workflow_dispatch' && inputs.replication_soak_profile == 'full'
+        run: ./scripts/replication-soak-gate.sh
+        env:
+          STAMP: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          # Manual deep soak profile for longer churn/promotion trend checks.
+          ATTEMPTS: "1"
+          REPLICAS: "5"
+          CYCLES: "24"
+          COMMITS_PER_CYCLE: "120"
+          ACTIVE_REPLICAS: "4"
+          CHURN_INTERVAL: "2"
+          PROMOTION_INTERVAL: "3"
+          RESEED_CHECK_INTERVAL: "2"
+          MAX_FRAMES: "256"
+          RECOVERY_MAX_LOOPS: "120"
+          SEGMENT_MAX_BYTES: "1"
+          RETENTION_MIN: "64"
+          MAX_ALLOWED_LAG: "3500"
+          MIN_PROMOTIONS: "4"
+          MIN_RESEEDS: "1"
+      - name: Upload replication soak logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: replication-soak-tracking-logs
+          path: docs/benchmarks/results/ci-${{ github.run_id }}-${{ github.run_attempt }}-replication-soak-gate*.txt
+          if-no-files-found: ignore
+  ann-pq-tracking:
+    name: ANN PQ Tracking
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            ray-rs/target/
+          key: ann-pq-tracking-${{ hashFiles('ray-rs/Cargo.lock') }}
+      - name: Run ANN PQ tuning sweep (fast)
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.ann_pq_profile != 'full')
+        run: ./scripts/vector-ann-pq-tuning.sh
+        env:
+          STAMP: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          # Keep this lightweight enough for periodic trend tracking.
+          VECTORS: "15000"
+          QUERIES: "150"
+          N_PROBES: "8 16"
+          PQ_SUBSPACES_SET: "24 48"
+          PQ_CENTROIDS_SET: "128 256"
+          RESIDUALS_SET: "false"
+      - name: Run ANN PQ tuning sweep (full)
+        if: github.event_name == 'workflow_dispatch' && inputs.ann_pq_profile == 'full'
+        run: ./scripts/vector-ann-pq-tuning.sh
+        env:
+          STAMP: ci-${{ github.run_id }}-${{ github.run_attempt }}
+          # Manual deep sweep for analysis (not part of push/main gating).
+          VECTORS: "20000"
+          QUERIES: "200"
+          N_PROBES: "8 16"
+          PQ_SUBSPACES_SET: "24 48"
+          PQ_CENTROIDS_SET: "128 256"
+          RESIDUALS_SET: "false true"
+      - name: Upload ANN PQ tuning logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ann-pq-tracking-logs
+          path: |
+            docs/benchmarks/results/ci-${{ github.run_id }}-${{ github.run_attempt }}-vector-ann-pq-tuning*.txt
+            docs/benchmarks/results/ci-${{ github.run_id }}-${{ github.run_attempt }}-vector-ann-pq-tuning*.csv
+          if-no-files-found: ignore
   # ===========================================
   # Node.js Builds (napi-rs)
   # ===========================================

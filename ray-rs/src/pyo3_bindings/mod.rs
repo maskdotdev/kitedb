@@ -55,6 +55,7 @@ pub fn kitedb(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
   // Options classes
   m.add_class::<options::OpenOptions>()?;
+  m.add_class::<options::RuntimeProfile>()?;
   m.add_class::<options::SyncMode>()?;
   m.add_class::<options::SnapshotParseMode>()?;
   m.add_class::<options::CompressionOptions>()?;
@@ -76,6 +77,9 @@ pub fn kitedb(m: &Bound<'_, PyModule>) -> PyResult<()> {
   m.add_class::<stats::CacheMetrics>()?;
   m.add_class::<stats::DataMetrics>()?;
   m.add_class::<stats::MvccMetrics>()?;
+  m.add_class::<stats::PrimaryReplicationMetrics>()?;
+  m.add_class::<stats::ReplicaReplicationMetrics>()?;
+  m.add_class::<stats::ReplicationMetrics>()?;
   m.add_class::<stats::MvccStats>()?;
   m.add_class::<stats::MemoryMetrics>()?;
   m.add_class::<stats::DatabaseMetrics>()?;
@@ -113,7 +117,45 @@ pub fn kitedb(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
   // Standalone functions
   m.add_function(wrap_pyfunction!(database::open_database, m)?)?;
+  m.add_function(wrap_pyfunction!(database::recommended_safe_profile, m)?)?;
+  m.add_function(wrap_pyfunction!(database::recommended_balanced_profile, m)?)?;
+  m.add_function(wrap_pyfunction!(
+    database::recommended_reopen_heavy_profile,
+    m
+  )?)?;
   m.add_function(wrap_pyfunction!(database::collect_metrics, m)?)?;
+  m.add_function(wrap_pyfunction!(
+    database::collect_replication_metrics_prometheus,
+    m
+  )?)?;
+  m.add_function(wrap_pyfunction!(
+    database::collect_replication_metrics_otel_json,
+    m
+  )?)?;
+  m.add_function(wrap_pyfunction!(
+    database::collect_replication_metrics_otel_protobuf,
+    m
+  )?)?;
+  m.add_function(wrap_pyfunction!(
+    database::collect_replication_snapshot_transport_json,
+    m
+  )?)?;
+  m.add_function(wrap_pyfunction!(
+    database::collect_replication_log_transport_json,
+    m
+  )?)?;
+  m.add_function(wrap_pyfunction!(
+    database::push_replication_metrics_otel_json,
+    m
+  )?)?;
+  m.add_function(wrap_pyfunction!(
+    database::push_replication_metrics_otel_protobuf,
+    m
+  )?)?;
+  m.add_function(wrap_pyfunction!(
+    database::push_replication_metrics_otel_grpc,
+    m
+  )?)?;
   m.add_function(wrap_pyfunction!(database::health_check, m)?)?;
   m.add_function(wrap_pyfunction!(database::create_backup, m)?)?;
   m.add_function(wrap_pyfunction!(database::restore_backup, m)?)?;

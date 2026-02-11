@@ -181,6 +181,186 @@ const [aliceFriends, bobFriends] = await Promise.all([
 
 This is implemented using a read-write lock (RwLock) internally, providing good read scalability while maintaining data consistency.
 
+## Replication Admin (low-level API)
+
+Phase D replication controls are available on the low-level `Database` API.
+
+```ts
+import { Database } from 'kitedb'
+import {
+  collectReplicationLogTransportJson,
+  collectReplicationMetricsOtelJson,
+  collectReplicationMetricsOtelProtobuf,
+  collectReplicationMetricsPrometheus,
+  collectReplicationSnapshotTransportJson,
+  createReplicationTransportAdapter,
+  pushReplicationMetricsOtelGrpc,
+  pushReplicationMetricsOtelGrpcWithOptions,
+  pushReplicationMetricsOtelJson,
+  pushReplicationMetricsOtelJsonWithOptions,
+  pushReplicationMetricsOtelProtobuf,
+  pushReplicationMetricsOtelProtobufWithOptions,
+} from 'kitedb/native'
+
+const primary = Database.open('cluster-primary.kitedb', {
+  replicationRole: 'Primary',
+  replicationSidecarPath: './cluster-primary.sidecar',
+  replicationSegmentMaxBytes: 64 * 1024 * 1024,
+  replicationRetentionMinEntries: 1024,
+})
+
+primary.begin()
+primary.createNode('n:1')
+const token = primary.commitWithToken()
+
+primary.primaryReportReplicaProgress('replica-a', 1, 42)
+const retention = primary.primaryRunRetention()
+const primaryStatus = primary.primaryReplicationStatus()
+
+const replica = Database.open('cluster-replica.kitedb', {
+  replicationRole: 'Replica',
+  replicationSidecarPath: './cluster-replica.sidecar',
+  replicationSourceDbPath: 'cluster-primary.kitedb',
+  replicationSourceSidecarPath: './cluster-primary.sidecar',
+})
+
+replica.replicaBootstrapFromSnapshot()
+replica.replicaCatchUpOnce(256)
+if (token) replica.waitForToken(token, 2_000)
+const replicaStatus = replica.replicaReplicationStatus()
+if (replicaStatus?.needsReseed) replica.replicaReseedFromSnapshot()
+
+const prometheus = collectReplicationMetricsPrometheus(primary)
+console.log(prometheus)
+
+const otelJson = collectReplicationMetricsOtelJson(primary)
+console.log(otelJson)
+
+const otelProtobuf = collectReplicationMetricsOtelProtobuf(primary)
+console.log(otelProtobuf.length)
+
+const exportResult = pushReplicationMetricsOtelJson(
+  primary,
+  'http://127.0.0.1:4318/v1/metrics',
+  5_000,
+)
+console.log(exportResult.statusCode, exportResult.responseBody)
+
+const protoExport = pushReplicationMetricsOtelProtobuf(
+  primary,
+  'http://127.0.0.1:4318/v1/metrics',
+  5_000,
+)
+console.log(protoExport.statusCode, protoExport.responseBody)
+
+const grpcExport = pushReplicationMetricsOtelGrpc(
+  primary,
+  'http://127.0.0.1:4317',
+  5_000,
+)
+console.log(grpcExport.statusCode, grpcExport.responseBody)
+
+const secureExport = pushReplicationMetricsOtelJsonWithOptions(
+  primary,
+  'https://collector.internal:4318/v1/metrics',
+  {
+    timeoutMs: 5_000,
+    retryMaxAttempts: 3,
+    retryBackoffMs: 200,
+    retryBackoffMaxMs: 2_000,
+    retryJitterRatio: 0.2,
+    adaptiveRetry: true,
+    adaptiveRetryMode: 'ewma',
+    adaptiveRetryEwmaAlpha: 0.35,
+    circuitBreakerFailureThreshold: 3,
+    circuitBreakerOpenMs: 30_000,
+    circuitBreakerHalfOpenProbes: 2,
+    circuitBreakerStateUrl: 'https://state-store.internal/otlp/breakers',
+    circuitBreakerStatePatch: true,
+    circuitBreakerStatePatchBatch: true,
+    circuitBreakerStatePatchBatchMaxKeys: 4,
+    circuitBreakerStatePatchMerge: true,
+    circuitBreakerStatePatchMergeMaxKeys: 16,
+    circuitBreakerStatePatchRetryMaxAttempts: 2,
+    circuitBreakerStateCas: true,
+    circuitBreakerStateLeaseId: 'otlp-writer-a',
+    circuitBreakerScopeKey: 'collector-a',
+    compressionGzip: true,
+    httpsOnly: true,
+    caCertPemPath: './tls/collector-ca.pem',
+    clientCertPemPath: './tls/client.pem',
+    clientKeyPemPath: './tls/client-key.pem',
+  },
+)
+console.log(secureExport.statusCode, secureExport.responseBody)
+
+const secureProtoExport = pushReplicationMetricsOtelProtobufWithOptions(
+  primary,
+  'https://collector.internal:4318/v1/metrics',
+  {
+    timeoutMs: 5_000,
+    retryMaxAttempts: 3,
+    retryBackoffMs: 200,
+    retryBackoffMaxMs: 2_000,
+    retryJitterRatio: 0.2,
+    adaptiveRetry: true,
+    adaptiveRetryMode: 'ewma',
+    adaptiveRetryEwmaAlpha: 0.35,
+    circuitBreakerFailureThreshold: 3,
+    circuitBreakerOpenMs: 30_000,
+    circuitBreakerHalfOpenProbes: 2,
+    circuitBreakerStatePath: './runtime/otlp-breakers.json',
+    circuitBreakerScopeKey: 'collector-a',
+    compressionGzip: true,
+    httpsOnly: true,
+    caCertPemPath: './tls/collector-ca.pem',
+    clientCertPemPath: './tls/client.pem',
+    clientKeyPemPath: './tls/client-key.pem',
+  },
+)
+console.log(secureProtoExport.statusCode, secureProtoExport.responseBody)
+
+const secureGrpcExport = pushReplicationMetricsOtelGrpcWithOptions(
+  primary,
+  'https://collector.internal:4317',
+  {
+    timeoutMs: 5_000,
+    retryMaxAttempts: 3,
+    retryBackoffMs: 200,
+    retryBackoffMaxMs: 2_000,
+    retryJitterRatio: 0.2,
+    adaptiveRetry: true,
+    adaptiveRetryMode: 'ewma',
+    adaptiveRetryEwmaAlpha: 0.35,
+    circuitBreakerFailureThreshold: 3,
+    circuitBreakerOpenMs: 30_000,
+    circuitBreakerHalfOpenProbes: 2,
+    circuitBreakerStatePath: './runtime/otlp-breakers.json',
+    circuitBreakerScopeKey: 'collector-a',
+    compressionGzip: true,
+    httpsOnly: true,
+    caCertPemPath: './tls/collector-ca.pem',
+    clientCertPemPath: './tls/client.pem',
+    clientKeyPemPath: './tls/client-key.pem',
+  },
+)
+console.log(secureGrpcExport.statusCode, secureGrpcExport.responseBody)
+
+const snapshotJson = collectReplicationSnapshotTransportJson(primary, false)
+console.log(snapshotJson)
+
+const logPageJson = collectReplicationLogTransportJson(primary, null, 128, 1_048_576, false)
+console.log(logPageJson)
+
+const adapter = createReplicationTransportAdapter(primary)
+const snapshot = adapter.snapshot(false)
+const logPage = adapter.log({ maxFrames: 128, maxBytes: 1_048_576, includePayload: false })
+console.log(snapshot, logPage)
+
+replica.close()
+primary.close()
+```
+
 ## API surface
 
 The Node bindings expose both low-level graph primitives (`Database`) and higher-level APIs (Kite) for schema-driven workflows, plus metrics, backups, traversal, and vector search. For full API details and guides, see the docs:

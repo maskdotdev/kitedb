@@ -6,6 +6,8 @@ export declare class Database {
   static open(path: string, options?: OpenOptions | undefined | null): Database
   /** Close the database */
   close(): void
+  /** Close the database and run a blocking checkpoint if WAL usage is above threshold. */
+  closeWithCheckpointIfWalOver(threshold: number): void
   /** Check if database is open */
   get isOpen(): boolean
   /** Get database path */
@@ -864,6 +866,64 @@ export interface CheckResult {
 
 export declare function collectMetrics(db: Database): DatabaseMetrics
 
+export declare function collectReplicationLogTransportJson(db: Database, cursor?: string | undefined | null, maxFrames?: number | undefined | null, maxBytes?: number | undefined | null, includePayload?: boolean | undefined | null): string
+
+export declare function collectReplicationMetricsOtelJson(db: Database): string
+
+export declare function collectReplicationMetricsOtelProtobuf(db: Database): Buffer
+
+export declare function collectReplicationMetricsPrometheus(db: Database): string
+
+export declare function collectReplicationSnapshotTransportJson(db: Database, includeData?: boolean | undefined | null): string
+
+export interface OtlpHttpExportResult {
+  statusCode: number
+  responseBody: string
+}
+
+export declare function pushReplicationMetricsOtelJson(db: Database, endpoint: string, timeoutMs: number, bearerToken?: string | undefined | null): OtlpHttpExportResult
+
+export interface PushReplicationMetricsOtelOptions {
+  timeoutMs?: number
+  bearerToken?: string
+  retryMaxAttempts?: number
+  retryBackoffMs?: number
+  retryBackoffMaxMs?: number
+  retryJitterRatio?: number
+  adaptiveRetry?: boolean
+  adaptiveRetryMode?: 'linear' | 'ewma'
+  adaptiveRetryEwmaAlpha?: number
+  circuitBreakerFailureThreshold?: number
+  circuitBreakerOpenMs?: number
+  circuitBreakerHalfOpenProbes?: number
+  circuitBreakerStatePath?: string
+  circuitBreakerStateUrl?: string
+  circuitBreakerStatePatch?: boolean
+  circuitBreakerStatePatchBatch?: boolean
+  circuitBreakerStatePatchBatchMaxKeys?: number
+  circuitBreakerStatePatchMerge?: boolean
+  circuitBreakerStatePatchMergeMaxKeys?: number
+  circuitBreakerStatePatchRetryMaxAttempts?: number
+  circuitBreakerStateCas?: boolean
+  circuitBreakerStateLeaseId?: string
+  circuitBreakerScopeKey?: string
+  compressionGzip?: boolean
+  httpsOnly?: boolean
+  caCertPemPath?: string
+  clientCertPemPath?: string
+  clientKeyPemPath?: string
+}
+
+export declare function pushReplicationMetricsOtelJsonWithOptions(db: Database, endpoint: string, options?: PushReplicationMetricsOtelOptions | undefined | null): OtlpHttpExportResult
+
+export declare function pushReplicationMetricsOtelProtobuf(db: Database, endpoint: string, timeoutMs: number, bearerToken?: string | undefined | null): OtlpHttpExportResult
+
+export declare function pushReplicationMetricsOtelProtobufWithOptions(db: Database, endpoint: string, options?: PushReplicationMetricsOtelOptions | undefined | null): OtlpHttpExportResult
+
+export declare function pushReplicationMetricsOtelGrpc(db: Database, endpoint: string, timeoutMs: number, bearerToken?: string | undefined | null): OtlpHttpExportResult
+
+export declare function pushReplicationMetricsOtelGrpcWithOptions(db: Database, endpoint: string, options?: PushReplicationMetricsOtelOptions | undefined | null): OtlpHttpExportResult
+
 /** Compression options */
 export interface CompressionOptions {
   /** Enable compression (default false) */
@@ -1144,6 +1204,8 @@ export interface JsKiteOptions {
   walSizeMb?: number
   /** WAL usage threshold (0.0-1.0) to trigger auto-checkpoint */
   checkpointThreshold?: number
+  /** On close, checkpoint if WAL usage is at or above this threshold (default: 0.2) */
+  closeCheckpointIfWalUsageAtLeast?: number
 }
 
 /** Node property key-value pair for JS */
@@ -1393,6 +1455,23 @@ export interface OfflineBackupOptions {
 
 /** Open a database file (standalone function) */
 export declare function openDatabase(path: string, options?: OpenOptions | undefined | null): Database
+
+/** Recommended conservative profile (durability-first). */
+export declare function recommendedSafeProfile(): RuntimeProfile
+
+/** Recommended balanced profile (good throughput + durability tradeoff). */
+export declare function recommendedBalancedProfile(): RuntimeProfile
+
+/** Recommended profile for reopen-heavy workloads. */
+export declare function recommendedReopenHeavyProfile(): RuntimeProfile
+
+/** Runtime profile preset for open/close behavior. */
+export interface RuntimeProfile {
+  /** Open-time options for `Database.open(path, options)`. */
+  openOptions: OpenOptions
+  /** Optional close-time checkpoint trigger threshold. */
+  closeCheckpointIfWalUsageAtLeast?: number
+}
 
 /** Options for opening a database */
 export interface OpenOptions {

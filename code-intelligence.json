@@ -1,0 +1,53 @@
+{
+  "cache": {
+    "enabled": true,
+    "force": false
+  },
+  "inputs": {
+    "exclude": [
+      "node_modules",
+      "dist",
+      "build",
+      "target",
+      ".git",
+      ".venv",
+      "__pycache__",
+      ".code-intelligence"
+    ],
+    "include": [
+      "*.ts",
+      "*.tsx",
+      "*.js",
+      "*.jsx",
+      "*.py",
+      "*.cpp",
+      "*.cc",
+      "*.c",
+      "*.hpp",
+      "*.h",
+      "*.ada"
+    ],
+    "paths": [
+      "."
+    ],
+    "respectGitignore": true
+  },
+  "output": {
+    "incremental": true
+  },
+  "phases": {
+    "graph": true,
+    "indexPack": false,
+    "parse": true,
+    "scip": false,
+    "vector": true
+  },
+  "projectRoot": ".",
+  "vector": {
+    "provider": {
+      "baseUrl": "https://api.openai.com/v1",
+      "kind": "http",
+      "model": "text-embedding-3-small"
+    }
+  }
+}

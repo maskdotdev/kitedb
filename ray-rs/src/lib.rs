@@ -52,6 +52,9 @@ pub mod export;
 // Streaming/pagination
 pub mod streaming;
 
+// Replication modules
+pub mod replication;
+
 // High-level API modules (Phase 6)
 pub mod api;
 

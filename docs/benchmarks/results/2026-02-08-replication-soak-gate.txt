@@ -1,0 +1,26 @@
+replication_soak_bench
+sync_mode: normal
+replicas: 5
+cycles: 6
+commits_per_cycle: 40
+active_replicas_per_cycle: 3
+churn_interval: 2
+promotion_interval: 3
+reseed_check_interval: 2
+max_frames: 128
+recovery_max_loops: 80
+progress_cycle: 1 primary_epoch: 1 primary_head_log_index: 40 reseeds: 0 promotions: 0
+progress_cycle: 4 primary_epoch: 2 primary_head_log_index: 160 reseeds: 0 promotions: 1
+progress_cycle: 6 primary_epoch: 2 primary_head_log_index: 240 reseeds: 0 promotions: 2
+writes_committed: 240
+promotion_count: 2
+stale_fence_rejections: 2
+reseed_count: 0
+reseed_recovery_successes: 0
+max_recovery_loops: 1
+max_observed_lag: 40
+divergence_violations: 0
+final_primary_epoch: 3
+final_primary_head_log_index: 240
+final_primary_nodes: 240
+elapsed_ms: 3125.407

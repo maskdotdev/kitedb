@@ -96,7 +96,7 @@ function DocPageContent(props: { slug: string }) {
             traversals
           </li>
           <li>
-            <strong>Vector search</strong> – HNSW-indexed similarity queries
+            <strong>Vector search</strong> – IVF-based similarity queries
           </li>
           <li>
             <strong>Embedded</strong> – Runs in your process, no server needed

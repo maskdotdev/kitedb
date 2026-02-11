@@ -65,6 +65,98 @@ export interface ApiResult {
   error?: string;
 }
 
+export interface ReplicationReplicaLag {
+  replicaId: string;
+  epoch: number;
+  appliedLogIndex: number;
+}
+
+export interface PrimaryReplicationStatus {
+  role?: string;
+  epoch?: number;
+  headLogIndex?: number;
+  retainedFloor?: number;
+  replicaLags?: ReplicationReplicaLag[];
+  sidecarPath?: string;
+  lastToken?: string | null;
+  appendAttempts?: number;
+  appendFailures?: number;
+  appendSuccesses?: number;
+}
+
+export interface ReplicaReplicationStatus {
+  role?: string;
+  appliedEpoch?: number;
+  appliedLogIndex?: number;
+  needsReseed?: boolean;
+  lastError?: string | null;
+}
+
+export interface ReplicationStatusResponse {
+  connected: boolean;
+  authEnabled?: boolean;
+  role?: "primary" | "replica" | "disabled";
+  primary?: PrimaryReplicationStatus | null;
+  replica?: ReplicaReplicationStatus | null;
+  error?: string;
+}
+
+export interface ReplicationSnapshotResponse extends ApiResult {
+  role?: "primary" | "replica" | "disabled";
+  epoch?: number | null;
+  headLogIndex?: number | null;
+  snapshot?: {
+    format: string;
+    dbPath: string;
+    byteLength: number;
+    sha256: string;
+    generatedAt: string;
+    dataBase64?: string;
+  };
+}
+
+export interface ReplicationLogFrame {
+  epoch: string;
+  logIndex: string;
+  segmentId: string;
+  segmentOffset: string;
+  payloadBase64: string;
+  bytes: number;
+}
+
+export interface ReplicationLogResponse extends ApiResult {
+  role?: "primary" | "replica" | "disabled";
+  epoch?: number | null;
+  headLogIndex?: number | null;
+  retainedFloor?: number | null;
+  request?: {
+    maxBytes: number;
+    maxFrames: number;
+    includePayload: boolean;
+    cursor: string | null;
+  };
+  frames?: ReplicationLogFrame[];
+  nextCursor?: string | null;
+  eof?: boolean;
+}
+
+export interface ReplicationPullResponse extends ApiResult {
+  role?: "primary" | "replica" | "disabled";
+  appliedFrames?: number;
+  replica?: ReplicaReplicationStatus | null;
+}
+
+export interface ReplicationReseedResponse extends ApiResult {
+  role?: "primary" | "replica" | "disabled";
+  replica?: ReplicaReplicationStatus | null;
+}
+
+export interface ReplicationPromoteResponse extends ApiResult {
+  role?: "primary" | "replica" | "disabled";
+  epoch?: number | null;
+  primary?: PrimaryReplicationStatus | null;
+}
+
 // ============================================================================
 // UI State Types
 // ============================================================================

@@ -66,6 +66,7 @@ export type {
   InferNode,
   InferEdgeProps,
 } from './schema'
+export type { RuntimeProfile } from '../index'
 
 // =============================================================================
 // Native Bindings
@@ -126,6 +127,7 @@ type NodeObject = NodeRef & Record<string, unknown>
 type NodeIdLike = number | { id: number }
 type NodePropsSelection = Array<string>
 type SyncMode = JsSyncMode
+type ReplicationRole = 'disabled' | 'primary' | 'replica'
 type InsertExecutorSingle<N extends NodeSpec> = Omit<KiteInsertExecutorSingle, 'returning'> & {
   returning(): InferNode<N>
 }
@@ -1026,11 +1028,25 @@ export {
 // Re-export utility functions
 export {
   openDatabase,
+  recommendedSafeProfile,
+  recommendedBalancedProfile,
+  recommendedReopenHeavyProfile,
   createBackup,
   restoreBackup,
   backupInfo,
   createOfflineBackup,
   collectMetrics,
+  collectReplicationLogTransportJson,
+  collectReplicationMetricsOtelJson,
+  collectReplicationMetricsOtelProtobuf,
+  collectReplicationMetricsPrometheus,
+  collectReplicationSnapshotTransportJson,
+  pushReplicationMetricsOtelJson,
+  pushReplicationMetricsOtelJsonWithOptions,
+  pushReplicationMetricsOtelGrpc,
+  pushReplicationMetricsOtelGrpcWithOptions,
+  pushReplicationMetricsOtelProtobuf,
+  pushReplicationMetricsOtelProtobufWithOptions,
   healthCheck,
   createVectorIndex,
   bruteForceSearch,
@@ -1038,6 +1054,34 @@ export {
   traversalStep,
   version,
 } from '../index'
+
+export {
+  authorizeReplicationAdminRequest,
+  createForwardedTlsMtlsMatcher,
+  createReplicationAdminAuthorizer,
+  createNodeTlsMtlsMatcher,
+  createReplicationTransportAdapter,
+  isForwardedTlsClientAuthorized,
+  isReplicationAdminAuthorized,
+  isNodeTlsClientAuthorized,
+  readReplicationLogTransport,
+  readReplicationSnapshotTransport,
+} from './replication_transport'
+
+export type {
+  ReplicationAdminAuthConfig,
+  ReplicationAdminAuthMode,
+  ReplicationAdminAuthRequest,
+  ReplicationForwardedMtlsMatcherOptions,
+  ReplicationNodeMtlsMatcherOptions,
+  ReplicationNodeTlsLikeRequest,
+  ReplicationNodeTlsLikeSocket,
+  ReplicationLogTransportFrame,
+  ReplicationLogTransportOptions,
+  ReplicationLogTransportPage,
+  ReplicationSnapshotTransport,
+  ReplicationTransportAdapter,
+} from './replication_transport'
 
 // Re-export common types with clean names
 export type {
@@ -1072,6 +1116,8 @@ export type {
   MvccStats,
   HealthCheckResult,
   HealthCheckEntry,
+  OtlpHttpExportResult,
+  PushReplicationMetricsOtelOptions,
   // Traversal
   JsTraverseOptions as TraverseOptions,
   JsTraversalStep as TraversalStep,
@@ -1119,6 +1165,14 @@ export interface KiteOptions {
   readOnly?: boolean
   /** Create database if it doesn't exist (default: true) */
   createIfMissing?: boolean
+  /** Enable MVCC (snapshot isolation + conflict detection) */
+  mvcc?: boolean
+  /** MVCC GC interval in ms */
+  mvccGcIntervalMs?: number
+  /** MVCC retention in ms */
+  mvccRetentionMs?: number
+  /** MVCC max version chain depth */
+  mvccMaxChainDepth?: number
   /** Sync mode for durability (default: "Full") */
   syncMode?: SyncMode
   /** Enable group commit (coalesce WAL flushes across commits) */
@@ -1129,6 +1183,20 @@ export interface KiteOptions {
   walSizeMb?: number
   /** WAL usage threshold (0.0-1.0) to trigger auto-checkpoint */
   checkpointThreshold?: number
+  /** Replication role */
+  replicationRole?: ReplicationRole
+  /** Replication sidecar path override */
+  replicationSidecarPath?: string
+  /** Source primary db path (replica role only) */
+  replicationSourceDbPath?: string
+  /** Source primary sidecar path override (replica role only) */
+  replicationSourceSidecarPath?: string
+  /** Segment rotation threshold in bytes (primary role only) */
+  replicationSegmentMaxBytes?: number
+  /** Minimum retained entries window (primary role only) */
+  replicationRetentionMinEntries?: number
+  /** Minimum retained segment age in milliseconds (primary role only) */
+  replicationRetentionMinMs?: number
 }
 
 // =============================================================================
@@ -1176,18 +1244,58 @@ function edgeSpecToNative(spec: EdgeSpec): JsEdgeSpec {
   }
 }
 
+function replicationRoleToNative(role: ReplicationRole): 'Disabled' | 'Primary' | 'Replica' {
+  switch (role) {
+    case 'disabled':
+      return 'Disabled'
+    case 'primary':
+      return 'Primary'
+    case 'replica':
+      return 'Replica'
+  }
+}
+
 function optionsToNative(options: KiteOptions): JsKiteOptions {
-  return {
+  const nativeOptions: JsKiteOptions = {
     nodes: options.nodes.map(nodeSpecToNative),
     edges: options.edges.map(edgeSpecToNative),
     readOnly: options.readOnly,
     createIfMissing: options.createIfMissing,
+    mvcc: options.mvcc,
+    mvccGcIntervalMs: options.mvccGcIntervalMs,
+    mvccRetentionMs: options.mvccRetentionMs,
+    mvccMaxChainDepth: options.mvccMaxChainDepth,
     syncMode: options.syncMode,
     groupCommitEnabled: options.groupCommitEnabled,
     groupCommitWindowMs: options.groupCommitWindowMs,
     walSizeMb: options.walSizeMb,
     checkpointThreshold: options.checkpointThreshold,
   }
+
+  const mutable = nativeOptions as unknown as Record<string, unknown>
+  if (options.replicationRole) {
+    mutable.replicationRole = replicationRoleToNative(options.replicationRole)
+  }
+  if (options.replicationSidecarPath) {
+    mutable.replicationSidecarPath = options.replicationSidecarPath
+  }
+  if (options.replicationSourceDbPath) {
+    mutable.replicationSourceDbPath = options.replicationSourceDbPath
+  }
+  if (options.replicationSourceSidecarPath) {
+    mutable.replicationSourceSidecarPath = options.replicationSourceSidecarPath
+  }
+  if (options.replicationSegmentMaxBytes !== undefined) {
+    mutable.replicationSegmentMaxBytes = options.replicationSegmentMaxBytes
+  }
+  if (options.replicationRetentionMinEntries !== undefined) {
+    mutable.replicationRetentionMinEntries = options.replicationRetentionMinEntries
+  }
+  if (options.replicationRetentionMinMs !== undefined) {
+    mutable.replicationRetentionMinMs = options.replicationRetentionMinMs
+  }
+
+  return nativeOptions
 }
 
 // =============================================================================

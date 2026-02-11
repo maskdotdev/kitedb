@@ -3,8 +3,10 @@
 //! Handles opening, creating, and closing single-file databases.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+#[cfg(feature = "bench-profile")]
+use std::time::Instant;
 
 use parking_lot::{Mutex, RwLock};
 
@@ -15,6 +17,9 @@ use crate::core::snapshot::reader::SnapshotData;
 use crate::core::wal::buffer::WalBuffer;
 use crate::error::{KiteError, Result};
 use crate::mvcc::{GcConfig, MvccManager};
+use crate::replication::primary::PrimaryReplication;
+use crate::replication::replica::ReplicaReplication;
+use crate::replication::types::ReplicationRole;
 use crate::types::*;
 use crate::util::compression::CompressionOptions;
 use crate::util::mmap::map_file;
@@ -22,7 +27,7 @@ use crate::vector::store::{create_vector_store, vector_store_delete, vector_stor
 use crate::vector::types::VectorStoreConfig;
 
 use super::recovery::{committed_transactions, replay_wal_record, scan_wal_records};
-use super::vector::vector_stores_from_snapshot;
+use super::vector::{materialize_vector_store_from_lazy_entries, vector_store_state_from_snapshot};
 use super::{CheckpointStatus, SingleFileDB};
 
 // ============================================================================
@@ -97,6 +102,22 @@ pub struct SingleFileOpenOptions {
   pub group_commit_window_ms: u64,
   /// Snapshot parse behavior (default: Strict)
   pub snapshot_parse_mode: SnapshotParseMode,
+  /// Replication role (default: Disabled)
+  pub replication_role: ReplicationRole,
+  /// Optional replication sidecar path (defaults to derived from DB path)
+  pub replication_sidecar_path: Option<PathBuf>,
+  /// Source primary db path (replica role only)
+  pub replication_source_db_path: Option<PathBuf>,
+  /// Source primary sidecar path override (replica role only)
+  pub replication_source_sidecar_path: Option<PathBuf>,
+  /// Fault injection for tests: fail append once `n` successful appends reached
+  pub replication_fail_after_append_for_testing: Option<u64>,
+  /// Rotate replication segments when active segment reaches/exceeds this size
+  pub replication_segment_max_bytes: Option<u64>,
+  /// Retain at least this many entries when pruning old segments
+  pub replication_retention_min_entries: Option<u64>,
+  /// Retain segments newer than this many milliseconds (primary role only)
+  pub replication_retention_min_ms: Option<u64>,
 }
 
 impl Default for SingleFileOpenOptions {
@@ -122,6 +143,14 @@ impl Default for SingleFileOpenOptions {
       group_commit_enabled: false,
       group_commit_window_ms: 2,
       snapshot_parse_mode: SnapshotParseMode::Strict,
+      replication_role: ReplicationRole::Disabled,
+      replication_sidecar_path: None,
+      replication_source_db_path: None,
+      replication_source_sidecar_path: None,
+      replication_fail_after_append_for_testing: None,
+      replication_segment_max_bytes: None,
+      replication_retention_min_entries: None,
+      replication_retention_min_ms: None,
     }
   }
 }
@@ -245,6 +274,73 @@ impl SingleFileOpenOptions {
     self.snapshot_parse_mode = mode;
     self
   }
+
+  /// Set replication role (disabled | primary | replica)
+  pub fn replication_role(mut self, role: ReplicationRole) -> Self {
+    self.replication_role = role;
+    self
+  }
+
+  /// Set replication sidecar path (for primary/replica modes)
+  pub fn replication_sidecar_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    self.replication_sidecar_path = Some(path.as_ref().to_path_buf());
+    self
+  }
+
+  /// Set replication source db path (replica role only)
+  pub fn replication_source_db_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    self.replication_source_db_path = Some(path.as_ref().to_path_buf());
+    self
+  }
+
+  /// Set replication source sidecar path (replica role only)
+  pub fn replication_source_sidecar_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    self.replication_source_sidecar_path = Some(path.as_ref().to_path_buf());
+    self
+  }
+
+  /// Test-only fault injection for append failures.
+  pub fn replication_fail_after_append_for_testing(mut self, value: u64) -> Self {
+    self.replication_fail_after_append_for_testing = Some(value);
+    self
+  }
+
+  /// Set replication segment rotation threshold in bytes (primary role only)
+  pub fn replication_segment_max_bytes(mut self, value: u64) -> Self {
+    self.replication_segment_max_bytes = Some(value);
+    self
+  }
+
+  /// Set retention minimum entries to keep when pruning (primary role only)
+  pub fn replication_retention_min_entries(mut self, value: u64) -> Self {
+    self.replication_retention_min_entries = Some(value);
+    self
+  }
+
+  /// Set retention minimum time window in milliseconds (primary role only)
+  pub fn replication_retention_min_ms(mut self, value: u64) -> Self {
+    self.replication_retention_min_ms = Some(value);
+    self
+  }
+}
+
+/// Options for closing a single-file database.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SingleFileCloseOptions {
+  /// If set, run a blocking checkpoint before close when WAL usage >= threshold.
+  /// Threshold is clamped to [0.0, 1.0].
+  pub checkpoint_if_wal_usage_at_least: Option<f64>,
+}
+
+impl SingleFileCloseOptions {
+  pub fn new() -> Self {
+    Self::default()
+  }
+
+  pub fn checkpoint_if_wal_usage_at_least(mut self, threshold: f64) -> Self {
+    self.checkpoint_if_wal_usage_at_least = Some(threshold);
+    self
+  }
 }
 
 struct SnapshotLoadState<'a> {
@@ -261,6 +357,32 @@ struct SnapshotLoadState<'a> {
   next_label_id: &'a mut LabelId,
   next_etype_id: &'a mut ETypeId,
   next_propkey_id: &'a mut PropKeyId,
+  #[cfg(feature = "bench-profile")]
+  profile: &'a mut OpenProfileCounters,
+  #[cfg(feature = "bench-profile")]
+  profile_enabled: bool,
+}
+
+#[cfg(feature = "bench-profile")]
+#[derive(Debug, Default)]
+struct OpenProfileCounters {
+  snapshot_parse_ns: u64,
+  snapshot_crc_ns: u64,
+  snapshot_decode_ns: u64,
+  schema_hydrate_ns: u64,
+  wal_scan_ns: u64,
+  wal_replay_ns: u64,
+  vector_init_ns: u64,
+}
+
+#[cfg(feature = "bench-profile")]
+fn elapsed_ns(started: Instant) -> u64 {
+  started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64
+}
+
+#[cfg(feature = "bench-profile")]
+fn open_profile_enabled() -> bool {
+  std::env::var_os("KITEDB_BENCH_PROFILE_OPEN").is_some()
 }
 
 fn load_snapshot_and_schema(state: &mut SnapshotLoadState<'_>) -> Result<Option<SnapshotData>> {
@@ -278,17 +400,53 @@ fn load_snapshot_and_schema(state: &mut SnapshotLoadState<'_>) -> Result<Option<
     parse_options.skip_crc_validation = true;
   }
 
-  let parse_result = SnapshotData::parse_at_offset(
-    std::sync::Arc::new({
-      // Safety handled inside map_file (native mmap) or in-memory read (wasm).
-      map_file(state.pager.file())?
-    }),
-    snapshot_offset,
-    &parse_options,
-  );
+  let mmap = std::sync::Arc::new({
+    // Safety handled inside map_file (native mmap) or in-memory read (wasm).
+    map_file(state.pager.file())?
+  });
+
+  #[cfg(feature = "bench-profile")]
+  let parse_started = Instant::now();
+  let parse_result = SnapshotData::parse_at_offset(mmap.clone(), snapshot_offset, &parse_options);
+  #[cfg(feature = "bench-profile")]
+  {
+    let parse_total_ns = elapsed_ns(parse_started);
+    state.profile.snapshot_parse_ns = state
+      .profile
+      .snapshot_parse_ns
+      .saturating_add(parse_total_ns);
+
+    // Deep split for profiling runs: decode-only + inferred CRC delta.
+    if state.profile_enabled && !parse_options.skip_crc_validation {
+      let mut decode_options = parse_options.clone();
+      decode_options.skip_crc_validation = true;
+      let decode_started = Instant::now();
+      if SnapshotData::parse_at_offset(mmap, snapshot_offset, &decode_options).is_ok() {
+        let decode_ns = elapsed_ns(decode_started);
+        state.profile.snapshot_decode_ns =
+          state.profile.snapshot_decode_ns.saturating_add(decode_ns);
+        state.profile.snapshot_crc_ns = state
+          .profile
+          .snapshot_crc_ns
+          .saturating_add(parse_total_ns.saturating_sub(decode_ns));
+      } else {
+        state.profile.snapshot_decode_ns = state
+          .profile
+          .snapshot_decode_ns
+          .saturating_add(parse_total_ns);
+      }
+    } else {
+      state.profile.snapshot_decode_ns = state
+        .profile
+        .snapshot_decode_ns
+        .saturating_add(parse_total_ns);
+    }
+  }
 
   match parse_result {
     Ok(snap) => {
+      #[cfg(feature = "bench-profile")]
+      let schema_started = Instant::now();
       // Load schema from snapshot
       for i in 1..=snap.header.num_labels as u32 {
         if let Some(name) = snap.label_name(i) {
@@ -314,6 +472,13 @@ fn load_snapshot_and_schema(state: &mut SnapshotLoadState<'_>) -> Result<Option<
       *state.next_label_id = snap.header.num_labels as u32 + 1;
       *state.next_etype_id = snap.header.num_etypes as u32 + 1;
       *state.next_propkey_id = snap.header.num_propkeys as u32 + 1;
+      #[cfg(feature = "bench-profile")]
+      {
+        state.profile.schema_hydrate_ns = state
+          .profile
+          .schema_hydrate_ns
+          .saturating_add(elapsed_ns(schema_started));
+      }
 
       Ok(Some(snap))
     }
@@ -561,6 +726,12 @@ pub fn open_single_file<P: AsRef<Path>>(
   options: SingleFileOpenOptions,
 ) -> Result<SingleFileDB> {
   let path = path.as_ref();
+  #[cfg(feature = "bench-profile")]
+  let open_started = Instant::now();
+  #[cfg(feature = "bench-profile")]
+  let mut open_profile = OpenProfileCounters::default();
+  #[cfg(feature = "bench-profile")]
+  let profile_enabled = open_profile_enabled();
 
   // Validate page size
   if !is_valid_page_size(options.page_size) {
@@ -686,17 +857,31 @@ pub fn open_single_file<P: AsRef<Path>>(
     next_label_id: &mut next_label_id,
     next_etype_id: &mut next_etype_id,
     next_propkey_id: &mut next_propkey_id,
+    #[cfg(feature = "bench-profile")]
+    profile: &mut open_profile,
+    #[cfg(feature = "bench-profile")]
+    profile_enabled,
   };
   let snapshot = load_snapshot_and_schema(&mut snapshot_state)?;
 
   // Replay WAL for recovery (if not a new database)
   let mut _wal_records_storage: Option<Vec<crate::core::wal::record::ParsedWalRecord>>;
   if !is_new && header.wal_head > 0 {
+    #[cfg(feature = "bench-profile")]
+    let wal_scan_started = Instant::now();
     _wal_records_storage = Some(scan_wal_records(&mut pager, &header)?);
+    #[cfg(feature = "bench-profile")]
+    {
+      open_profile.wal_scan_ns = open_profile
+        .wal_scan_ns
+        .saturating_add(elapsed_ns(wal_scan_started));
+    }
     if let Some(ref wal_records) = _wal_records_storage {
       committed_in_order = committed_transactions(wal_records);
 
       // Replay committed transactions
+      #[cfg(feature = "bench-profile")]
+      let wal_replay_started = Instant::now();
       for (_txid, records) in &committed_in_order {
         for record in records {
           replay_wal_record(
@@ -717,20 +902,47 @@ pub fn open_single_file<P: AsRef<Path>>(
         }
         next_commit_ts += 1;
       }
+      #[cfg(feature = "bench-profile")]
+      {
+        open_profile.wal_replay_ns = open_profile
+          .wal_replay_ns
+          .saturating_add(elapsed_ns(wal_replay_started));
+      }
     }
   } else {
     _wal_records_storage = None;
   }
 
-  // Load vector stores from snapshot (if present)
-  let mut vector_stores = if let Some(ref snapshot) = snapshot {
-    vector_stores_from_snapshot(snapshot)?
+  // Load vector-store state from snapshot (if present).
+  // Newer snapshots keep stores lazy until first access.
+  #[cfg(feature = "bench-profile")]
+  let vector_init_started = Instant::now();
+  let (mut vector_stores, mut vector_store_lazy_entries) = if let Some(ref snapshot) = snapshot {
+    if snapshot
+      .header
+      .flags
+      .contains(SnapshotFlags::HAS_VECTOR_STORES)
+      || snapshot.header.flags.contains(SnapshotFlags::HAS_VECTORS)
+    {
+      vector_store_state_from_snapshot(snapshot)?
+    } else {
+      (HashMap::new(), HashMap::new())
+    }
   } else {
-    HashMap::new()
+    (HashMap::new(), HashMap::new())
   };
 
   // Apply pending vector operations from WAL replay
   for ((node_id, prop_key_id), operation) in delta.pending_vectors.drain() {
+    if let Some(ref snapshot) = snapshot {
+      materialize_vector_store_from_lazy_entries(
+        snapshot,
+        &mut vector_stores,
+        &mut vector_store_lazy_entries,
+        prop_key_id,
+      )?;
+    }
+
     match operation {
       Some(vector) => {
         // Get or create vector store
@@ -752,6 +964,12 @@ pub fn open_single_file<P: AsRef<Path>>(
       }
     }
   }
+  #[cfg(feature = "bench-profile")]
+  {
+    open_profile.vector_init_ns = open_profile
+      .vector_init_ns
+      .saturating_add(elapsed_ns(vector_init_started));
+  }
 
   // Initialize cache if enabled
   let cache = options.cache.clone().map(CacheManager::new);
@@ -764,6 +982,56 @@ pub fn open_single_file<P: AsRef<Path>>(
     &committed_in_order,
     &delta,
   );
+
+  let (primary_replication, replica_replication) = match options.replication_role {
+    ReplicationRole::Disabled => (None, None),
+    ReplicationRole::Primary => (
+      Some(PrimaryReplication::open(
+        path,
+        options.replication_sidecar_path.clone(),
+        options.replication_segment_max_bytes,
+        options.replication_retention_min_entries,
+        options.replication_retention_min_ms,
+        options.sync_mode,
+        options.replication_fail_after_append_for_testing,
+      )?),
+      None,
+    ),
+    ReplicationRole::Replica => (
+      None,
+      Some(ReplicaReplication::open(
+        path,
+        options.replication_sidecar_path.clone(),
+        options.replication_source_db_path.clone(),
+        options.replication_source_sidecar_path.clone(),
+      )?),
+    ),
+  };
+
+  #[cfg(feature = "bench-profile")]
+  {
+    if profile_enabled {
+      let total_ns = elapsed_ns(open_started);
+      let wal_records = _wal_records_storage.as_ref().map(|r| r.len()).unwrap_or(0);
+      eprintln!(
+        "[bench-profile][open] path={} total_ns={} snapshot_parse_ns={} snapshot_crc_ns={} snapshot_decode_ns={} schema_hydrate_ns={} wal_scan_ns={} wal_replay_ns={} vector_init_ns={} snapshot_loaded={} wal_records={} wal_txs={} vector_stores={} vector_lazy_entries={}",
+        path.display(),
+        total_ns,
+        open_profile.snapshot_parse_ns,
+        open_profile.snapshot_crc_ns,
+        open_profile.snapshot_decode_ns,
+        open_profile.schema_hydrate_ns,
+        open_profile.wal_scan_ns,
+        open_profile.wal_replay_ns,
+        open_profile.vector_init_ns,
+        usize::from(snapshot.is_some()),
+        wal_records,
+        committed_in_order.len(),
+        vector_stores.len(),
+        vector_store_lazy_entries.len(),
+      );
+    }
+  }
 
   Ok(SingleFileDB {
     path: path.to_path_buf(),
@@ -795,11 +1063,14 @@ pub fn open_single_file<P: AsRef<Path>>(
     background_checkpoint: options.background_checkpoint,
     checkpoint_status: Mutex::new(CheckpointStatus::Idle),
     vector_stores: RwLock::new(vector_stores),
+    vector_store_lazy_entries: RwLock::new(vector_store_lazy_entries),
     cache: RwLock::new(cache),
     checkpoint_compression: options.checkpoint_compression.clone(),
     sync_mode: options.sync_mode,
     group_commit_enabled: options.group_commit_enabled,
     group_commit_window_ms: options.group_commit_window_ms,
+    primary_replication,
+    replica_replication,
     #[cfg(feature = "bench-profile")]
     commit_lock_wait_ns: AtomicU64::new(0),
     #[cfg(feature = "bench-profile")]
@@ -807,8 +1078,24 @@ pub fn open_single_file<P: AsRef<Path>>(
   })
 }
 
-/// Close a single-file database
-pub fn close_single_file(db: SingleFileDB) -> Result<()> {
+/// Close a single-file database using custom close options.
+pub fn close_single_file_with_options(
+  db: SingleFileDB,
+  options: SingleFileCloseOptions,
+) -> Result<()> {
+  if let Some(threshold_raw) = options.checkpoint_if_wal_usage_at_least {
+    if !threshold_raw.is_finite() {
+      return Err(KiteError::Internal(format!(
+        "invalid close checkpoint threshold: {threshold_raw}"
+      )));
+    }
+
+    let threshold = threshold_raw.clamp(0.0, 1.0);
+    if !db.read_only && db.should_checkpoint(threshold) {
+      db.checkpoint()?;
+    }
+  }
+
   if let Some(ref mvcc) = db.mvcc {
     mvcc.stop();
   }
@@ -838,11 +1125,18 @@ pub fn close_single_file(db: SingleFileDB) -> Result<()> {
   Ok(())
 }
 
+/// Close a single-file database with default close behavior.
+pub fn close_single_file(db: SingleFileDB) -> Result<()> {
+  close_single_file_with_options(db, SingleFileCloseOptions::default())
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::core::single_file::close_single_file;
   use crate::core::single_file::recovery::read_wal_area;
+  use crate::core::single_file::{
+    close_single_file, close_single_file_with_options, SingleFileCloseOptions,
+  };
   use crate::core::wal::record::parse_wal_record;
   use crate::util::binary::{align_up, read_u32};
   use tempfile::tempdir;
@@ -1192,5 +1486,69 @@ mod tests {
     assert!(db.node_by_key("n1").is_some());
     assert!(db.node_by_key("n2").is_some());
     close_single_file(db).expect("expected value");
+  }
+
+  #[test]
+  fn test_close_with_checkpoint_if_wal_over_clears_wal() {
+    let temp_dir = tempdir().expect("expected value");
+    let db_path = temp_dir.path().join("close-with-checkpoint.kitedb");
+
+    let db = open_single_file(
+      &db_path,
+      SingleFileOpenOptions::new().auto_checkpoint(false),
+    )
+    .expect("expected value");
+
+    db.begin(false).expect("expected value");
+    let _ = db.create_node(Some("n1")).expect("expected value");
+    db.commit().expect("expected value");
+    assert!(db.should_checkpoint(0.0));
+
+    close_single_file_with_options(
+      db,
+      SingleFileCloseOptions::new().checkpoint_if_wal_usage_at_least(0.0),
+    )
+    .expect("expected value");
+
+    let reopened = open_single_file(
+      &db_path,
+      SingleFileOpenOptions::new().auto_checkpoint(false),
+    )
+    .expect("expected value");
+    let header = reopened.header.read().clone();
+    assert_eq!(header.wal_head, 0);
+    assert_eq!(header.wal_tail, 0);
+    close_single_file(reopened).expect("expected value");
+  }
+
+  #[test]
+  fn test_close_with_high_threshold_keeps_wal() {
+    let temp_dir = tempdir().expect("expected value");
+    let db_path = temp_dir.path().join("close-without-checkpoint.kitedb");
+
+    let db = open_single_file(
+      &db_path,
+      SingleFileOpenOptions::new().auto_checkpoint(false),
+    )
+    .expect("expected value");
+
+    db.begin(false).expect("expected value");
+    let _ = db.create_node(Some("n1")).expect("expected value");
+    db.commit().expect("expected value");
+
+    close_single_file_with_options(
+      db,
+      SingleFileCloseOptions::new().checkpoint_if_wal_usage_at_least(1.0),
+    )
+    .expect("expected value");
+
+    let reopened = open_single_file(
+      &db_path,
+      SingleFileOpenOptions::new().auto_checkpoint(false),
+    )
+    .expect("expected value");
+    let header = reopened.header.read().clone();
+    assert!(header.wal_head > 0);
+    close_single_file(reopened).expect("expected value");
   }
 }

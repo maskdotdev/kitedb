@@ -7,6 +7,7 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
 import { apiRoutes } from "./api/routes.ts";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
@@ -23,6 +24,83 @@ const getContentType = (path: string): string => {
   if (path.endsWith(".svg")) return "image/svg+xml";
   return "application/octet-stream";
 };
+
+type TlsFile = ReturnType<typeof Bun.file>;
+
+interface PlaygroundTlsConfig {
+  enabled: boolean;
+  protocol: "http" | "https";
+  tls?: {
+    cert: TlsFile;
+    key: TlsFile;
+    ca?: TlsFile;
+    requestCert: boolean;
+    rejectUnauthorized: boolean;
+  };
+}
+
+function parseBooleanEnv(name: string, raw: string | undefined, defaultValue: boolean): boolean {
+  if (raw === undefined) {
+    return defaultValue;
+  }
+
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "") {
+    return defaultValue;
+  }
+  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+    return true;
+  }
+  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+    return false;
+  }
+  throw new Error(`Invalid ${name} (expected boolean)`);
+}
+
+export function resolvePlaygroundTlsConfig(env: NodeJS.ProcessEnv = process.env): PlaygroundTlsConfig {
+  const certFile = env.PLAYGROUND_TLS_CERT_FILE?.trim();
+  const keyFile = env.PLAYGROUND_TLS_KEY_FILE?.trim();
+  const caFile = env.PLAYGROUND_TLS_CA_FILE?.trim();
+
+  const hasCert = Boolean(certFile && certFile.length > 0);
+  const hasKey = Boolean(keyFile && keyFile.length > 0);
+  if (hasCert !== hasKey) {
+    throw new Error("PLAYGROUND_TLS_CERT_FILE and PLAYGROUND_TLS_KEY_FILE must both be set for TLS");
+  }
+
+  if (!hasCert || !hasKey) {
+    return { enabled: false, protocol: "http" };
+  }
+
+  if (!existsSync(certFile!)) {
+    throw new Error(`PLAYGROUND_TLS_CERT_FILE does not exist: ${certFile}`);
+  }
+  if (!existsSync(keyFile!)) {
+    throw new Error(`PLAYGROUND_TLS_KEY_FILE does not exist: ${keyFile}`);
+  }
+  if (caFile && caFile.length > 0 && !existsSync(caFile)) {
+    throw new Error(`PLAYGROUND_TLS_CA_FILE does not exist: ${caFile}`);
+  }
+
+  const requestCert = parseBooleanEnv("PLAYGROUND_TLS_REQUEST_CERT", env.PLAYGROUND_TLS_REQUEST_CERT, false);
+  const rejectUnauthorized = parseBooleanEnv(
+    "PLAYGROUND_TLS_REJECT_UNAUTHORIZED",
+    env.PLAYGROUND_TLS_REJECT_UNAUTHORIZED,
+    true,
+  );
+
+  return {
+    enabled: true,
+    protocol: "https",
+    tls: {
+      cert: Bun.file(certFile!),
+      key: Bun.file(keyFile!),
+      ...(caFile && caFile.length > 0 ? { ca: Bun.file(caFile) } : {}),
+      requestCert,
+      rejectUnauthorized,
+    },
+  };
+}
 
 export const app = new Elysia()
   // Enable CORS for development
@@ -59,12 +137,19 @@ let server: ReturnType<typeof app.listen> | null = null;
 
 if (import.meta.main) {
   try {
+    const tlsConfig = resolvePlaygroundTlsConfig();
     server = app.listen({
       port: PORT,
       hostname: "0.0.0.0",
+      ...(tlsConfig.tls ? { tls: tlsConfig.tls } : {}),
     });
     const actualPort = server.server?.port ?? PORT;
-    console.log(`RayDB Playground running at http://localhost:${actualPort}`);
+    console.log(`RayDB Playground running at ${tlsConfig.protocol}://localhost:${actualPort}`);
+    if (tlsConfig.enabled) {
+      console.log(
+        `TLS enabled (requestCert=${tlsConfig.tls?.requestCert ? "true" : "false"}, rejectUnauthorized=${tlsConfig.tls?.rejectUnauthorized ? "true" : "false"})`,
+      );
+    }
   } catch (err) {
     console.error("Failed to start server", err);
     process.exit(1);

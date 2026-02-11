@@ -1,0 +1,44 @@
+==================================================================
+Index Pipeline Hypothesis Benchmark
+==================================================================
+Mode: Both
+Changes: 200
+Working set: 200
+Vector dims: 128
+Parse latency: tree-sitter=2ms scip=6ms
+Embed latency: 200ms per batch
+Embed batching: size=32 flush=20ms inflight=4
+Vector apply batch size: 64
+WAL size: 1073741824 bytes
+Sync mode: Normal
+Group commit: false (window 2ms)
+Auto-checkpoint: false
+Seed: 42
+==================================================================
+
+--- sequential ---
+Changes: 200
+Vectors applied: 200
+Hot path elapsed: 42.477s
+Total elapsed: 42.679s
+Hot path rate: 4.71/s
+End-to-end rate: 4.69/s
+Hot path latency: p50=10.04ms p95=10.22ms p99=10.98ms
+Vector freshness: p50=204.09ms p95=205.11ms p99=206.13ms
+
+--- parallel ---
+Changes: 200
+Vectors applied: 189
+Hot path elapsed: 1.448s
+Total elapsed: 1.687s
+Hot path rate: 138.14/s
+End-to-end rate: 118.56/s
+Hot path latency: p50=7.54ms p95=7.60ms p99=7.65ms
+Vector freshness: p50=520.38ms p95=775.61ms p99=845.95ms
+Queue: enqueued=200 replaced=11 (5.50%) max_depth=23 avg_depth=8.58
+
+=== Comparison (sequential vs parallel) ===
+Hot path elapsed speedup: 29.34x
+End-to-end elapsed speedup: 25.30x
+Hot p95: 10.22ms -> 7.60ms
+Freshness p95: 205.11ms -> 775.61ms

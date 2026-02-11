@@ -17,6 +17,8 @@
 //!   --no-auto-checkpoint      Disable auto-checkpoint
 //!   --vector-dims N            Vector dimensions (default: 128)
 //!   --vector-count N           Number of vectors to set (default: 1000)
+//!   --replication-primary      Enable primary replication sidecar on open options
+//!   --replication-segment-max-bytes BYTES  Primary segment rotation threshold when replication is enabled
 //!   --keep-db                 Keep the database file after benchmark
 
 use rand::{rngs::StdRng, Rng, SeedableRng};
@@ -27,6 +29,7 @@ use tempfile::tempdir;
 use kitedb::core::single_file::{
   close_single_file, open_single_file, SingleFileOpenOptions, SyncMode,
 };
+use kitedb::replication::types::ReplicationRole;
 use kitedb::types::PropValue;
 
 #[derive(Debug, Clone)]
@@ -44,6 +47,8 @@ struct BenchConfig {
   auto_checkpoint: bool,
   vector_dims: usize,
   vector_count: usize,
+  replication_primary: bool,
+  replication_segment_max_bytes: Option<u64>,
   keep_db: bool,
   skip_checkpoint: bool,
   reopen_readonly: bool,
@@ -65,6 +70,8 @@ impl Default for BenchConfig {
       auto_checkpoint: true,
       vector_dims: 128,
       vector_count: 1000,
+      replication_primary: false,
+      replication_segment_max_bytes: None,
       keep_db: false,
       skip_checkpoint: false,
       reopen_readonly: false,
@@ -152,6 +159,16 @@ fn parse_args() -> BenchConfig {
       "--vector-count" => {
         if let Some(value) = args.get(i + 1) {
           config.vector_count = value.parse().unwrap_or(config.vector_count);
+          i += 1;
+        }
+      }
+      "--replication-primary" => {
+        config.replication_primary = true;
+      }
+      "--replication-segment-max-bytes" => {
+        if let Some(value) = args.get(i + 1) {
+          config.replication_segment_max_bytes =
+            value.parse().ok().filter(|parsed: &u64| *parsed > 0);
           i += 1;
         }
       }
@@ -648,6 +665,13 @@ fn main() {
   println!("Checkpoint threshold: {}", config.checkpoint_threshold);
   println!("Vector dims: {}", format_number(config.vector_dims));
   println!("Vector count: {}", format_number(config.vector_count));
+  println!("Replication primary: {}", config.replication_primary);
+  if let Some(bytes) = config.replication_segment_max_bytes {
+    println!(
+      "Replication segment max bytes: {}",
+      format_number(bytes as usize)
+    );
+  }
   println!("Skip checkpoint: {}", config.skip_checkpoint);
   println!("Reopen read-only: {}", config.reopen_readonly);
   println!("{}", "=".repeat(120));
@@ -665,6 +689,12 @@ fn main() {
     options = options
       .group_commit_enabled(true)
       .group_commit_window_ms(config.group_commit_window_ms);
+  }
+  if config.replication_primary {
+    options = options.replication_role(ReplicationRole::Primary);
+    if let Some(max_bytes) = config.replication_segment_max_bytes {
+      options = options.replication_segment_max_bytes(max_bytes);
+    }
   }
 
   let mut db = open_single_file(&db_path, options).expect("failed to open single-file db");

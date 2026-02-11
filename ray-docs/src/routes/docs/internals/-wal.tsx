@@ -524,19 +524,19 @@ export function WALPage() {
 
 			<ul>
 				<li>
-					<code>sync_mode = Normal</code>
+					<code>syncMode = Normal</code>
 				</li>
 				<li>
-					<code>group_commit_enabled = true</code>
+					<code>groupCommitEnabled = true</code>
 				</li>
 				<li>
-					<code>group_commit_window_ms = 2</code>
+					<code>groupCommitWindowMs = 2</code>
 				</li>
 				<li>
-					<code>begin_bulk()</code> + batch APIs for ingest (MVCC disabled)
+					<code>beginBulk()</code> + batch APIs for ingest (MVCC disabled)
 				</li>
 				<li>
-					Optional: increase <code>wal_size</code> (e.g., 64MB) for heavy ingest to
+					Optional: increase <code>walSizeMb</code> (e.g., 64MB) for heavy ingest to
 					reduce checkpoints
 				</li>
 			</ul>
@@ -564,7 +564,7 @@ export function WALPage() {
 				use <code>resizeWal</code> (offline) to grow it, or rebuild into a new
 				file. To prevent single transactions from overfilling the active WAL
 				region, split work into smaller commits (see <code>bulkWrite</code> or
-				chunked <code>begin_bulk()</code> sessions) and consider disabling
+				chunked <code>beginBulk()</code> sessions) and consider disabling
 				background checkpoints during ingest.
 			</p>
 

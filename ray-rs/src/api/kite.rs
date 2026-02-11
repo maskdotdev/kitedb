@@ -12,10 +12,12 @@
 //! Ported from src/api/kite.ts
 
 use crate::core::single_file::{
-  close_single_file, is_single_file_path, open_single_file, single_file_extension, FullEdge,
-  SingleFileDB, SingleFileOpenOptions, SyncMode,
+  close_single_file, close_single_file_with_options, is_single_file_path, open_single_file,
+  single_file_extension, FullEdge, SingleFileCloseOptions, SingleFileDB, SingleFileOpenOptions,
+  SyncMode,
 };
 use crate::error::{KiteError, Result};
+use crate::replication::types::ReplicationRole;
 use crate::types::*;
 
 use std::collections::{HashMap, HashSet};
@@ -565,6 +567,22 @@ pub struct KiteOptions {
   pub wal_size: Option<usize>,
   /// WAL usage threshold (0.0-1.0) to trigger auto-checkpoint
   pub checkpoint_threshold: Option<f64>,
+  /// Close-time WAL usage threshold (0.0-1.0) to trigger blocking checkpoint
+  pub close_checkpoint_if_wal_usage_at_least: Option<f64>,
+  /// Replication role (disabled | primary | replica)
+  pub replication_role: ReplicationRole,
+  /// Optional replication sidecar path override
+  pub replication_sidecar_path: Option<PathBuf>,
+  /// Source primary db path (replica role only)
+  pub replication_source_db_path: Option<PathBuf>,
+  /// Source primary sidecar path override (replica role only)
+  pub replication_source_sidecar_path: Option<PathBuf>,
+  /// Segment rotation threshold in bytes (primary role only)
+  pub replication_segment_max_bytes: Option<u64>,
+  /// Minimum retained entries window (primary role only)
+  pub replication_retention_min_entries: Option<u64>,
+  /// Minimum retained segment age in milliseconds (primary role only)
+  pub replication_retention_min_ms: Option<u64>,
 }
 
 impl KiteOptions {
@@ -583,6 +601,14 @@ impl KiteOptions {
       mvcc_max_chain_depth: None,
       wal_size: None,
       checkpoint_threshold: None,
+      close_checkpoint_if_wal_usage_at_least: Some(0.2),
+      replication_role: ReplicationRole::Disabled,
+      replication_sidecar_path: None,
+      replication_source_db_path: None,
+      replication_source_sidecar_path: None,
+      replication_segment_max_bytes: None,
+      replication_retention_min_entries: None,
+      replication_retention_min_ms: None,
     }
   }
 
@@ -667,11 +693,150 @@ impl KiteOptions {
     self.checkpoint_threshold = Some(value.clamp(0.0, 1.0));
     self
   }
+
+  /// Set close-time checkpoint threshold (0.0-1.0).
+  ///
+  /// When set, `Kite::close()` checkpoints if WAL usage is at or above this threshold.
+  pub fn close_checkpoint_if_wal_usage_at_least(mut self, value: f64) -> Self {
+    self.close_checkpoint_if_wal_usage_at_least = Some(value.clamp(0.0, 1.0));
+    self
+  }
+
+  /// Disable close-time checkpointing in `Kite::close()`.
+  pub fn disable_close_checkpoint(mut self) -> Self {
+    self.close_checkpoint_if_wal_usage_at_least = None;
+    self
+  }
+
+  /// Set replication role (disabled | primary | replica)
+  pub fn replication_role(mut self, role: ReplicationRole) -> Self {
+    self.replication_role = role;
+    self
+  }
+
+  /// Set replication sidecar path (for primary/replica modes)
+  pub fn replication_sidecar_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    self.replication_sidecar_path = Some(path.as_ref().to_path_buf());
+    self
+  }
+
+  /// Set replication source db path (replica role only)
+  pub fn replication_source_db_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    self.replication_source_db_path = Some(path.as_ref().to_path_buf());
+    self
+  }
+
+  /// Set replication source sidecar path (replica role only)
+  pub fn replication_source_sidecar_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+    self.replication_source_sidecar_path = Some(path.as_ref().to_path_buf());
+    self
+  }
+
+  /// Set replication segment rotation threshold in bytes (primary role only)
+  pub fn replication_segment_max_bytes(mut self, value: u64) -> Self {
+    self.replication_segment_max_bytes = Some(value);
+    self
+  }
+
+  /// Set retention minimum entries to keep when pruning (primary role only)
+  pub fn replication_retention_min_entries(mut self, value: u64) -> Self {
+    self.replication_retention_min_entries = Some(value);
+    self
+  }
+
+  /// Set retention minimum segment age in milliseconds (primary role only)
+  pub fn replication_retention_min_ms(mut self, value: u64) -> Self {
+    self.replication_retention_min_ms = Some(value);
+    self
+  }
+
+  /// Recommended conservative profile (durability-first).
+  pub fn recommended_safe() -> Self {
+    Self::new()
+      .sync_mode(SyncMode::Full)
+      .group_commit_enabled(false)
+      .checkpoint_threshold(0.5)
+  }
+
+  /// Recommended balanced profile (good throughput + durability tradeoff).
+  pub fn recommended_balanced() -> Self {
+    Self::new()
+      .sync_mode(SyncMode::Normal)
+      .group_commit_enabled(true)
+      .group_commit_window_ms(2)
+      .wal_size_mb(64)
+      .checkpoint_threshold(0.5)
+  }
+
+  /// Recommended profile for reopen-heavy workloads.
+  ///
+  /// Uses a smaller WAL and lower auto-checkpoint threshold to cap replay cost on reopen.
+  pub fn recommended_reopen_heavy() -> Self {
+    Self::new()
+      .sync_mode(SyncMode::Normal)
+      .group_commit_enabled(true)
+      .group_commit_window_ms(2)
+      .wal_size_mb(16)
+      .checkpoint_threshold(0.2)
+  }
 }
 
 impl Default for KiteOptions {
   fn default() -> Self {
     Self::new()
+  }
+}
+
+/// Preset runtime profile flavors for KiteDB.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KiteRuntimeProfileKind {
+  /// Durability-first defaults.
+  Safe,
+  /// Balanced throughput defaults.
+  Balanced,
+  /// Reopen-heavy defaults (lower WAL replay risk).
+  ReopenHeavy,
+}
+
+/// Runtime profile: open options + optional close policy.
+#[derive(Debug, Clone)]
+pub struct KiteRuntimeProfile {
+  /// Open-time options profile.
+  pub options: KiteOptions,
+  /// Optional close-time checkpoint trigger threshold.
+  ///
+  /// When set, call `Kite::close_with_checkpoint_if_wal_over(threshold)`.
+  pub close_checkpoint_if_wal_usage_at_least: Option<f64>,
+}
+
+impl KiteRuntimeProfile {
+  pub fn from_kind(kind: KiteRuntimeProfileKind) -> Self {
+    match kind {
+      KiteRuntimeProfileKind::Safe => Self::safe(),
+      KiteRuntimeProfileKind::Balanced => Self::balanced(),
+      KiteRuntimeProfileKind::ReopenHeavy => Self::reopen_heavy(),
+    }
+  }
+
+  pub fn safe() -> Self {
+    Self {
+      options: KiteOptions::recommended_safe(),
+      close_checkpoint_if_wal_usage_at_least: None,
+    }
+  }
+
+  pub fn balanced() -> Self {
+    Self {
+      options: KiteOptions::recommended_balanced(),
+      close_checkpoint_if_wal_usage_at_least: None,
+    }
+  }
+
+  pub fn reopen_heavy() -> Self {
+    Self {
+      options: KiteOptions::recommended_reopen_heavy(),
+      close_checkpoint_if_wal_usage_at_least: Some(0.2),
+    }
   }
 }
 
@@ -688,6 +853,8 @@ pub fn kite<P: AsRef<Path>>(path: P, options: KiteOptions) -> Result<Kite> {
 pub struct Kite {
   /// Underlying database
   db: SingleFileDB,
+  /// Close-time checkpoint threshold.
+  close_checkpoint_if_wal_usage_at_least: Option<f64>,
   /// Node type definitions by name
   nodes: HashMap<String, NodeDef>,
   /// Edge type definitions by name
@@ -722,13 +889,18 @@ impl Kite {
       db_path = PathBuf::from(format!("{}{}", path.display(), single_file_extension()));
     }
 
+    let close_checkpoint_if_wal_usage_at_least = options
+      .close_checkpoint_if_wal_usage_at_least
+      .map(|value| value.clamp(0.0, 1.0));
+
     let mut db_options = SingleFileOpenOptions::new()
       .read_only(options.read_only)
       .create_if_missing(options.create_if_missing)
       .sync_mode(options.sync_mode)
       .group_commit_enabled(options.group_commit_enabled)
       .group_commit_window_ms(options.group_commit_window_ms)
-      .mvcc(options.mvcc);
+      .mvcc(options.mvcc)
+      .replication_role(options.replication_role);
     if let Some(v) = options.mvcc_gc_interval_ms {
       db_options = db_options.mvcc_gc_interval_ms(v);
     }
@@ -743,6 +915,24 @@ impl Kite {
     }
     if let Some(v) = options.checkpoint_threshold {
       db_options = db_options.checkpoint_threshold(v);
+    }
+    if let Some(path) = options.replication_sidecar_path.as_ref() {
+      db_options = db_options.replication_sidecar_path(path);
+    }
+    if let Some(path) = options.replication_source_db_path.as_ref() {
+      db_options = db_options.replication_source_db_path(path);
+    }
+    if let Some(path) = options.replication_source_sidecar_path.as_ref() {
+      db_options = db_options.replication_source_sidecar_path(path);
+    }
+    if let Some(v) = options.replication_segment_max_bytes {
+      db_options = db_options.replication_segment_max_bytes(v);
+    }
+    if let Some(v) = options.replication_retention_min_entries {
+      db_options = db_options.replication_retention_min_entries(v);
+    }
+    if let Some(v) = options.replication_retention_min_ms {
+      db_options = db_options.replication_retention_min_ms(v);
     }
     let db = open_single_file(&db_path, db_options)?;
 
@@ -784,6 +974,7 @@ impl Kite {
 
     Ok(Self {
       db,
+      close_checkpoint_if_wal_usage_at_least,
       nodes,
       edges,
       key_prefix_to_node,
@@ -2043,7 +2234,24 @@ impl Kite {
 
   /// Close the database
   pub fn close(self) -> Result<()> {
-    close_single_file(self.db)
+    match self.close_checkpoint_if_wal_usage_at_least {
+      Some(threshold) => close_single_file_with_options(
+        self.db,
+        SingleFileCloseOptions::new().checkpoint_if_wal_usage_at_least(threshold),
+      ),
+      None => close_single_file(self.db),
+    }
+  }
+
+  /// Close the database and run a blocking checkpoint if WAL usage is above threshold.
+  ///
+  /// Use this for reopen-heavy workloads where you want to cap WAL replay cost on next open.
+  /// Threshold is clamped to [0.0, 1.0].
+  pub fn close_with_checkpoint_if_wal_over(self, threshold: f64) -> Result<()> {
+    close_single_file_with_options(
+      self.db,
+      SingleFileCloseOptions::new().checkpoint_if_wal_usage_at_least(threshold),
+    )
   }
 }
 
@@ -3725,6 +3933,47 @@ mod tests {
   }
 
   #[test]
+  fn test_recommended_kite_options_profiles() {
+    let safe = KiteOptions::recommended_safe();
+    assert_eq!(safe.sync_mode, SyncMode::Full);
+    assert!(!safe.group_commit_enabled);
+    assert_eq!(safe.close_checkpoint_if_wal_usage_at_least, Some(0.2));
+
+    let balanced = KiteOptions::recommended_balanced();
+    assert_eq!(balanced.sync_mode, SyncMode::Normal);
+    assert!(balanced.group_commit_enabled);
+    assert_eq!(balanced.group_commit_window_ms, 2);
+    assert_eq!(balanced.wal_size, Some(64 * 1024 * 1024));
+    assert_eq!(balanced.checkpoint_threshold, Some(0.5));
+    assert_eq!(balanced.close_checkpoint_if_wal_usage_at_least, Some(0.2));
+
+    let reopen = KiteOptions::recommended_reopen_heavy();
+    assert_eq!(reopen.sync_mode, SyncMode::Normal);
+    assert!(reopen.group_commit_enabled);
+    assert_eq!(reopen.wal_size, Some(16 * 1024 * 1024));
+    assert_eq!(reopen.checkpoint_threshold, Some(0.2));
+    assert_eq!(reopen.close_checkpoint_if_wal_usage_at_least, Some(0.2));
+  }
+
+  #[test]
+  fn test_runtime_profile_reopen_heavy_has_close_threshold() {
+    let profile = KiteRuntimeProfile::from_kind(KiteRuntimeProfileKind::ReopenHeavy);
+    assert_eq!(profile.options.wal_size, Some(16 * 1024 * 1024));
+    assert_eq!(profile.close_checkpoint_if_wal_usage_at_least, Some(0.2));
+  }
+
+  #[test]
+  fn test_kite_options_close_checkpoint_threshold_configurable() {
+    let options = KiteOptions::new()
+      .close_checkpoint_if_wal_usage_at_least(0.35)
+      .disable_close_checkpoint();
+    assert_eq!(options.close_checkpoint_if_wal_usage_at_least, None);
+
+    let clamped = KiteOptions::new().close_checkpoint_if_wal_usage_at_least(1.5);
+    assert_eq!(clamped.close_checkpoint_if_wal_usage_at_least, Some(1.0));
+  }
+
+  #[test]
   fn test_open_database() {
     let temp_dir = tempdir().expect("expected value");
     let options = create_test_schema();
@@ -3737,6 +3986,27 @@ mod tests {
     assert!(ray.edge_def("FOLLOWS").is_some());
 
     ray.close().expect("expected value");
+  }
+
+  #[test]
+  fn test_open_database_primary_replication_options() {
+    let temp_dir = tempdir().expect("expected value");
+    let sidecar_path = temp_dir.path().join("replication-sidecar-custom");
+    let options = create_test_schema()
+      .replication_role(ReplicationRole::Primary)
+      .replication_sidecar_path(&sidecar_path)
+      .replication_segment_max_bytes(1024)
+      .replication_retention_min_entries(2);
+
+    let ray = Kite::open(temp_db_path(&temp_dir), options).expect("expected value");
+    let primary = ray.raw().primary_replication_status();
+    let replica = ray.raw().replica_replication_status();
+
+    assert!(primary.is_some());
+    assert!(replica.is_none());
+    let status = primary.expect("expected primary status");
+    assert_eq!(status.role, ReplicationRole::Primary);
+    assert_eq!(status.sidecar_path, sidecar_path);
   }
 
   #[test]

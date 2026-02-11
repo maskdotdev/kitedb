@@ -29,6 +29,7 @@ Legend
 | Vector PropValue | Full | Missing | Full | Python bindings do not expose PropValue VectorF32 |
 | Schema IDs/labels | Full | Full | Full | Labels, edge types, prop keys |
 | Cache API | Full | Full | Full | Python/NAPI include extra cache control |
+| Replication controls + status (Phase D) | Full | Full | Full | Promote, retention, reseed, token wait, primary/replica status |
 | Integrity check | Full | Missing | Full | Single-file uses full snapshot check |
 | Optimize/compact | Full | Partial | Full | Single-file checkpoint + vacuum/options exposed |
 | Vector embeddings | Full | Full | Full | `set/get/del/has` node vectors |

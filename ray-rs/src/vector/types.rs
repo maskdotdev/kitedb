@@ -359,7 +359,7 @@ impl VectorManifest {
 
   /// Get live vector count
   pub fn live_count(&self) -> usize {
-    self.total_vectors - self.total_deleted
+    self.node_to_vector.len()
   }
 }
 

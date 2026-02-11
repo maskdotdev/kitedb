@@ -28,6 +28,13 @@ thiserror = "2.0"
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+ureq = "2.10"
+base64 = "0.22"
+rustls-pemfile = "2.2"
+webpki-roots = "1.0"
+opentelemetry-proto = { version = "0.31", default-features = false, features = ["gen-tonic", "metrics"] }
+prost = "0.14"
+tonic = { version = "0.14", features = ["transport", "tls-webpki-roots", "gzip"] }
 
 # Binary encoding
 byteorder = "1.5"
@@ -43,8 +50,8 @@ flate2 = "1.1"
 parking_lot = "0.12"
 crossbeam-channel = "0.5"
 
-# Async runtime (optional)
-tokio = { version = "1.45", features = ["rt", "fs", "sync"], optional = true }
+# Async runtime
+tokio = { version = "1.45", features = ["rt", "rt-multi-thread", "fs", "sync", "time", "net"] }
 
 # Collections
 hashbrown = "0.15"
@@ -81,6 +88,7 @@ napi-build = { version = "2", optional = true }
 [dev-dependencies]
 tempfile = "3.20"
 criterion = "0.5"
+neo4rs = "0.8"
 
 [[bench]]
 name = "distance"
@@ -106,7 +114,7 @@ harness = false
 default = ["napi"]
 napi = ["dep:napi", "dep:napi-derive", "dep:napi-build"]
 python = ["dep:pyo3", "dep:numpy"]
-async = ["tokio"]
+async = []
 bench-profile = []
 
 [profile.release]

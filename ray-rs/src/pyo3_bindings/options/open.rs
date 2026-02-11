@@ -1,12 +1,18 @@
 //! Database open options for Python bindings
 
 use super::maintenance::CompressionOptions;
+use crate::api::kite::{
+  KiteOptions as RustKiteOptions, KiteRuntimeProfile as RustKiteRuntimeProfile,
+};
 use crate::core::single_file::{
   SingleFileOpenOptions as RustOpenOptions, SnapshotParseMode as RustSnapshotParseMode,
   SyncMode as RustSyncMode,
 };
+use crate::replication::types::ReplicationRole;
 use crate::types::{CacheOptions, PropertyCacheConfig, QueryCacheConfig, TraversalCacheConfig};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use std::str::FromStr;
 
 /// Synchronization mode for WAL writes
 ///
@@ -164,6 +170,27 @@ pub struct OpenOptions {
   /// Snapshot parse mode: "strict" or "salvage" (single-file only)
   #[pyo3(get, set)]
   pub snapshot_parse_mode: Option<SnapshotParseMode>,
+  /// Replication role: "disabled", "primary", or "replica"
+  #[pyo3(get, set)]
+  pub replication_role: Option<String>,
+  /// Replication sidecar path override
+  #[pyo3(get, set)]
+  pub replication_sidecar_path: Option<String>,
+  /// Source primary db path (replica role only)
+  #[pyo3(get, set)]
+  pub replication_source_db_path: Option<String>,
+  /// Source primary sidecar path (replica role only)
+  #[pyo3(get, set)]
+  pub replication_source_sidecar_path: Option<String>,
+  /// Segment rotation threshold in bytes (primary role only)
+  #[pyo3(get, set)]
+  pub replication_segment_max_bytes: Option<i64>,
+  /// Minimum retained entries window (primary role only)
+  #[pyo3(get, set)]
+  pub replication_retention_min_entries: Option<i64>,
+  /// Minimum retained segment age in milliseconds (primary role only)
+  #[pyo3(get, set)]
+  pub replication_retention_min_ms: Option<i64>,
 }
 
 #[pymethods]
@@ -192,7 +219,14 @@ impl OpenOptions {
         sync_mode=None,
         group_commit_enabled=None,
         group_commit_window_ms=None,
-        snapshot_parse_mode=None
+        snapshot_parse_mode=None,
+        replication_role=None,
+        replication_sidecar_path=None,
+        replication_source_db_path=None,
+        replication_source_sidecar_path=None,
+        replication_segment_max_bytes=None,
+        replication_retention_min_entries=None,
+        replication_retention_min_ms=None
     ))]
   #[allow(clippy::too_many_arguments)]
   fn new(
@@ -219,6 +253,13 @@ impl OpenOptions {
     group_commit_enabled: Option<bool>,
     group_commit_window_ms: Option<i64>,
     snapshot_parse_mode: Option<SnapshotParseMode>,
+    replication_role: Option<String>,
+    replication_sidecar_path: Option<String>,
+    replication_source_db_path: Option<String>,
+    replication_source_sidecar_path: Option<String>,
+    replication_segment_max_bytes: Option<i64>,
+    replication_retention_min_entries: Option<i64>,
+    replication_retention_min_ms: Option<i64>,
   ) -> Self {
     Self {
       read_only,
@@ -244,6 +285,13 @@ impl OpenOptions {
       group_commit_enabled,
       group_commit_window_ms,
       snapshot_parse_mode,
+      replication_role,
+      replication_sidecar_path,
+      replication_source_db_path,
+      replication_source_sidecar_path,
+      replication_segment_max_bytes,
+      replication_retention_min_entries,
+      replication_retention_min_ms,
     }
   }
 
@@ -344,8 +392,137 @@ impl OpenOptions {
     if let Some(mode) = self.snapshot_parse_mode {
       rust_opts = rust_opts.snapshot_parse_mode(mode.mode);
     }
+    if let Some(ref role) = self.replication_role {
+      let role = ReplicationRole::from_str(role).map_err(|error| {
+        PyValueError::new_err(format!("Invalid replication_role '{role}': {error}"))
+      })?;
+      rust_opts = rust_opts.replication_role(role);
+    }
+    if let Some(ref path) = self.replication_sidecar_path {
+      rust_opts = rust_opts.replication_sidecar_path(path);
+    }
+    if let Some(ref path) = self.replication_source_db_path {
+      rust_opts = rust_opts.replication_source_db_path(path);
+    }
+    if let Some(ref path) = self.replication_source_sidecar_path {
+      rust_opts = rust_opts.replication_source_sidecar_path(path);
+    }
+    if let Some(value) = self.replication_segment_max_bytes {
+      if value < 0 {
+        return Err(PyValueError::new_err(
+          "replication_segment_max_bytes must be non-negative",
+        ));
+      }
+      rust_opts = rust_opts.replication_segment_max_bytes(value as u64);
+    }
+    if let Some(value) = self.replication_retention_min_entries {
+      if value < 0 {
+        return Err(PyValueError::new_err(
+          "replication_retention_min_entries must be non-negative",
+        ));
+      }
+      rust_opts = rust_opts.replication_retention_min_entries(value as u64);
+    }
+    if let Some(value) = self.replication_retention_min_ms {
+      if value < 0 {
+        return Err(PyValueError::new_err(
+          "replication_retention_min_ms must be non-negative",
+        ));
+      }
+      rust_opts = rust_opts.replication_retention_min_ms(value as u64);
+    }
 
     Ok(rust_opts)
+  }
+
+  /// Build binding open options from high-level Kite profile options.
+  pub fn from_kite_options(opts: RustKiteOptions) -> Self {
+    let replication_role = match opts.replication_role {
+      ReplicationRole::Disabled => "disabled",
+      ReplicationRole::Primary => "primary",
+      ReplicationRole::Replica => "replica",
+    }
+    .to_string();
+
+    Self {
+      read_only: Some(opts.read_only),
+      create_if_missing: Some(opts.create_if_missing),
+      mvcc: Some(opts.mvcc),
+      mvcc_gc_interval_ms: opts.mvcc_gc_interval_ms.and_then(|v| i64::try_from(v).ok()),
+      mvcc_retention_ms: opts.mvcc_retention_ms.and_then(|v| i64::try_from(v).ok()),
+      mvcc_max_chain_depth: opts
+        .mvcc_max_chain_depth
+        .and_then(|v| i64::try_from(v).ok()),
+      page_size: None,
+      wal_size: opts.wal_size.and_then(|v| u32::try_from(v).ok()),
+      auto_checkpoint: None,
+      checkpoint_threshold: opts.checkpoint_threshold,
+      background_checkpoint: None,
+      checkpoint_compression: None,
+      cache_snapshot: None,
+      cache_enabled: None,
+      cache_max_node_props: None,
+      cache_max_edge_props: None,
+      cache_max_traversal_entries: None,
+      cache_max_query_entries: None,
+      cache_query_ttl_ms: None,
+      sync_mode: Some(SyncMode {
+        mode: opts.sync_mode,
+      }),
+      group_commit_enabled: Some(opts.group_commit_enabled),
+      group_commit_window_ms: i64::try_from(opts.group_commit_window_ms).ok(),
+      snapshot_parse_mode: None,
+      replication_role: Some(replication_role),
+      replication_sidecar_path: opts
+        .replication_sidecar_path
+        .map(|p| p.to_string_lossy().to_string()),
+      replication_source_db_path: opts
+        .replication_source_db_path
+        .map(|p| p.to_string_lossy().to_string()),
+      replication_source_sidecar_path: opts
+        .replication_source_sidecar_path
+        .map(|p| p.to_string_lossy().to_string()),
+      replication_segment_max_bytes: opts
+        .replication_segment_max_bytes
+        .and_then(|v| i64::try_from(v).ok()),
+      replication_retention_min_entries: opts
+        .replication_retention_min_entries
+        .and_then(|v| i64::try_from(v).ok()),
+      replication_retention_min_ms: opts
+        .replication_retention_min_ms
+        .and_then(|v| i64::try_from(v).ok()),
+    }
+  }
+}
+
+/// Runtime profile preset for open/close behavior.
+#[pyclass(name = "RuntimeProfile")]
+#[derive(Debug, Clone)]
+pub struct RuntimeProfile {
+  /// Open-time options for Database(path, options)
+  #[pyo3(get, set)]
+  pub open_options: OpenOptions,
+  /// Optional close-time checkpoint threshold
+  #[pyo3(get, set)]
+  pub close_checkpoint_if_wal_usage_at_least: Option<f64>,
+}
+
+#[pymethods]
+impl RuntimeProfile {
+  fn __repr__(&self) -> String {
+    format!(
+      "RuntimeProfile(close_checkpoint_if_wal_usage_at_least={:?})",
+      self.close_checkpoint_if_wal_usage_at_least
+    )
+  }
+}
+
+impl RuntimeProfile {
+  pub fn from_kite_runtime_profile(profile: RustKiteRuntimeProfile) -> Self {
+    Self {
+      open_options: OpenOptions::from_kite_options(profile.options),
+      close_checkpoint_if_wal_usage_at_least: profile.close_checkpoint_if_wal_usage_at_least,
+    }
   }
 }
 
