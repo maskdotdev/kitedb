@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
 #[cfg(feature = "bench-profile")]
 use std::time::Instant;
 
@@ -378,11 +379,70 @@ struct OpenProfileCounters {
 #[cfg(feature = "bench-profile")]
 fn elapsed_ns(started: Instant) -> u64 {
   started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64
+  crc_chunk_size: Option<usize>,
+  #[cfg(feature = "bench-profile")]
+  profile: Option<&'a mut SnapshotOpenProfile>,
+}
+
+#[cfg(feature = "bench-profile")]
+#[derive(Debug, Clone, Default)]
+struct SnapshotOpenProfile {
+  parse_total_ns: u64,
+  snapshot_crc_ns: u64,
+  snapshot_crc_bytes: usize,
+  snapshot_crc_chunk_size: usize,
+  snapshot_crc_sections: Vec<crate::core::snapshot::reader::SnapshotCrcSectionProfile>,
+}
+
+fn snapshot_crc_chunk_size_from_env() -> Option<usize> {
+  std::env::var("KITEDB_SNAPSHOT_CRC_CHUNK_BYTES")
+    .ok()
+    .and_then(|raw| raw.parse::<usize>().ok())
+    .filter(|value| *value > 0)
 }
 
 #[cfg(feature = "bench-profile")]
 fn open_profile_enabled() -> bool {
   std::env::var_os("KITEDB_BENCH_PROFILE_OPEN").is_some()
+  std::env::var("KITEDB_BENCH_PROFILE_OPEN")
+    .map(|value| {
+      let value = value.to_lowercase();
+      value == "1" || value == "true" || value == "yes"
+    })
+    .unwrap_or(false)
+}
+
+#[cfg(feature = "bench-profile")]
+fn log_open_profile(path: &Path, profile: &SnapshotOpenProfile) {
+  if profile.parse_total_ns == 0 {
+    return;
+  }
+
+  let snapshot_decode_ns = profile
+    .parse_total_ns
+    .saturating_sub(profile.snapshot_crc_ns);
+  println!(
+    "[open_profile] path={} snapshot_crc_ns={} snapshot_decode_ns={} snapshot_crc_bytes={} snapshot_crc_chunk_bytes={}",
+    path.display(),
+    profile.snapshot_crc_ns,
+    snapshot_decode_ns,
+    profile.snapshot_crc_bytes,
+    profile.snapshot_crc_chunk_size,
+  );
+
+  for section in &profile.snapshot_crc_sections {
+    let section_name = section
+      .section_id
+      .map(|id| format!("{id:?}"))
+      .unwrap_or_else(|| "__non_section__".to_string());
+    println!(
+      "[open_profile] path={} snapshot_crc_section={} bytes={} ns={}",
+      path.display(),
+      section_name,
+      section.bytes,
+      section.crc_ns
+    );
+  }
 }
 
 fn load_snapshot_and_schema(state: &mut SnapshotLoadState<'_>) -> Result<Option<SnapshotData>> {
@@ -399,6 +459,7 @@ fn load_snapshot_and_schema(state: &mut SnapshotLoadState<'_>) -> Result<Option<
   ) {
     parse_options.skip_crc_validation = true;
   }
+  parse_options.crc_chunk_size = state.crc_chunk_size;
 
   let mmap = std::sync::Arc::new({
     // Safety handled inside map_file (native mmap) or in-memory read (wasm).
@@ -442,11 +503,48 @@ fn load_snapshot_and_schema(state: &mut SnapshotLoadState<'_>) -> Result<Option<
         .saturating_add(parse_total_ns);
     }
   }
+  #[cfg(feature = "bench-profile")]
+  let profile_sink = if state.profile.is_some() && !parse_options.skip_crc_validation {
+    Some(Arc::new(std::sync::Mutex::new(None)))
+  } else {
+    None
+  };
+  #[cfg(feature = "bench-profile")]
+  {
+    parse_options.crc_profile_sink = profile_sink.clone();
+  }
+
+  #[cfg(feature = "bench-profile")]
+  let parse_start = Instant::now();
+  let parse_result = SnapshotData::parse_at_offset(
+    Arc::new({
+      // Safety handled inside map_file (native mmap) or in-memory read (wasm).
+      map_file(state.pager.file())?
+    }),
+    snapshot_offset,
+    &parse_options,
+  );
+  #[cfg(feature = "bench-profile")]
+  let parse_total_ns = parse_start.elapsed().as_nanos() as u64;
 
   match parse_result {
     Ok(snap) => {
       #[cfg(feature = "bench-profile")]
       let schema_started = Instant::now();
+      if let Some(profile) = state.profile.as_deref_mut() {
+        profile.parse_total_ns = parse_total_ns;
+        if let Some(sink) = profile_sink {
+          if let Ok(mut guard) = sink.lock() {
+            if let Some(crc_profile) = guard.take() {
+              profile.snapshot_crc_ns = crc_profile.total_ns;
+              profile.snapshot_crc_bytes = crc_profile.total_bytes;
+              profile.snapshot_crc_chunk_size = crc_profile.chunk_size;
+              profile.snapshot_crc_sections = crc_profile.sections;
+            }
+          }
+        }
+      }
+
       // Load schema from snapshot
       for i in 1..=snap.header.num_labels as u32 {
         if let Some(name) = snap.label_name(i) {
@@ -841,6 +939,13 @@ pub fn open_single_file<P: AsRef<Path>>(
   let mut etype_ids: HashMap<ETypeId, String> = HashMap::new();
   let mut propkey_names: HashMap<String, PropKeyId> = HashMap::new();
   let mut propkey_ids: HashMap<PropKeyId, String> = HashMap::new();
+  let crc_chunk_size = snapshot_crc_chunk_size_from_env();
+  #[cfg(feature = "bench-profile")]
+  let mut snapshot_profile = if open_profile_enabled() {
+    Some(SnapshotOpenProfile::default())
+  } else {
+    None
+  };
 
   // Load snapshot if exists
   let mut snapshot_state = SnapshotLoadState {
@@ -861,8 +966,15 @@ pub fn open_single_file<P: AsRef<Path>>(
     profile: &mut open_profile,
     #[cfg(feature = "bench-profile")]
     profile_enabled,
+    crc_chunk_size,
+    #[cfg(feature = "bench-profile")]
+    profile: snapshot_profile.as_mut(),
   };
   let snapshot = load_snapshot_and_schema(&mut snapshot_state)?;
+  #[cfg(feature = "bench-profile")]
+  if let Some(profile) = snapshot_profile.as_ref() {
+    log_open_profile(path, profile);
+  }
 
   // Replay WAL for recovery (if not a new database)
   let mut _wal_records_storage: Option<Vec<crate::core::wal::record::ParsedWalRecord>>;

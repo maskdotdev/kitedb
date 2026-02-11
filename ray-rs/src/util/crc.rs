@@ -13,6 +13,24 @@ pub fn crc32c(data: &[u8]) -> u32 {
   hasher.finalize()
 }
 
+/// Compute CRC32C in fixed-size chunks.
+///
+/// Useful for throughput experiments that cap per-update buffer size.
+pub fn crc32c_chunked(data: &[u8], chunk_size: usize) -> u32 {
+  if data.is_empty() {
+    return crc32c(data);
+  }
+  if chunk_size == 0 || chunk_size >= data.len() {
+    return crc32c(data);
+  }
+
+  let mut hasher = Hasher::new();
+  for chunk in data.chunks(chunk_size) {
+    hasher.update(chunk);
+  }
+  hasher.finalize()
+}
+
 /// Compute CRC32C hash of multiple data segments
 pub fn crc32c_multi(segments: &[&[u8]]) -> u32 {
   let mut hasher = Hasher::new();
@@ -90,6 +108,14 @@ mod tests {
     let single = crc32c(data);
     let multi = crc32c_multi(&[b"hello", b" ", b"world"]);
     assert_eq!(single, multi);
+  }
+
+  #[test]
+  fn test_crc32c_chunked_matches_single() {
+    let data = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let single = crc32c(data);
+    let chunked = crc32c_chunked(data, 7);
+    assert_eq!(single, chunked);
   }
 
   #[test]

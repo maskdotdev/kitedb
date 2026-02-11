@@ -8,7 +8,7 @@ use crate::error::{KiteError, Result};
 use crate::types::*;
 use crate::util::binary::*;
 use crate::util::compression::{decompress_with_size, CompressionType};
-use crate::util::crc::crc32c;
+use crate::util::crc::{crc32c, crc32c_chunked, Crc32cHasher};
 use crate::util::hash::xxhash64_string;
 use crate::util::mmap::{map_file, Mmap};
 use parking_lot::RwLock;
@@ -16,7 +16,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 // ============================================================================
 // Snapshot Data Structure
@@ -59,6 +59,162 @@ impl AsRef<[u8]> for SectionBytes<'_> {
 pub struct ParseSnapshotOptions {
   /// Skip CRC validation (for performance when reading cached/trusted data)
   pub skip_crc_validation: bool,
+  /// Optional CRC chunk size for throughput experiments.
+  /// `None` or `Some(0)` uses the default whole-buffer CRC path.
+  pub crc_chunk_size: Option<usize>,
+  /// Optional sink to capture CRC section attribution (bytes + time).
+  pub crc_profile_sink: Option<Arc<Mutex<Option<SnapshotCrcProfile>>>>,
+}
+
+/// Per-segment CRC timing attribution.
+///
+/// `section_id == None` means bytes outside section payloads (header/table/alignment gaps).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SnapshotCrcSectionProfile {
+  pub section_id: Option<SectionId>,
+  pub bytes: usize,
+  pub crc_ns: u64,
+}
+
+/// Snapshot CRC profile captured while validating footer checksum.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SnapshotCrcProfile {
+  pub total_bytes: usize,
+  pub total_ns: u64,
+  pub chunk_size: usize,
+  pub sections: Vec<SnapshotCrcSectionProfile>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CrcSegment {
+  section_id: Option<SectionId>,
+  start: usize,
+  end: usize,
+}
+
+fn normalized_crc_chunk_size(requested: Option<usize>, total_len: usize) -> usize {
+  let Some(size) = requested else {
+    return total_len.max(1);
+  };
+  if size == 0 {
+    total_len.max(1)
+  } else {
+    size
+  }
+}
+
+fn section_segments(
+  sections: &[SectionEntry],
+  base_offset: usize,
+  crc_len: usize,
+) -> Vec<CrcSegment> {
+  let mut payload_ranges: Vec<(usize, usize, Option<SectionId>)> = Vec::new();
+
+  for (idx, section) in sections.iter().enumerate() {
+    if section.length == 0 {
+      continue;
+    }
+
+    let global_start = section.offset as usize;
+    let Some(local_start) = global_start.checked_sub(base_offset) else {
+      continue;
+    };
+    let local_end = local_start.saturating_add(section.length as usize);
+    if local_start >= crc_len {
+      continue;
+    }
+
+    payload_ranges.push((
+      local_start,
+      local_end.min(crc_len),
+      SectionId::from_u32(idx as u32),
+    ));
+  }
+
+  payload_ranges.sort_by_key(|(start, _, _)| *start);
+  let mut segments = Vec::with_capacity(payload_ranges.len().saturating_mul(2).saturating_add(1));
+  let mut cursor = 0usize;
+
+  for (start, end, section_id) in payload_ranges {
+    if start > cursor {
+      segments.push(CrcSegment {
+        section_id: None,
+        start: cursor,
+        end: start,
+      });
+    }
+    if end > start {
+      segments.push(CrcSegment {
+        section_id,
+        start,
+        end,
+      });
+      cursor = end;
+    }
+  }
+
+  if cursor < crc_len {
+    segments.push(CrcSegment {
+      section_id: None,
+      start: cursor,
+      end: crc_len,
+    });
+  }
+
+  segments
+}
+
+fn compute_crc_with_options(
+  data: &[u8],
+  options: &ParseSnapshotOptions,
+  sections: &[SectionEntry],
+  base_offset: usize,
+) -> (u32, Option<SnapshotCrcProfile>) {
+  let chunk_size = normalized_crc_chunk_size(options.crc_chunk_size, data.len());
+  if options.crc_profile_sink.is_none() {
+    if chunk_size >= data.len().max(1) {
+      return (crc32c(data), None);
+    }
+    return (crc32c_chunked(data, chunk_size), None);
+  }
+
+  let segments = section_segments(sections, base_offset, data.len());
+  let mut hasher = Crc32cHasher::new();
+  let mut profile_sections = Vec::with_capacity(segments.len());
+  let mut total_ns: u64 = 0;
+
+  for segment in segments {
+    let bytes = &data[segment.start..segment.end];
+    if bytes.is_empty() {
+      continue;
+    }
+
+    let segment_start = std::time::Instant::now();
+    if chunk_size >= bytes.len() {
+      hasher.update(bytes);
+    } else {
+      for chunk in bytes.chunks(chunk_size) {
+        hasher.update(chunk);
+      }
+    }
+    let crc_ns = segment_start.elapsed().as_nanos() as u64;
+    total_ns = total_ns.saturating_add(crc_ns);
+    profile_sections.push(SnapshotCrcSectionProfile {
+      section_id: segment.section_id,
+      bytes: bytes.len(),
+      crc_ns,
+    });
+  }
+
+  (
+    hasher.finalize(),
+    Some(SnapshotCrcProfile {
+      total_bytes: data.len(),
+      total_ns,
+      chunk_size,
+      sections: profile_sections,
+    }),
+  )
 }
 
 impl SnapshotData {
@@ -149,7 +305,13 @@ impl SnapshotData {
     // Verify footer CRC
     if !options.skip_crc_validation {
       let footer_crc = read_u32(buffer, actual_snapshot_size - 4);
-      let computed_crc = crc32c(&buffer[..actual_snapshot_size - 4]);
+      let (computed_crc, crc_profile) =
+        compute_crc_with_options(&buffer[..actual_snapshot_size - 4], options, &sections, 0);
+      if let Some(sink) = options.crc_profile_sink.as_ref() {
+        if let Ok(mut guard) = sink.lock() {
+          *guard = crc_profile;
+        }
+      }
       if footer_crc != computed_crc {
         return Err(KiteError::CrcMismatch {
           stored: footer_crc,
@@ -247,7 +409,17 @@ impl SnapshotData {
     // Verify footer CRC (optional)
     if !options.skip_crc_validation {
       let footer_crc = read_u32(buffer, actual_snapshot_size - 4);
-      let computed_crc = crc32c(&buffer[..actual_snapshot_size - 4]);
+      let (computed_crc, crc_profile) = compute_crc_with_options(
+        &buffer[..actual_snapshot_size - 4],
+        options,
+        &sections,
+        offset,
+      );
+      if let Some(sink) = options.crc_profile_sink.as_ref() {
+        if let Ok(mut guard) = sink.lock() {
+          *guard = crc_profile;
+        }
+      }
       if footer_crc != computed_crc {
         return Err(KiteError::CrcMismatch {
           stored: footer_crc,
@@ -1120,10 +1292,75 @@ impl SnapshotData {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::core::snapshot::writer::{build_snapshot_to_memory, NodeData, SnapshotBuildInput};
+  use crate::types::PropValue;
+  use std::collections::HashMap;
+  use std::fs;
+  use std::sync::{Arc, Mutex};
+  use tempfile::tempdir;
 
   #[test]
   fn test_parse_snapshot_options_default() {
     let opts = ParseSnapshotOptions::default();
     assert!(!opts.skip_crc_validation);
+    assert!(opts.crc_chunk_size.is_none());
+    assert!(opts.crc_profile_sink.is_none());
+  }
+
+  #[test]
+  fn test_parse_collects_crc_section_profile() {
+    let mut props = HashMap::new();
+    props.insert(1, PropValue::VectorF32(vec![0.1, 0.2, 0.3, 0.4]));
+
+    let bytes = build_snapshot_to_memory(SnapshotBuildInput {
+      generation: 1,
+      nodes: vec![NodeData {
+        node_id: 1,
+        key: Some("n1".to_string()),
+        labels: Vec::new(),
+        props,
+      }],
+      edges: Vec::new(),
+      labels: HashMap::new(),
+      etypes: HashMap::new(),
+      propkeys: HashMap::from([(1, "embedding".to_string())]),
+      compression: None,
+    })
+    .expect("snapshot build");
+
+    let dir = tempdir().expect("temp dir");
+    let path = dir.path().join("profile-snapshot.gds");
+    fs::write(&path, &bytes).expect("write snapshot");
+
+    let profile_sink = Arc::new(Mutex::new(None));
+    let options = ParseSnapshotOptions {
+      skip_crc_validation: false,
+      crc_chunk_size: Some(128),
+      crc_profile_sink: Some(Arc::clone(&profile_sink)),
+    };
+
+    let _snapshot = SnapshotData::load_with_options(&path, &options).expect("snapshot parse");
+
+    let profile = profile_sink
+      .lock()
+      .expect("profile lock")
+      .clone()
+      .expect("profile");
+    assert_eq!(profile.chunk_size, 128);
+    assert!(profile.total_bytes > 0);
+    assert!(profile.total_ns > 0);
+    assert!(!profile.sections.is_empty());
+    assert_eq!(
+      profile
+        .sections
+        .iter()
+        .map(|entry| entry.bytes)
+        .sum::<usize>(),
+      profile.total_bytes
+    );
+    assert!(profile
+      .sections
+      .iter()
+      .any(|entry| entry.section_id == Some(SectionId::VectorData) && entry.bytes > 0));
   }
 }
