@@ -295,15 +295,7 @@ fn main() {
 
   if verbose {
     println!(
-      "[open_crc_sweep] rounds parse={} open={} fixture_nodes={} fixture_dim={} snapshot_nodes={} has_vectors={} vector_data_bytes={} snapshot_offset={}",
-      parse_rounds,
-      open_rounds,
-      node_count,
-      vector_dim,
-      num_nodes,
-      has_vectors,
-      vector_data_bytes,
-      snapshot_offset
+      "[open_crc_sweep] rounds parse={parse_rounds} open={open_rounds} fixture_nodes={node_count} fixture_dim={vector_dim} snapshot_nodes={num_nodes} has_vectors={has_vectors} vector_data_bytes={vector_data_bytes} snapshot_offset={snapshot_offset}"
     );
     println!(
       "[open_crc_sweep] median_crc_ratio={:.2}x",

@@ -509,7 +509,7 @@ impl PyIvfIndex {
       .read()
       .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let bytes = crate::vector::ivf::serialize::serialize_ivf(&index);
-    Ok(PyBytes::new_bound(py, &bytes))
+    Ok(PyBytes::new(py, &bytes))
   }
 
   /// Deserialize an index from bytes
@@ -735,7 +735,7 @@ impl PyIvfPqIndex {
       .read()
       .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
     let bytes = crate::vector::ivf_pq::serialize_ivf_pq(&index);
-    Ok(PyBytes::new_bound(py, &bytes))
+    Ok(PyBytes::new(py, &bytes))
   }
 
   /// Deserialize an index from bytes

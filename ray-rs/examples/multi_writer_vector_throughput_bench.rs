@@ -203,7 +203,7 @@ fn main() {
   println!("Tx per thread: {}", config.tx_per_thread);
   println!("Batch size: {}", config.batch_size);
   println!("Vector dims: {}", config.vector_dims);
-  println!("Total vectors: {}", total_vectors);
+  println!("Total vectors: {total_vectors}");
   println!("WAL size: {} bytes", config.wal_size);
   println!("Sync mode: {:?}", config.sync_mode);
   println!(

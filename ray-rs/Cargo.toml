@@ -1,6 +1,6 @@
 [package]
 name = "kitedb"
-version = "0.2.15"
+version = "0.2.16"
 edition = "2021"
 authors = ["KiteDB Contributors"]
 description = "High-performance embedded graph database"
@@ -19,8 +19,8 @@ napi = { version = "3.0.0", features = ["napi8", "serde-json"], optional = true 
 napi-derive = { version = "3.0.0", optional = true }
 
 # PyO3 bindings (optional)
-pyo3 = { version = "0.22", features = ["extension-module"], optional = true }
-numpy = { version = "0.22", optional = true }
+pyo3 = { version = "0.24.1", features = ["extension-module"], optional = true }
+numpy = { version = "0.24.0", optional = true }
 
 # Error handling
 thiserror = "2.0"

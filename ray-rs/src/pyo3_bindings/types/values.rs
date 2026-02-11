@@ -114,16 +114,24 @@ impl PropValue {
   }
 
   /// Get the Python value
-  fn value(&self, py: Python<'_>) -> PyObject {
-    use pyo3::ToPyObject;
+  fn value(&self, py: Python<'_>) -> PyResult<PyObject> {
+    use pyo3::IntoPyObjectExt;
     match self.prop_type.as_str() {
-      "null" => py.None(),
-      "bool" => self.bool_value.unwrap_or(false).to_object(py),
-      "int" => self.int_value.unwrap_or(0).to_object(py),
-      "float" => self.float_value.unwrap_or(0.0).to_object(py),
-      "string" => self.string_value.clone().unwrap_or_default().to_object(py),
-      "vector" => self.vector_value.clone().unwrap_or_default().to_object(py),
-      _ => py.None(),
+      "null" => Ok(py.None()),
+      "bool" => self.bool_value.unwrap_or(false).into_py_any(py),
+      "int" => self.int_value.unwrap_or(0).into_py_any(py),
+      "float" => self.float_value.unwrap_or(0.0).into_py_any(py),
+      "string" => self
+        .string_value
+        .clone()
+        .unwrap_or_default()
+        .into_py_any(py),
+      "vector" => self
+        .vector_value
+        .clone()
+        .unwrap_or_default()
+        .into_py_any(py),
+      _ => Ok(py.None()),
     }
   }
 
